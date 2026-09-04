@@ -101,8 +101,7 @@ fn entering_stamps_a_run_and_exiting_returns_the_participant() {
     let mut found = false;
     for du in 0..dungeon::SLOT_CHUNKS {
         for dv in 0..dungeon::SLOT_CHUNKS {
-            if let Ok(cp) =
-                ChunkPos::new(Face::Deep, anchor.u() + du, anchor.v() + dv)
+            if let Ok(cp) = ChunkPos::new(Face::Deep, anchor.u() + du, anchor.v() + dv)
                 && let Some(c) = w.chunk(cp)
                 && c.raw().contains(&cob.0)
             {

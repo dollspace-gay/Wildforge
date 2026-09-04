@@ -161,10 +161,8 @@ impl World {
         }
         // Settlement context for hidden-cell recording: `None` for ordinary
         // assemblies; resolved registry index for a settlement's growth tiers.
-        let settlement: Option<usize> = asm
-            .settlement
-            .as_ref()
-            .and_then(|id| reg.settlement_id(id));
+        let settlement: Option<usize> =
+            asm.settlement.as_ref().and_then(|id| reg.settlement_id(id));
         let center = SurfacePos::new(
             pos.face(),
             pos.u() * CHUNK_X as u16 + CHUNK_X as u16 / 2,

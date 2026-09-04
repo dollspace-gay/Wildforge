@@ -804,8 +804,7 @@ impl Game {
                         .or_default()
                         .entry(rep_key)
                         .and_modify(|current: &mut String| {
-                            *current =
-                                (current.parse::<u32>().unwrap_or(0) + rep).to_string();
+                            *current = (current.parse::<u32>().unwrap_or(0) + rep).to_string();
                         })
                         .or_insert_with(|| rep.to_string());
                     self.toast(format!(
@@ -970,10 +969,9 @@ impl Game {
                             }
                         }
                     }
-                    self.server.world.insert_block_entity_at(
-                        pos,
-                        world::BlockEntity::Multiblock(m),
-                    );
+                    self.server
+                        .world
+                        .insert_block_entity_at(pos, world::BlockEntity::Multiblock(m));
                     if matches!(self.ui_state.screen, Screen::Playing) {
                         self.set_screen(match handler {
                             crate::machines::MachineHandler::Kiln => Screen::Kiln(pos),

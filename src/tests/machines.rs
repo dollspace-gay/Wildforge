@@ -846,7 +846,7 @@ fn quern_grinds_minerals_and_kiln_colors_glass() {
 
     // 8 sand + 1 cobalt powder + 8 charcoal -> 8 blue glass.
     let mut st = MachineInstance {
-            kind: reg.machine_kind("base:kiln").unwrap_or_default(),
+        kind: reg.machine_kind("base:kiln").unwrap_or_default(),
         ..Default::default()
     };
     for i in 0..4 {
@@ -885,7 +885,7 @@ fn quern_grinds_minerals_and_kiln_colors_glass() {
 
     // No powder = bulk clear glass.
     let mut st = MachineInstance {
-            kind: reg.machine_kind("base:kiln").unwrap_or_default(),
+        kind: reg.machine_kind("base:kiln").unwrap_or_default(),
         ..Default::default()
     };
     st.charge[0] = Some(ItemStack::new(&reg, it2("base:sand"), 2));
@@ -1159,7 +1159,7 @@ fn chimneyed_kiln_is_a_glassworks() {
     let sand = reg.item_id("base:sand").unwrap();
     let coal = reg.item_id("base:charcoal").unwrap();
     let mut st = MachineInstance {
-            kind: reg.machine_kind("base:kiln").unwrap_or_default(),
+        kind: reg.machine_kind("base:kiln").unwrap_or_default(),
         ..Default::default()
     };
     for i in 0..4 {
@@ -1868,7 +1868,9 @@ fn folded_stats_and_a_tier_swap_drive_the_heat_multiplier() {
     let (mx, my, mz) = (10, 120, 10);
     build_bloomery(&mut w, &reg, mx, my, mz);
     let anchor = bp(mx, my, mz);
-    let matched = reg.machine_kind("base:bloomery").unwrap_or_default()
+    let matched = reg
+        .machine_kind("base:bloomery")
+        .unwrap_or_default()
         .validate(&w, anchor)
         .expect("a fresh shell folds");
     let stats = fold_stats(&w, &matched.matched);
@@ -1883,7 +1885,9 @@ fn folded_stats_and_a_tier_swap_drive_the_heat_multiplier() {
     // mouth special-case, and the shell fires proportionally faster.
     let adv = reg.block_id("base:firebrick_advanced").unwrap();
     w.set_block(mx + 2, my, mz + 1, adv);
-    let matched = reg.machine_kind("base:bloomery").unwrap_or_default()
+    let matched = reg
+        .machine_kind("base:bloomery")
+        .unwrap_or_default()
         .validate(&w, anchor)
         .expect("advanced firebrick still satisfies the ring tag");
     let stats = fold_stats(&w, &matched.matched);
@@ -1951,7 +1955,9 @@ fn a_slot_module_swaps_in_place_and_refolds_without_disturbing_the_instance() {
     let (mx, my, mz) = (30, 120, 24);
     build_bloomery(&mut w, &reg, mx, my, mz);
     let anchor = bp(mx, my, mz);
-    let matched = reg.machine_kind("base:bloomery").unwrap_or_default()
+    let matched = reg
+        .machine_kind("base:bloomery")
+        .unwrap_or_default()
         .validate(&w, anchor)
         .expect("a fresh shell validates");
     let (slot, _) = matched

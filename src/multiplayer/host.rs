@@ -23,11 +23,11 @@ use crate::chunk::ChunkPos;
 pub use crate::identity::Role;
 use crate::identity::{AdmissionPolicy, DisplayName, IdentityPolicy, Principal};
 use crate::inventory::{HOTBAR_SLOTS, ItemStack, click_stack};
+use crate::machines::MachineHandler;
 use crate::net::{
     self, C2S, HostEvent, MAX_GUEST_VIEW_DIST, ModerationAction, Refusal, RefusalCode, S2C,
     StackSnap,
 };
-use crate::machines::MachineHandler;
 use crate::planet::{BlockPos, EntityPos};
 use crate::server::Server;
 use crate::world::{BlockEntity, MachineInstance, World};
@@ -209,7 +209,10 @@ pub enum HostFx {
     AllSlept,
     /// A guest clicked an action button on a mod screen (capability E11):
     /// both ids are already validated; dispatch the script hook.
-    ScreenClick { screen: String, action: String },
+    ScreenClick {
+        screen: String,
+        action: String,
+    },
 }
 
 pub struct HostSession {
@@ -2299,9 +2302,8 @@ impl HostSession {
                     .map(|stack| server.world.reg.item(stack.item).damage)
                     .unwrap_or(1.0)
                     .clamp(0.0, 16.0);
-                let dmg_type = held.and_then(|stack| {
-                    server.world.reg.item(stack.item).damage_type.clone()
-                });
+                let dmg_type =
+                    held.and_then(|stack| server.world.reg.item(stack.item).damage_type.clone());
                 let from = guest
                     .pos
                     .translated(Vec3::new(0.0, 1.6, 0.0))
@@ -2660,7 +2662,9 @@ impl HostSession {
                     .block(server.world.get_block_at(pos))
                     .interaction
                     .clone();
-                let Some(interaction) = interaction else { return };
+                let Some(interaction) = interaction else {
+                    return;
+                };
                 if !interaction.starts_with("depot:") {
                     return;
                 }
@@ -2741,9 +2745,7 @@ impl HostSession {
                     // Entry: stand the guest at their run's spawn point.
                     (0, Some(s)) if s.starts_with("dungeon_entry:") => {
                         let name = s.trim_start_matches("dungeon_entry:").to_string();
-                        if let Some(spawn) =
-                            server.world.enter_dungeon(id, guest.pos, &name)
-                        {
+                        if let Some(spawn) = server.world.enter_dungeon(id, guest.pos, &name) {
                             if let Some(g) = self.guests.get_mut(&id) {
                                 g.pos = spawn;
                                 self.net.send(
@@ -2776,10 +2778,8 @@ impl HostSession {
                     // Checkpoint: party-shared, host-owned.
                     (2, Some("dungeon_checkpoint")) => {
                         server.world.set_dungeon_checkpoint(guest.pos);
-                        self.net.send(
-                            id,
-                            &S2C::Toast("The shrine remembers you.".into()),
-                        );
+                        self.net
+                            .send(id, &S2C::Toast("The shrine remembers you.".into()));
                     }
                     _ => {}
                 }
@@ -3684,18 +3684,19 @@ impl HostSession {
                 // Capability E7: machine interactions resolve to a
                 // `MachineDef` and ride `S2C::MachineContainer`; the
                 // classic containers keep their `S2C::Container` kind code.
-                let machine = server
-                    .world
-                    .reg
-                    .block(b)
-                    .interaction
-                    .as_deref()
-                    .and_then(|i| server.world.reg.machine_by_interaction(i))
-                    .filter(|kind| {
-                        server.world.reg.machine(*kind).is_some_and(|def| {
-                            def.handler.has_fire() || def.handler.is_station()
-                        })
-                    });
+                let machine =
+                    server
+                        .world
+                        .reg
+                        .block(b)
+                        .interaction
+                        .as_deref()
+                        .and_then(|i| server.world.reg.machine_by_interaction(i))
+                        .filter(|kind| {
+                            server.world.reg.machine(*kind).is_some_and(|def| {
+                                def.handler.has_fire() || def.handler.is_station()
+                            })
+                        });
                 let kind = match (machine, server.world.reg.block(b).interaction.as_deref()) {
                     (Some(_), _) => 7u8,
                     (None, Some("chest")) => 0,
@@ -3781,7 +3782,8 @@ impl HostSession {
                         let matched = match kind.validate(&server.world, pos) {
                             Some(matched) => matched,
                             None => {
-                                self.net.send(id, &S2C::Toast("the stack is breached".into()));
+                                self.net
+                                    .send(id, &S2C::Toast("the stack is breached".into()));
                                 return;
                             }
                         };
@@ -4295,9 +4297,7 @@ impl HostSession {
                     }
                 }
             }
-            BlockEntity::Multiblock(fo)
-                if fo.kind.handler(&reg) == Some(MachineHandler::Forge) =>
-            {
+            BlockEntity::Multiblock(fo) if fo.kind.handler(&reg) == Some(MachineHandler::Forge) => {
                 // Sealed while firing; charge takes anything with a
                 // smelt, the bank takes anything that burns.
                 if !fo.lit && slot < 8 {

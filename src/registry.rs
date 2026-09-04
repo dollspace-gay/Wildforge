@@ -789,12 +789,10 @@ impl ScriptHook {
     /// Parse `"mod:fn"` or bare `"fn"` (any mod).
     pub(crate) fn parse(raw: &str) -> ScriptHook {
         match raw.split_once(':') {
-            Some((mod_id, fn_name)) if !mod_id.is_empty() && !fn_name.is_empty() => {
-                ScriptHook {
-                    mod_id: mod_id.into(),
-                    fn_name: fn_name.into(),
-                }
-            }
+            Some((mod_id, fn_name)) if !mod_id.is_empty() && !fn_name.is_empty() => ScriptHook {
+                mod_id: mod_id.into(),
+                fn_name: fn_name.into(),
+            },
             _ => ScriptHook {
                 mod_id: String::new(),
                 fn_name: raw.into(),
@@ -1182,7 +1180,6 @@ pub struct DungeonDef {
     /// Seconds after the last participant leaves before the zone resets.
     pub reset: f32,
 }
-
 
 #[derive(Clone, Debug)]
 pub struct ModInfo {
@@ -4323,7 +4320,9 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
                         errs.push(format!("{full}: {error}"));
                     }
                     if it.component.is_some() {
-                        errs.push(format!("{full}: an item cannot be both a frame and a component"));
+                        errs.push(format!(
+                            "{full}: an item cannot be both a frame and a component"
+                        ));
                     }
                     Some(def)
                 }
@@ -4491,23 +4490,10 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
             match a.behavior.as_deref() {
                 None
                 | Some(
-                    "standard"
-                    | "brute"
-                    | "construct"
-                    | "builder"
-                    | "rusher"
-                    | "tank"
-                    | "sniper"
-                    | "support"
-                    | "swarm"
-                    | "controller"
-                    | "phaser"
-                    | "shield_bearer",
+                    "standard" | "brute" | "construct" | "builder" | "rusher" | "tank" | "sniper"
+                    | "support" | "swarm" | "controller" | "phaser" | "shield_bearer",
                 ) => {}
-                Some(other) => errs.push(format!(
-                    "animal {}: unknown behavior {other}",
-                    a.id
-                )),
+                Some(other) => errs.push(format!("animal {}: unknown behavior {other}", a.id)),
             }
             // E9: an archetype that names a companion species must resolve
             // it (checked against base + this mod's roster names here; the
@@ -4858,11 +4844,8 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
         // Capability E13: resolve the delivery needs against the roster.
         let mut needs: Vec<SettlementNeed> = Vec::new();
         for need in &s.need {
-            let Some(item) =
-                lookup_item(&reg, &modid, &need.item)
-            else {
-                settlement_errors
-                    .push(format!("{id}: need item {} does not resolve", need.item));
+            let Some(item) = lookup_item(&reg, &modid, &need.item) else {
+                settlement_errors.push(format!("{id}: need item {} does not resolve", need.item));
                 continue;
             };
             needs.push(SettlementNeed {
@@ -4882,7 +4865,8 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
     // reachable from a settlement assembly (a hidden tier that can never be
     // placed would silently never exist), and its tier must exist in that
     // settlement's declared tiers (else reveal could never happen).
-    let mut assembly_settlements: Vec<Option<usize>> = reg.assemblies.iter().map(|_| None).collect();
+    let mut assembly_settlements: Vec<Option<usize>> =
+        reg.assemblies.iter().map(|_| None).collect();
     for (i, asm) in reg.assemblies.iter().enumerate() {
         if let Some(settlement) = &asm.settlement {
             match reg.settlements.iter().position(|s| &s.id == settlement) {
@@ -5486,9 +5470,8 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
                         .iter()
                         .any(|(m, r)| qualify(m, &r.output) == recipe_id);
                     if !declared {
-                        quest_errors.push(format!(
-                            "{id}: quest unlocks unknown recipe {recipe_id}"
-                        ));
+                        quest_errors
+                            .push(format!("{id}: quest unlocks unknown recipe {recipe_id}"));
                         return None;
                     }
                     Some(QuestReward::LearnRecipe(recipe_id))
@@ -5629,10 +5612,7 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
             Some(name) => match lookup_item(&reg, &modid, name) {
                 Some(item) => Some(item),
                 None => {
-                    recipe_errors.push(format!(
-                        "{}: recipe blueprint {name} is unknown",
-                        r.output
-                    ));
+                    recipe_errors.push(format!("{}: recipe blueprint {name} is unknown", r.output));
                     continue;
                 }
             },
@@ -5725,14 +5705,12 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
             // block fails the pack load (a sealed wall you can never open is
             // a silent softlock, unlike an unknown ore that just never grows).
             let Some(gate_id) = f.id.as_deref() else {
-                gate_errors
-                    .push(format!("{modid}: gate feature missing `id`"));
+                gate_errors.push(format!("{modid}: gate feature missing `id`"));
                 continue;
             };
             let id = qualify(&modid, gate_id);
             if reg.gates.iter().any(|g| g.id == id) {
-                gate_errors
-                    .push(format!("{id}: duplicate gate feature id"));
+                gate_errors.push(format!("{id}: duplicate gate feature id"));
                 continue;
             }
             let Some(flag) = f.flag.clone() else {
@@ -5898,8 +5876,7 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
             for m in &raw.modes {
                 let id = qualify(&raw.info.id, &m.id);
                 if m.id == "survival" || m.id == "creative" {
-                    mode_errors
-                        .push(format!("mode {id}: built-in mode id is reserved"));
+                    mode_errors.push(format!("mode {id}: built-in mode id is reserved"));
                     continue;
                 }
                 if pending.iter().any(|p| p.id == id) {
@@ -5962,10 +5939,8 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
 
     // Capability E5: merge every mod's skill tree into the registry.
     // Failures surface as pack errors on the mods screen.
-    let raw_skills: Vec<crate::skills::RawSkillToml> = raws
-        .iter()
-        .filter_map(|raw| raw.skills.clone())
-        .collect();
+    let raw_skills: Vec<crate::skills::RawSkillToml> =
+        raws.iter().filter_map(|raw| raw.skills.clone()).collect();
     match crate::skills::resolve(&raw_skills) {
         Ok(tree) => reg.skills = tree,
         Err(errors) => reg.material_errors.extend(errors),
@@ -5976,7 +5951,11 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
     // Failures surface as pack errors on the mods screen.
     let raw_machines: Vec<(String, crate::machines::RawMachineToml)> = raws
         .iter()
-        .filter_map(|raw| raw.machines.clone().map(|machines| (raw.info.id.clone(), machines)))
+        .filter_map(|raw| {
+            raw.machines
+                .clone()
+                .map(|machines| (raw.info.id.clone(), machines))
+        })
         .collect();
     let mut machine_errors = Vec::new();
     match crate::machines::resolve(&raw_machines) {
@@ -6000,7 +5979,9 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
                 nest_errors.push(format!("nest {full}: unknown block {}", nest.block));
                 continue;
             };
-            let Some(species) = reg.animal_id(&species).or_else(|| reg.animal_id(&nest.species))
+            let Some(species) = reg
+                .animal_id(&species)
+                .or_else(|| reg.animal_id(&nest.species))
             else {
                 nest_errors.push(format!("nest {full}: unknown species {}", nest.species));
                 continue;
@@ -6033,7 +6014,11 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
     // `material_errors` from scratch.
     let raw_screens: Vec<(String, crate::screens::RawScreensToml)> = raws
         .iter()
-        .filter_map(|raw| raw.screens.clone().map(|screens| (raw.info.id.clone(), screens)))
+        .filter_map(|raw| {
+            raw.screens
+                .clone()
+                .map(|screens| (raw.info.id.clone(), screens))
+        })
         .collect();
     match crate::screens::resolve(&raw_screens) {
         Ok(screens) => reg.screens = screens,
@@ -7468,4 +7453,3 @@ mod npc_spec_tests {
             .any(|r| matches!(r, QuestReward::SetFlag(flag, v) if flag == "elder_told_tales" && v == "true")));
     }
 }
-

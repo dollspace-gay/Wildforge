@@ -217,21 +217,38 @@ mod tests {
     #[test]
     fn resolve_qualifies_and_orders() {
         let raws = vec![
-            ("base".to_string(), RawScreensToml {
-                schema_version: None,
-                screen: vec![file("notice", Some("NOTICE"))],
-            }),
-            ("gems".to_string(), RawScreensToml {
-                schema_version: None,
-                screen: vec![RawScreen {
-                    id: "altar".into(),
-                    title: Some("The Altar".into()),
-                    label: vec![RawText { text: "Ruby offerings only.".into() }],
-                    kv_label: vec![RawKvLabel { key: "quest_x".into(), prefix: None }],
-                    toggle: vec![RawToggle { label: "Track".into(), key: "tracked".into() }],
-                    button: vec![RawButton { label: "Pray".into(), action: "pray".into() }],
-                }],
-            }),
+            (
+                "base".to_string(),
+                RawScreensToml {
+                    schema_version: None,
+                    screen: vec![file("notice", Some("NOTICE"))],
+                },
+            ),
+            (
+                "gems".to_string(),
+                RawScreensToml {
+                    schema_version: None,
+                    screen: vec![RawScreen {
+                        id: "altar".into(),
+                        title: Some("The Altar".into()),
+                        label: vec![RawText {
+                            text: "Ruby offerings only.".into(),
+                        }],
+                        kv_label: vec![RawKvLabel {
+                            key: "quest_x".into(),
+                            prefix: None,
+                        }],
+                        toggle: vec![RawToggle {
+                            label: "Track".into(),
+                            key: "tracked".into(),
+                        }],
+                        button: vec![RawButton {
+                            label: "Pray".into(),
+                            action: "pray".into(),
+                        }],
+                    }],
+                },
+            ),
         ];
         let screens = resolve(&raws).expect("resolves");
         assert_eq!(screens.len(), 2);
@@ -246,18 +263,26 @@ mod tests {
 
     #[test]
     fn empty_action_or_title_fails() {
-        let raws = vec![("gems".to_string(), RawScreensToml {
-            schema_version: None,
-            screen: vec![RawScreen {
-                id: "broken".into(),
-                title: None,
-                button: vec![RawButton { label: "Go".into(), action: "".into() }],
-                ..Default::default()
-            }],
-        })];
+        let raws = vec![(
+            "gems".to_string(),
+            RawScreensToml {
+                schema_version: None,
+                screen: vec![RawScreen {
+                    id: "broken".into(),
+                    title: None,
+                    button: vec![RawButton {
+                        label: "Go".into(),
+                        action: "".into(),
+                    }],
+                    ..Default::default()
+                }],
+            },
+        )];
         let errors = resolve(&raws).expect_err("empty action must fail");
         assert!(
-            errors.iter().any(|e| e.contains("needs a label and an action")),
+            errors
+                .iter()
+                .any(|e| e.contains("needs a label and an action")),
             "{errors:?}"
         );
     }
@@ -265,14 +290,20 @@ mod tests {
     #[test]
     fn duplicate_ids_fail() {
         let raws = vec![
-            ("base".to_string(), RawScreensToml {
-                schema_version: None,
-                screen: vec![file("board", None)],
-            }),
-            ("gems".to_string(), RawScreensToml {
-                schema_version: None,
-                screen: vec![file("base:board", None)],
-            }),
+            (
+                "base".to_string(),
+                RawScreensToml {
+                    schema_version: None,
+                    screen: vec![file("board", None)],
+                },
+            ),
+            (
+                "gems".to_string(),
+                RawScreensToml {
+                    schema_version: None,
+                    screen: vec![file("base:board", None)],
+                },
+            ),
         ];
         let errors = resolve(&raws).expect_err("duplicate must fail");
         assert!(errors.iter().any(|e| e.contains("duplicate id")));

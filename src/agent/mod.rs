@@ -655,7 +655,12 @@ impl Agent {
                     crate::world::BlockEntity::Sign(crate::world::SignState { lines }),
                 );
             }
-            net::S2C::SettlementDelivery { settlement, item, units, rep_per_unit } => {
+            net::S2C::SettlementDelivery {
+                settlement,
+                item,
+                units,
+                rep_per_unit,
+            } => {
                 // Capability E13: standing pays locally, like quest rewards.
                 let _ = (settlement, item, units, rep_per_unit);
             }

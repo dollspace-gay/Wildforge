@@ -103,7 +103,9 @@ impl Loadout {
         }
         let used = self.used_for(slot_type);
         if used >= max {
-            return Err(format!("this frame holds at most {max} {slot_type} components"));
+            return Err(format!(
+                "this frame holds at most {max} {slot_type} components"
+            ));
         }
         self.components.push(SlottedComponent {
             slot_type: slot_type.into(),
@@ -203,11 +205,15 @@ mod tests {
         assert!(loadout.slot(&frame, "gems", stack(1)).is_ok());
         assert!(loadout.slot(&frame, "gems", stack(2)).is_ok());
         // Third of the same type exceeds the frame's capacity.
-        let err = loadout.slot(&frame, "gems", stack(3)).expect_err("over capacity");
+        let err = loadout
+            .slot(&frame, "gems", stack(3))
+            .expect_err("over capacity");
         assert!(err.contains("at most 2 gems"), "{err}");
 
         // An undeclared slot type is refused outright.
-        let err = loadout.slot(&frame, "stabilizer", stack(4)).expect_err("no slot");
+        let err = loadout
+            .slot(&frame, "stabilizer", stack(4))
+            .expect_err("no slot");
         assert!(err.contains("no stabilizer"), "{err}");
     }
 
@@ -223,23 +229,26 @@ mod tests {
 
         let back = loadout.unslot(0).expect("slotted component");
         assert_eq!(back, original, "unslotted component comes back intact");
-        assert_eq!(loadout.components.len(), 1, "only the other component remains");
+        assert_eq!(
+            loadout.components.len(),
+            1,
+            "only the other component remains"
+        );
         assert!(loadout.unslot(5).is_none());
     }
 
     #[test]
     fn empty_frame_accepts_nothing() {
         let mut loadout = Loadout::default();
-        let err = loadout.slot(&FrameDef::default(), "gems", stack(1)).expect_err("no slots");
+        let err = loadout
+            .slot(&FrameDef::default(), "gems", stack(1))
+            .expect_err("no slots");
         assert!(err.contains("no gems"));
     }
 
     #[test]
     fn registry_loads_frames_and_components_from_a_mod_dir() {
-        let dir = std::env::temp_dir().join(format!(
-            "wildforge-equipment-{}",
-            std::process::id()
-        ));
+        let dir = std::env::temp_dir().join(format!("wildforge-equipment-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         let mod_dir = dir.join("gear");
         std::fs::create_dir_all(&mod_dir).unwrap();
@@ -282,8 +291,12 @@ frame = { slots = [ { type = "gems", max = 0 } ] }
         let frame_def = reg.item(frame_id).frame.clone().expect("frame def");
         assert_eq!(frame_def.max_for("gems"), 2);
         assert_eq!(reg.item(component_id).component.as_deref(), Some("gems"));
-                assert_eq!(reg.item(frame_id).max_stack, 1, "frames are one_only");
-        assert_eq!(reg.item(component_id).max_stack, 1, "components are one_only");
+        assert_eq!(reg.item(frame_id).max_stack, 1, "frames are one_only");
+        assert_eq!(
+            reg.item(component_id).max_stack,
+            1,
+            "components are one_only"
+        );
         assert!(
             reg.mods
                 .iter()

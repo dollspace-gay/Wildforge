@@ -643,11 +643,7 @@ impl World {
         let Some(BlockEntity::Depot(d)) = self.block_entity_at(&pos) else {
             return None;
         };
-        let def = self
-            .reg
-            .settlements
-            .iter()
-            .find(|s| s.id == d.settlement)?;
+        let def = self.reg.settlements.iter().find(|s| s.id == d.settlement)?;
         let need = def.needs.iter().find(|need| need.item == item)?;
         // Staged stock counts against the appetite: a depot full of iron
         // has no more use for iron.
@@ -758,19 +754,16 @@ impl World {
                     return None;
                 };
                 let handler = m.kind.handler(&self.reg)?;
-                (handler.has_fire() && m.lit)
-                    .then(|| pos.surface())
+                (handler.has_fire() && m.lit).then(|| pos.surface())
             })
             .collect();
-        let amt =
-            step * Self::INDUSTRIAL_IRE_PER_SEC * lit.len() as f32;
+        let amt = step * Self::INDUSTRIAL_IRE_PER_SEC * lit.len() as f32;
         if amt <= 0.0 {
             return;
         }
         // One charge per distinct region cell: a workshop row smokes as
         // one chimney, not four.
-        let mut cells: std::collections::HashSet<RegionCell> =
-            std::collections::HashSet::new();
+        let mut cells: std::collections::HashSet<RegionCell> = std::collections::HashSet::new();
         for surface in &lit {
             cells.insert(RegionCell::from_surface(*surface));
         }

@@ -14,7 +14,13 @@ pub(super) fn equipment_enabled(game: &Game) -> bool {
     if game.creative {
         return false;
     }
-    if !game.content.reg.items.iter().any(|item| item.frame.is_some()) {
+    if !game
+        .content
+        .reg
+        .items
+        .iter()
+        .any(|item| item.frame.is_some())
+    {
         return false;
     }
     game.server.world.ruleset().equipment
@@ -91,17 +97,11 @@ impl Game {
         };
         let reg = &self.content.reg;
         let Some(slot_type) = reg.item(held.item).component.clone() else {
-            return Err(format!(
-                "{} is not a component.",
-                reg.item(held.item).name
-            ));
+            return Err(format!("{} is not a component.", reg.item(held.item).name));
         };
         self.survival.loadouts[slot].slot(&frame, &slot_type, held)?;
         self.sfx(Sfx::Click);
-        self.toast(format!(
-            "Slotted {}.",
-            reg.item(held.item).label
-        ));
+        self.toast(format!("Slotted {}.", reg.item(held.item).label));
         Ok(())
     }
 
@@ -113,7 +113,9 @@ impl Game {
         let reg = self.content.reg.clone();
         let stack = {
             let loadout = &mut self.survival.loadouts[slot];
-            loadout.unslot(index).ok_or_else(|| "That slot is empty.".to_string())?
+            loadout
+                .unslot(index)
+                .ok_or_else(|| "That slot is empty.".to_string())?
         };
         let name = reg.item(stack.item).label.clone();
         let leftover = self.inventory.add_stack(&reg, stack);
@@ -246,8 +248,12 @@ impl Game {
                 else {
                     continue;
                 };
-                let component_stack = self.inventory.slots[component_slot].take().expect("just located");
-                if let Err(error) = self.survival.loadouts[i].slot(&frame, component_name, component_stack) {
+                let component_stack = self.inventory.slots[component_slot]
+                    .take()
+                    .expect("just located");
+                if let Err(error) =
+                    self.survival.loadouts[i].slot(&frame, component_name, component_stack)
+                {
                     self.toast(format!("Preset {}: {error}", index + 1));
                 }
             }
@@ -263,14 +269,24 @@ impl Game {
             self.window.inner_size().width as f32,
             self.window.inner_size().height as f32,
         );
-        (w / 2.0 - 430.0, h / 2.0 - 220.0 + i as f32 * 116.0, 220.0, 86.0)
+        (
+            w / 2.0 - 430.0,
+            h / 2.0 - 220.0 + i as f32 * 116.0,
+            220.0,
+            86.0,
+        )
     }
 
     pub(super) fn loadout_component_rect(&self, slot: usize, index: usize) -> (f32, f32, f32, f32) {
         let base = self.loadout_frame_rect(slot);
         let cols = 3usize;
         let (col, row) = (index % cols, index / cols);
-        (base.0 + base.2 + 16.0 + col as f32 * 58.0, base.1 + row as f32 * 58.0, 50.0, 50.0)
+        (
+            base.0 + base.2 + 16.0 + col as f32 * 58.0,
+            base.1 + row as f32 * 58.0,
+            50.0,
+            50.0,
+        )
     }
 
     pub(super) fn loadout_repair_rect(&self) -> (f32, f32, f32, f32) {
@@ -286,12 +302,7 @@ impl Game {
             self.window.inner_size().width as f32,
             self.window.inner_size().height as f32,
         );
-        (
-            w / 2.0 + 10.0 + index as f32 * 150.0,
-            200.0,
-            140.0,
-            34.0,
-        )
+        (w / 2.0 + 10.0 + index as f32 * 150.0, 200.0, 140.0, 34.0)
     }
 
     pub(super) fn loadout_preset_button_rect(&self, index: usize) -> (f32, f32, f32, f32) {

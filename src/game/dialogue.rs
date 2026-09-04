@@ -41,7 +41,8 @@ impl Game {
         };
         node.choices
             .iter()
-            .filter(|c| self.hook_visible(&c.condition, mob_id, node_id))            .cloned()
+            .filter(|c| self.hook_visible(&c.condition, mob_id, node_id))
+            .cloned()
             .collect()
     }
 
@@ -207,7 +208,10 @@ impl Game {
         let Some(objective) = q.objectives.iter().find(|o| o.key == *key) else {
             return;
         };
-        let at = self.quest_progress(quest_id, key).saturating_add(n).min(objective.count);
+        let at = self
+            .quest_progress(quest_id, key)
+            .saturating_add(n)
+            .min(objective.count);
         self.write_player_kv(&format!("progress_{quest_id}/{key}"), at.to_string());
         let complete = q
             .objectives

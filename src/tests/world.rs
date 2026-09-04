@@ -1425,8 +1425,15 @@ fn world_meta_roundtrip_and_legacy_refusal() {
     let mut meta = load_world_meta(&dir).unwrap().unwrap();
     assert_eq!(meta.camera, "first", "default camera is first-person");
     meta.camera = "orbit".into();
-    crate::world::write_world_meta_full(&dir, meta.seed, &meta.mode, meta.ire, meta.day, &meta.camera)
-        .unwrap();
+    crate::world::write_world_meta_full(
+        &dir,
+        meta.seed,
+        &meta.mode,
+        meta.ire,
+        meta.day,
+        &meta.camera,
+    )
+    .unwrap();
     assert_eq!(
         load_world_meta(&dir).unwrap().unwrap().camera,
         "orbit",
@@ -4534,10 +4541,7 @@ fn industrial_machines_and_buildings_feed_regional_ire() {
         w.tick_entities(1.0);
     }
     let fed = w.ire - before;
-    assert!(
-        fed > 0.5,
-        "a minute of firing feeds regional ire: {fed}"
-    );
+    assert!(fed > 0.5, "a minute of firing feeds regional ire: {fed}");
 }
 
 #[test]

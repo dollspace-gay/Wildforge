@@ -28,7 +28,9 @@ impl Game {
                 self.input.keys.space = pressed;
             }
             KeyCode::ControlLeft | KeyCode::ControlRight => self.input.keys.sprint = pressed,
-            KeyCode::AltLeft | KeyCode::AltRight if pressed && self.ui_state.screen == Screen::Playing => {
+            KeyCode::AltLeft | KeyCode::AltRight
+                if pressed && self.ui_state.screen == Screen::Playing =>
+            {
                 self.input.dodge_pressed = true;
             }
             KeyCode::KeyF => self.input.keys.block = pressed,
@@ -146,8 +148,7 @@ impl Game {
                         if self.camera.mode == CameraMode::First {
                             // Enter the orbit view behind where the player is
                             // aiming, at a slight three-quarter angle.
-                            self.camera.orbit_yaw =
-                                self.camera.yaw + std::f32::consts::PI + 0.4;
+                            self.camera.orbit_yaw = self.camera.yaw + std::f32::consts::PI + 0.4;
                         }
                         self.camera.mode = match self.camera.mode {
                             CameraMode::First => CameraMode::Third,

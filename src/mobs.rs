@@ -732,7 +732,10 @@ impl Mob {
             && def.guards
             && !def.hostile
             && self.quarry.is_some()
-            && !matches!(self.state, MobState::Stalk | MobState::Hunt | MobState::Flee)
+            && !matches!(
+                self.state,
+                MobState::Stalk | MobState::Hunt | MobState::Flee
+            )
         {
             self.state = MobState::Stalk;
             self.state_timer = 30.0;
@@ -1097,7 +1100,13 @@ impl Mob {
             self.attack_cds = def
                 .attacks
                 .iter()
-                .map(|a| if a.kind == AttackKind::Projectile { 1.0 } else { 0.0 })
+                .map(|a| {
+                    if a.kind == AttackKind::Projectile {
+                        1.0
+                    } else {
+                        0.0
+                    }
+                })
                 .collect();
         }
         // A dash in flight: move straight along the frozen line.
@@ -1109,8 +1118,7 @@ impl Mob {
                 // The charge lands where the dash ends: only a target the
                 // line still touches takes its hit.
                 if dist < def.half_w + 1.0
-                    && let Some(atk) =
-                        def.attacks.iter().find(|a| a.kind == AttackKind::Charge)
+                    && let Some(atk) = def.attacks.iter().find(|a| a.kind == AttackKind::Charge)
                 {
                     events.push(MobEvent::HitPlayer {
                         who,
@@ -1154,31 +1162,30 @@ impl Mob {
                     if dist < atk.range
                         && let Some(pr) = &atk.projectile
                     {
-                            self.attack_cds[i] = atk.cooldown;
-                            let muzzle = self
-                                .pos
-                                .translated(Vec3::new(0.0, def.height * 0.7, 0.0))
-                                .expect("mob muzzle stays in its chart")
-                                .pos;
-                            let aim = (muzzle.local_delta_to(target)
-                                + Vec3::new(0.0, 0.9, 0.0))
+                        self.attack_cds[i] = atk.cooldown;
+                        let muzzle = self
+                            .pos
+                            .translated(Vec3::new(0.0, def.height * 0.7, 0.0))
+                            .expect("mob muzzle stays in its chart")
+                            .pos;
+                        let aim = (muzzle.local_delta_to(target) + Vec3::new(0.0, 0.9, 0.0))
                             .normalize_or_zero();
-                            events.push(MobEvent::Cast(Projectile {
-                                stable_id: 0,
-                                pos: muzzle
-                                    .translated(aim * 0.6)
-                                    .expect("bolt starts beside its caster")
-                                    .pos,
-                                vel: aim * pr.speed,
-                                tile: pr.tile,
-                                damage: pr.damage,
-                                damage_type: pr.damage_type.clone(),
-                                age: 0.0,
-                                from_player: false,
-                                drop_item: None,
-                                preparation_payload: None,
-                                owner: 0,
-                            }));
+                        events.push(MobEvent::Cast(Projectile {
+                            stable_id: 0,
+                            pos: muzzle
+                                .translated(aim * 0.6)
+                                .expect("bolt starts beside its caster")
+                                .pos,
+                            vel: aim * pr.speed,
+                            tile: pr.tile,
+                            damage: pr.damage,
+                            damage_type: pr.damage_type.clone(),
+                            age: 0.0,
+                            from_player: false,
+                            drop_item: None,
+                            preparation_payload: None,
+                            owner: 0,
+                        }));
                     }
                 }
                 AttackKind::Charge => {
@@ -1203,10 +1210,7 @@ impl Mob {
         }
         // Movement: casters hold their band; everyone else closes in.
         // A charging mob keeps closing until the wind-up roots it.
-        let caster = def
-            .attacks
-            .iter()
-            .any(|a| a.kind == AttackKind::Projectile);
+        let caster = def.attacks.iter().any(|a| a.kind == AttackKind::Projectile);
         // E9: a sniper keeps its authored band (a caster with its own
         // parameters outranks the generic 11/5 band).
         if def.behavior == BehaviorArchetype::Sniper
@@ -1312,7 +1316,13 @@ impl Mob {
 
     /// A support's heal pulse (E9): every `interval` seconds, while it is
     /// not fleeing, it heals its hostile allies within `radius`.
-    fn support_pulse(&mut self, world: &World, def: &AnimalDef, dt: f32, events: &mut Vec<MobEvent>) {
+    fn support_pulse(
+        &mut self,
+        world: &World,
+        def: &AnimalDef,
+        dt: f32,
+        events: &mut Vec<MobEvent>,
+    ) {
         let Some(support) = def.archetype.support.as_ref() else {
             return;
         };
@@ -1397,7 +1407,10 @@ impl Mob {
         if self.build_cd > 0.0 || self.built_count >= builder.cap {
             return;
         }
-        if matches!(self.state, MobState::Flee | MobState::Stalk | MobState::Hunt) {
+        if matches!(
+            self.state,
+            MobState::Flee | MobState::Stalk | MobState::Hunt
+        ) {
             return;
         }
         // Templates live on the world registry; if the authored name is

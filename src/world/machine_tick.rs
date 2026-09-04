@@ -848,14 +848,14 @@ impl World {
 
 pub(super) fn tick_bloomery_machines<B: BlockStore>(store: &mut B, dt: f32) {
     let keys: Vec<B::Pos> = store
-            .block_entities()
-            .iter()
-            .filter(|(_, e)| {
-                matches!(e, BlockEntity::Multiblock(m)
+        .block_entities()
+        .iter()
+        .filter(|(_, e)| {
+            matches!(e, BlockEntity::Multiblock(m)
                     if m.kind.handler(store.reg()) == Some(MachineHandler::Bloomery) && m.lit)
-            })
-            .map(|(k, _)| *k)
-            .collect();
+        })
+        .map(|(k, _)| *k)
+        .collect();
     for pos in keys {
         let Some(BlockEntity::Multiblock(mut b)) = store.block_entities_mut().remove(&pos) else {
             continue;
@@ -988,14 +988,14 @@ pub(super) fn tick_bloomery_machines<B: BlockStore>(store: &mut B, dt: f32) {
 
 pub(super) fn tick_forge_machines<B: BlockStore>(store: &mut B, dt: f32) {
     let keys: Vec<B::Pos> = store
-            .block_entities()
-            .iter()
-            .filter(|(_, e)| {
-                matches!(e, BlockEntity::Multiblock(m)
+        .block_entities()
+        .iter()
+        .filter(|(_, e)| {
+            matches!(e, BlockEntity::Multiblock(m)
                     if m.kind.handler(store.reg()) == Some(MachineHandler::Forge) && m.lit)
-            })
-            .map(|(k, _)| *k)
-            .collect();
+        })
+        .map(|(k, _)| *k)
+        .collect();
     for pos in keys {
         let Some(BlockEntity::Multiblock(mut f)) = store.block_entities_mut().remove(&pos) else {
             continue;
@@ -1206,14 +1206,14 @@ pub(super) fn tick_separator_machines<B: BlockStore>(store: &mut B, dt: f32) {
 
 pub(super) fn tick_kiln_machines<B: BlockStore>(store: &mut B, dt: f32) {
     let keys: Vec<B::Pos> = store
-            .block_entities()
-            .iter()
-            .filter(|(_, e)| {
-                matches!(e, BlockEntity::Multiblock(m)
+        .block_entities()
+        .iter()
+        .filter(|(_, e)| {
+            matches!(e, BlockEntity::Multiblock(m)
                     if m.kind.handler(store.reg()) == Some(MachineHandler::Kiln) && m.lit)
-            })
-            .map(|(k, _)| *k)
-            .collect();
+        })
+        .map(|(k, _)| *k)
+        .collect();
     for pos in keys {
         let Some(BlockEntity::Multiblock(mut k)) = store.block_entities_mut().remove(&pos) else {
             continue;

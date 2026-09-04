@@ -456,7 +456,10 @@ fn belt_feeds_a_machine_mouth_and_backpressures_when_full() {
             .any(|s| s.as_ref().is_some_and(|s| s.item == iron)),
         "the first belt-fed ingot landed in a charge slot"
     );
-    assert!(w.pending_drops().is_empty(), "no loose drop while it accepts");
+    assert!(
+        w.pending_drops().is_empty(),
+        "no loose drop while it accepts"
+    );
     // Feed three more distinct ingots so all four charge slots fill (same
     // items would merge into one slot, which is fine but doesn't fill it).
     for name in ["base:copper_ingot", "base:gold_ingot", "base:silver_ingot"] {

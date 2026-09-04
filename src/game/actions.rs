@@ -1243,8 +1243,7 @@ impl Game {
                         // be mined open. The world refuses anyway (backstop);
                         // here we surface the reason as a toast instead of
                         // letting the swing hit the None path.
-                        let gate_blocked = if let Some(gate) =
-                            self.server.world.gate_at(target)
+                        let gate_blocked = if let Some(gate) = self.server.world.gate_at(target)
                             && self
                                 .content
                                 .reg
@@ -1930,9 +1929,7 @@ impl Game {
                     self.set_screen(Screen::Furnace(h.block));
                     return;
                 }
-                Some("rail_switch") | Some("belt_switch")
-                    if self.input.action_cooldown <= 0.0 =>
-                {
+                Some("rail_switch") | Some("belt_switch") if self.input.action_cooldown <= 0.0 => {
                     self.input.action_cooldown = 0.25;
                     self.input.right_held = false;
                     if let Some(rc) = &self.multiplayer.remote {
@@ -1991,9 +1988,8 @@ impl Game {
                                 .or_default()
                                 .entry(rep_key)
                                 .and_modify(|current: &mut String| {
-                                    *current = (current.parse::<u32>().unwrap_or(0)
-                                        + rep)
-                                        .to_string();
+                                    *current =
+                                        (current.parse::<u32>().unwrap_or(0) + rep).to_string();
                                 })
                                 .or_insert_with(|| rep.to_string());
                             self.toast(format!(
@@ -2029,14 +2025,13 @@ impl Game {
                     self.input.right_held = false;
                     let name = s.trim_start_matches("dungeon_entry:").to_string();
                     if let Some(rc) = &self.multiplayer.remote {
-                        rc.client.send(&net::C2S::DungeonUse { pos: h.block, kind: 0 });
+                        rc.client.send(&net::C2S::DungeonUse {
+                            pos: h.block,
+                            kind: 0,
+                        });
                         return;
                     }
-                    match self
-                        .server
-                        .world
-                        .enter_dungeon(0, self.player.pos, &name)
-                    {
+                    match self.server.world.enter_dungeon(0, self.player.pos, &name) {
                         Some(spawn) => {
                             self.player = Player::new_at(spawn);
                             self.toast("The dark takes you. The door is behind you.".to_string());
@@ -2049,7 +2044,10 @@ impl Game {
                     self.input.action_cooldown = 0.5;
                     self.input.right_held = false;
                     if let Some(rc) = &self.multiplayer.remote {
-                        rc.client.send(&net::C2S::DungeonUse { pos: h.block, kind: 1 });
+                        rc.client.send(&net::C2S::DungeonUse {
+                            pos: h.block,
+                            kind: 1,
+                        });
                         return;
                     }
                     match self.server.world.exit_dungeon(0, self.player.pos) {
@@ -2061,13 +2059,14 @@ impl Game {
                     }
                     return;
                 }
-                Some("dungeon_checkpoint")
-                    if self.input.action_cooldown <= 0.0 =>
-                {
+                Some("dungeon_checkpoint") if self.input.action_cooldown <= 0.0 => {
                     self.input.action_cooldown = 0.5;
                     self.input.right_held = false;
                     if let Some(rc) = &self.multiplayer.remote {
-                        rc.client.send(&net::C2S::DungeonUse { pos: h.block, kind: 2 });
+                        rc.client.send(&net::C2S::DungeonUse {
+                            pos: h.block,
+                            kind: 2,
+                        });
                         return;
                     }
                     self.server.world.set_dungeon_checkpoint(self.player.pos);
@@ -2460,7 +2459,9 @@ impl Game {
                     // Powder and fuel in by hand; bare hands take the
                     // split back out (smoker rules, no screen).
                     self.input.action_cooldown = 0.3;
-                    let kind = reg.machine_by_interaction(interaction).expect("resolved above");
+                    let kind = reg
+                        .machine_by_interaction(interaction)
+                        .expect("resolved above");
                     let powder = reg.item_id("base:rare_earth_powder");
                     // Separator persistence stores this bed as a count and
                     // returns charcoal on dismantling, so admitting arbitrary
@@ -2601,15 +2602,13 @@ impl Game {
                         rc.client.send(&net::C2S::OpenContainer { pos: h.block });
                         return;
                     }
-                    let kind = reg.machine_by_interaction(interaction).expect("resolved above");
+                    let kind = reg
+                        .machine_by_interaction(interaction)
+                        .expect("resolved above");
                     let screen = match reg.machine(kind).map(|def| def.handler) {
-                        Some(crate::machines::MachineHandler::Kiln) => {
-                            Screen::Kiln(h.block)
-                        }
+                        Some(crate::machines::MachineHandler::Kiln) => Screen::Kiln(h.block),
                         Some(crate::machines::MachineHandler::Bloomery)
-                        | Some(crate::machines::MachineHandler::Forge) => {
-                            Screen::Bloomery(h.block)
-                        }
+                        | Some(crate::machines::MachineHandler::Forge) => Screen::Bloomery(h.block),
                         _ => return,
                     };
                     let default = world::BlockEntity::Multiblock(world::MachineInstance {
@@ -2622,7 +2621,8 @@ impl Game {
                 }
                 Some(interaction)
                     if reg.machine_by_interaction(interaction).is_some_and(|kind| {
-                        reg.machine(kind).is_some_and(|def| def.handler.is_station())
+                        reg.machine(kind)
+                            .is_some_and(|def| def.handler.is_station())
                     }) =>
                 {
                     // A recipe-list station (the workbench pattern): the
@@ -2633,7 +2633,9 @@ impl Game {
                         rc.client.send(&net::C2S::OpenContainer { pos: h.block });
                         return;
                     }
-                    let kind = reg.machine_by_interaction(interaction).expect("resolved above");
+                    let kind = reg
+                        .machine_by_interaction(interaction)
+                        .expect("resolved above");
                     let default = world::BlockEntity::Multiblock(world::MachineInstance {
                         kind,
                         ..Default::default()
@@ -2740,10 +2742,10 @@ impl Game {
                             if let Some(r) = &self.multiplayer.remote {
                                 r.client.send(&net::C2S::Place { pos });
                             }
-self.input.action_cooldown = 0.22;
-                        self.sfx(Sfx::Place);
-                        self.grant_xp("build");
-                    }
+                            self.input.action_cooldown = 0.22;
+                            self.sfx(Sfx::Place);
+                            self.grant_xp("build");
+                        }
                         return;
                     }
                     if self.inventory.slots[self.input.hotbar_sel].is_none() && !self.creative {

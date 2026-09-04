@@ -58,11 +58,7 @@ impl World {
             .assemblies
             .iter()
             .position(|a| a.name == assembly_name && a.dungeon.is_some())?;
-        if let Some(run) = self
-            .dungeon_runs
-            .iter_mut()
-            .find(|r| r.assembly == idx)
-        {
+        if let Some(run) = self.dungeon_runs.iter_mut().find(|r| r.assembly == idx) {
             let spawn = run.spawn;
             run.returns.insert(player_id, player_pos);
             return Some(spawn);
@@ -71,9 +67,11 @@ impl World {
         let slot = Self::free_slot(&self.dungeon_runs)?;
         let base_u = (slot % u32::from(SLOTS_PER_ROW)) * u32::from(SLOT_CHUNKS);
         let base_v = (slot / u32::from(SLOTS_PER_ROW)) * u32::from(SLOT_CHUNKS);
-        let anchor =
-            ChunkPos::new(Face::Deep, base_u as u16, base_v as u16).ok()?;
-        self.run_seed = self.run_seed.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+        let anchor = ChunkPos::new(Face::Deep, base_u as u16, base_v as u16).ok()?;
+        self.run_seed = self
+            .run_seed
+            .wrapping_mul(1_664_525)
+            .wrapping_add(1_013_904_223);
         let seed = self.seed ^ self.run_seed;
         // Void chunks generate instantly, so stamping is synchronous: the
         // rooms exist before this call returns and nobody falls through.
@@ -86,14 +84,16 @@ impl World {
         // garrison automatically (capability E9). Unknown kinds are
         // silently skipped, exactly like worldgen marker resolution.
         #[cfg(test)]
-        eprintln!("diag-enter: markers={} first={:?}", markers.len(), markers.first().map(|m| m.kind.clone()));
+        eprintln!(
+            "diag-enter: markers={} first={:?}",
+            markers.len(),
+            markers.first().map(|m| m.kind.clone())
+        );
         for marker in &markers {
             if let Some(nest_name) = marker.kind.strip_prefix("spawn:nest:") {
                 let full = format!("belt_quest:{nest_name}");
                 let _ = &full;
-                if let Some(nest) =
-                    self.reg.nests.iter().find(|n| n.id.ends_with(nest_name))
-                {
+                if let Some(nest) = self.reg.nests.iter().find(|n| n.id.ends_with(nest_name)) {
                     self.set_block_at(marker.at, nest.block);
                 }
             }

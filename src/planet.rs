@@ -932,14 +932,12 @@ impl EntityPos {
             // The Deep's borders are walls (capability E10): drifting past
             // one clamps back inside instead of wrapping onto the cube.
             if self.face.is_deep() {
-                self.x = self.x.clamp(
-                    -f32::from(FACE_BLOCKS) * 0.5,
-                    f32::from(FACE_BLOCKS) * 0.5,
-                );
-                self.z = self.z.clamp(
-                    -f32::from(FACE_BLOCKS) * 0.5,
-                    f32::from(FACE_BLOCKS) * 0.5,
-                );
+                self.x = self
+                    .x
+                    .clamp(-f32::from(FACE_BLOCKS) * 0.5, f32::from(FACE_BLOCKS) * 0.5);
+                self.z = self
+                    .z
+                    .clamp(-f32::from(FACE_BLOCKS) * 0.5, f32::from(FACE_BLOCKS) * 0.5);
                 return Ok(CanonicalEntity {
                     pos: self,
                     rotation,

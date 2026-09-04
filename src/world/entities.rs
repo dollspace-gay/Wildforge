@@ -901,7 +901,8 @@ impl World {
                     });
                 }
             }
-            self.block_entities.insert(dt_ent.pos, BlockEntity::Depot(state));
+            self.block_entities
+                .insert(dt_ent.pos, BlockEntity::Depot(state));
         }
     }
 

@@ -1102,7 +1102,9 @@ impl World {
                     if id == m.id {
                         continue;
                     }
-                    let Some(sd) = reg.animals.get(sp) else { continue };
+                    let Some(sd) = reg.animals.get(sp) else {
+                        continue;
+                    };
                     if !sd.hostile {
                         continue;
                     }
@@ -1907,13 +1909,7 @@ impl World {
     /// Deliberately INDEPENDENT of `hostile_spawns` and of any country
     /// heart: a mod mode can silence the ring yet keep its dens alive, and
     /// the Deep has no hearts but its dungeons still need populations.
-    pub fn tick_nest_spawns(
-        &mut self,
-        player: EntityPos,
-        daylight: f32,
-        dt: f32,
-        rng: &mut u32,
-    ) {
+    pub fn tick_nest_spawns(&mut self, player: EntityPos, daylight: f32, dt: f32, rng: &mut u32) {
         if !self.ruleset().nest_spawns {
             return;
         }
@@ -1982,7 +1978,12 @@ impl World {
                 continue;
             }
             let surface_y = self.surface_height_at(surface);
-            let at = BlockPos::new(surface.face(), surface.u(), (surface_y + 1) as u8, surface.v());
+            let at = BlockPos::new(
+                surface.face(),
+                surface.u(),
+                (surface_y + 1) as u8,
+                surface.v(),
+            );
             let spawned = if let Ok(at) = at {
                 let (bl, sl) = self.light_at_pos(at);
                 let eff = (bl as f32).max(sl as f32 * daylight);

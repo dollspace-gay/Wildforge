@@ -211,16 +211,18 @@ fn build(modid: &str, machine: &RawMachine) -> Result<MachineDef, String> {
         return Err(format!("{id}: machine mouth block must not be empty"));
     }
     let mouth_lit = machine.mouth_lit.as_deref().map(|lit| qualify(modid, lit));
-    if machine.mouth_lit.as_deref().is_some_and(|lit| lit.is_empty()) {
+    if machine
+        .mouth_lit
+        .as_deref()
+        .is_some_and(|lit| lit.is_empty())
+    {
         return Err(format!("{id}: mouth_lit block must not be empty"));
     }
     if machine.fire_secs < 0.0 {
         return Err(format!("{id}: fire_secs must not be negative"));
     }
     if machine.charge_slots > 4 || machine.fuel_slots > 4 {
-        return Err(format!(
-            "{id}: charge_slots and fuel_slots are capped at 4"
-        ));
+        return Err(format!("{id}: charge_slots and fuel_slots are capped at 4"));
     }
     if machine.reagent_slots > 1 {
         return Err(format!("{id}: reagent_slots must be 0 or 1"));
@@ -328,16 +330,26 @@ mod tests {
     #[test]
     fn duplicate_ids_fail() {
         let raws = vec![
-            ("base".to_string(), RawMachineToml {
-                schema_version: None,
-                machine: vec![raw("forge", "forge", "base:forge")],
-            }),
-            ("gems".to_string(), RawMachineToml {
-                schema_version: None,
-                machine: vec![raw("base:forge", "forge", "base:forge")],
-            }),
+            (
+                "base".to_string(),
+                RawMachineToml {
+                    schema_version: None,
+                    machine: vec![raw("forge", "forge", "base:forge")],
+                },
+            ),
+            (
+                "gems".to_string(),
+                RawMachineToml {
+                    schema_version: None,
+                    machine: vec![raw("base:forge", "forge", "base:forge")],
+                },
+            ),
         ];
         let errors = resolve(&raws).expect_err("duplicate id must fail");
-        assert!(errors.iter().any(|e| e.contains("duplicate machine identity")));
+        assert!(
+            errors
+                .iter()
+                .any(|e| e.contains("duplicate machine identity"))
+        );
     }
 }

@@ -115,9 +115,7 @@ fn every_shipped_mod_screen_resolves_and_binds_to_its_block() {
     );
     let block = reg.block_id("gems:gem_altar").expect("altar block exists");
     assert_eq!(
-        reg.screen_by_interaction(
-            reg.block(block).interaction.as_deref().unwrap_or("")
-        ),
+        reg.screen_by_interaction(reg.block(block).interaction.as_deref().unwrap_or("")),
         Some(idx),
         "the altar block's interaction opens the altar screen"
     );
@@ -242,7 +240,10 @@ mult_permille = 900
         .find(|m| m.kind == crate::stats::StatKind::Carry)
         .expect("carry modifier");
     assert_eq!(carry.flat, 128.0);
-    assert_eq!(carry.mult_permille, 1_000, "flat-only keeps the neutral mult");
+    assert_eq!(
+        carry.mult_permille, 1_000,
+        "flat-only keeps the neutral mult"
+    );
     let range = stats
         .iter()
         .find(|m| m.kind == crate::stats::StatKind::BuildRange)
@@ -251,7 +252,11 @@ mult_permille = 900
     assert_eq!(range.flat, 0.0, "mult-only keeps a neutral flat");
     // Un-declared items keep the lightweight default.
     assert_eq!(reg.item(reg.item_id("base:stick").unwrap()).carry_weight, 1);
-    assert!(reg.item(reg.item_id("base:stick").unwrap()).stats.is_empty());
+    assert!(
+        reg.item(reg.item_id("base:stick").unwrap())
+            .stats
+            .is_empty()
+    );
 }
 
 #[test]
@@ -1272,8 +1277,7 @@ blueprint = "heavy_token"
         invalid
             .material_errors
             .iter()
-            .any(|e| e.contains("base:iron_ingot")
-                && e.contains("not material-balanced")),
+            .any(|e| e.contains("base:iron_ingot") && e.contains("not material-balanced")),
         "blueprint input must be accounted: {:?}",
         invalid.material_errors
     );
@@ -1323,14 +1327,11 @@ fn rep_quest_reward_resolves_settlement_and_missing_target_fails() {
         .find(|q| q.id == "base:elder_honor")
         .expect("base rep quest registers");
     assert!(
-        quest
-            .rewards
-            .iter()
-            .any(|r| matches!(
-                r,
-                crate::registry::QuestReward::Reputation(settlement, 3)
-                    if settlement == "base:elder_haven"
-            )),
+        quest.rewards.iter().any(|r| matches!(
+            r,
+            crate::registry::QuestReward::Reputation(settlement, 3)
+                if settlement == "base:elder_haven"
+        )),
         "elder_honor grants 3 reputation to elder_haven"
     );
 
@@ -1361,8 +1362,7 @@ rewards = [{ add_reputation = "no_such_place", rep_amount = 1 }]
         invalid
             .material_errors
             .iter()
-            .any(|e| e.contains("settlequest:wandering_favor")
-                && e.contains("unknown settlement")),
+            .any(|e| e.contains("settlequest:wandering_favor") && e.contains("unknown settlement")),
         "rep reward for unknown settlement fails: {:?}",
         invalid.material_errors
     );
@@ -2408,12 +2408,18 @@ fn belt_quest_skill_tree_resolves_with_authored_breadth() {
     );
     // Capability C6: six visible branches, ~90 authored nodes, per-tier
     // costs 1..4. The hidden Temporal branch arrives with Act 3 (C9).
-    let raw_text = std::fs::read_to_string(mods.join("belt_quest").join("skills.toml")).expect("file");
+    let raw_text =
+        std::fs::read_to_string(mods.join("belt_quest").join("skills.toml")).expect("file");
     match crate::skills::parse_skills(&raw_text, "belt_quest") {
         Ok(raw) => eprintln!("parse ok: {} branches", raw.branch.len()),
         Err(e) => eprintln!("parse ERR: {e}"),
     }
-    eprintln!("skills diag: branches={} nodes={} errs={:?}", reg.skills.branches.len(), reg.skills.nodes.len(), reg.material_errors);
+    eprintln!(
+        "skills diag: branches={} nodes={} errs={:?}",
+        reg.skills.branches.len(),
+        reg.skills.nodes.len(),
+        reg.material_errors
+    );
     let tree = &reg.skills;
     // The registry merges every mod's tree; scope assertions to belt_quest.
     let bq_branches = tree
@@ -2427,9 +2433,15 @@ fn belt_quest_skill_tree_resolves_with_authored_breadth() {
         .iter()
         .filter(|n| n.branch.starts_with("belt_quest:"))
         .collect();
-    assert!(bq_nodes.len() >= 85, "authored breadth: {} nodes", bq_nodes.len());
     assert!(
-        bq_nodes.iter().any(|n| n.branch == "belt_quest:warrior" && n.tier == 4),
+        bq_nodes.len() >= 85,
+        "authored breadth: {} nodes",
+        bq_nodes.len()
+    );
+    assert!(
+        bq_nodes
+            .iter()
+            .any(|n| n.branch == "belt_quest:warrior" && n.tier == 4),
         "tier-4 caps each branch"
     );
     // XP sources stay the closed engine set despite two mods declaring them.

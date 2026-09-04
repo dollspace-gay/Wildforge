@@ -128,6 +128,10 @@ Python runner applies that workaround only when `sccache` cannot be found.
 
 ## Verification
 
+This section records the initial verification at `7e79e15`. The subsequent
+[CI repair](ci-repair.md) supplies the missing content, fixes formatting, and
+restores the required runner checks.
+
 Executed on Linux with Rust 1.96.0, using the wrapper override described above.
 Command output summaries are preserved in
 [validation.txt](evidence/gameplay/validation.txt).

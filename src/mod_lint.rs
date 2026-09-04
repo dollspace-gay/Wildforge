@@ -61,9 +61,7 @@ pub fn qualify_mods(mods_dir: &Path) -> ModLintReport {
     };
     for m in &reg.mods {
         if let Some(error) = &m.error {
-            report
-                .failures
-                .push(format!("mod {}: {error}", m.id));
+            report.failures.push(format!("mod {}: {error}", m.id));
         }
     }
     report.failures.extend(reg.material_errors.iter().cloned());
@@ -101,10 +99,7 @@ fn script_errors(reg: &Registry) -> Vec<String> {
         .filter_map(|m| m.path.clone().map(|p| (m.id.clone(), p)))
         .collect();
     host.load_mods(&dirs);
-    host.mods
-        .iter()
-        .filter_map(|m| m.error.clone())
-        .collect()
+    host.mods.iter().filter_map(|m| m.error.clone()).collect()
 }
 
 /// The survival content graph: the set of item ids a solo player can reach
@@ -234,15 +229,17 @@ pub fn obtainable_items(reg: &Registry) -> HashSet<u16> {
         .into_iter()
         .all(|name| reg.item_id(name).is_some_and(|item| ok.contains(&item.0)));
         let component_roster_ready =
-            crate::implements::ComponentRole::ALL.into_iter().all(|role| {
-                reg.items.iter().enumerate().any(|(index, item)| {
-                    ok.contains(&(index as u16))
-                        && item
-                            .wand_component
-                            .as_ref()
-                            .is_some_and(|component| component.role == role)
-                })
-            });
+            crate::implements::ComponentRole::ALL
+                .into_iter()
+                .all(|role| {
+                    reg.items.iter().enumerate().any(|(index, item)| {
+                        ok.contains(&(index as u16))
+                            && item
+                                .wand_component
+                                .as_ref()
+                                .is_some_and(|component| component.role == role)
+                    })
+                });
         if frame_ready
             && component_roster_ready
             && let Some(wand) = reg.item_id("base:bound_wand")
@@ -254,9 +251,7 @@ pub fn obtainable_items(reg: &Registry) -> HashSet<u16> {
         let failable_implement = ["base:bound_wand", "base:charge_vessel"]
             .into_iter()
             .any(|name| reg.item_id(name).is_some_and(|item| ok.contains(&item.0)));
-        if failable_implement
-            && let Some(fragments) = reg.item_id("base:implement_fragment")
-        {
+        if failable_implement && let Some(fragments) = reg.item_id("base:implement_fragment") {
             grew |= ok.insert(fragments.0);
         }
         // Apothecary carriers and preparations are embodied station
@@ -492,16 +487,16 @@ fn content_errors(reg: &Registry) -> Vec<String> {
         if let Some(l) = &st.loot
             && !reg.loots.contains_key(l)
         {
-            out.push(format!("structure {} wants missing loot table {l}", st.name));
+            out.push(format!(
+                "structure {} wants missing loot table {l}",
+                st.name
+            ));
         }
         for layer in &st.layers {
             for row in layer {
                 for ch in row.chars() {
                     if !matches!(ch, '.' | '~' | 'C') && !st.palette.contains_key(&ch) {
-                        out.push(format!(
-                            "structure {} uses unmapped char '{ch}'",
-                            st.name
-                        ));
+                        out.push(format!("structure {} uses unmapped char '{ch}'", st.name));
                     }
                 }
             }
@@ -539,7 +534,10 @@ fn content_errors(reg: &Registry) -> Vec<String> {
             && a.rarity != u32::MAX
             && (a.biomes.is_empty() || !a.biomes.iter().all(|b| biomes.contains(&b.as_str())))
         {
-            out.push(format!("animal {} has invalid biomes {:?}", a.name, a.biomes));
+            out.push(format!(
+                "animal {} has invalid biomes {:?}",
+                a.name, a.biomes
+            ));
         }
     }
 
@@ -593,10 +591,7 @@ mod tests {
     /// A unique, per-test temp tree so parallel test runs never share
     /// registry state.
     fn mods_dir(label: &str) -> PathBuf {
-        std::env::temp_dir().join(format!(
-            "wildforge-mod-lint-{label}-{}",
-            std::process::id()
-        ))
+        std::env::temp_dir().join(format!("wildforge-mod-lint-{label}-{}", std::process::id()))
     }
 
     fn write_mod(label: &str, id: &str, files: &[(&str, &str)]) {
@@ -691,10 +686,7 @@ texture = "@stick"
             "scripter",
             &[
                 ("mod.toml", &base_mod_toml("scripter")),
-                (
-                    "main.rhai",
-                    "fn on_tick(dt) { this will not parse !!! }\n",
-                ),
+                ("main.rhai", "fn on_tick(dt) { this will not parse !!! }\n"),
             ],
         );
         let report = qualify_mods(&mods_dir("scripter"));
@@ -787,11 +779,7 @@ frame = { slots = [ { type = "gem", max = 0 } ] }
         );
         let report = qualify_mods(&mods_dir("frame-smith"));
         assert!(!report.is_qualified());
-        assert!(
-            report.render().contains("max 0"),
-            "{}",
-            report.render()
-        );
+        assert!(report.render().contains("max 0"), "{}", report.render());
         clean("frame-smith");
     }
 

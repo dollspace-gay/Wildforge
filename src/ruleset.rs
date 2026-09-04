@@ -181,7 +181,10 @@ mod tests {
         let m = mode("progression", Some("survival"), None, None, Some(true));
         r.apply_overrides(&m);
         assert!(r.skills);
-        assert!(r.hunger && r.pvp, "skills overlay leaves other toggles alone");
+        assert!(
+            r.hunger && r.pvp,
+            "skills overlay leaves other toggles alone"
+        );
     }
 
     #[test]
@@ -223,7 +226,13 @@ mod tests {
     #[test]
     fn overrides_layer_onto_survival() {
         let mut r = Ruleset::survival();
-        let m = mode("belt_quest", Some("survival"), Some(false), Some(false), Some(true));
+        let m = mode(
+            "belt_quest",
+            Some("survival"),
+            Some(false),
+            Some(false),
+            Some(true),
+        );
         r.apply_overrides(&m);
         assert!(!r.hunger && !r.pvp && r.skills);
         assert!(r.fall_damage && r.drowning && r.hostile_spawns);
@@ -250,10 +259,7 @@ mod tests {
 
     #[test]
     fn declared_mode_resolves_through_base_chain() {
-        let dir = std::env::temp_dir().join(format!(
-            "wildforge-ruleset-{}",
-            std::process::id()
-        ));
+        let dir = std::env::temp_dir().join(format!("wildforge-ruleset-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         let mod_dir = dir.join("rules");
         std::fs::create_dir_all(&mod_dir).unwrap();
@@ -296,10 +302,8 @@ hearts = false
     /// a wrathful night and accrues no ire for breaking blocks.
     #[test]
     fn declared_mode_disables_warden_spawns_and_ire() {
-        let dir = std::env::temp_dir().join(format!(
-            "wildforge-ruleset-sim-{}",
-            std::process::id()
-        ));
+        let dir =
+            std::env::temp_dir().join(format!("wildforge-ruleset-sim-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         let mod_dir = dir.join("rules");
         std::fs::create_dir_all(&mod_dir).unwrap();
@@ -321,7 +325,11 @@ ire = false
         .unwrap();
         let reg = std::sync::Arc::new(crate::registry::load(&dir));
         assert!(reg.material_errors.is_empty(), "{:?}", reg.material_errors);
-        let mut w = crate::world::World::new(42, std::path::PathBuf::from("saves/.ruleset-sim"), reg.clone());
+        let mut w = crate::world::World::new(
+            42,
+            std::path::PathBuf::from("saves/.ruleset-sim"),
+            reg.clone(),
+        );
         w.mode = "rules:calm".into();
         w.ire = 95.0; // wrathful
         for x in -2..=2 {
@@ -355,19 +363,18 @@ ire = false
             hostiles.is_empty(),
             "calm mode spawned {} wardens: {:?}",
             hostiles.len(),
-            hostiles.iter().map(|m| &reg.animals[m.species].name).collect::<Vec<_>>()
+            hostiles
+                .iter()
+                .map(|m| &reg.animals[m.species].name)
+                .collect::<Vec<_>>()
         );
         // Block breaking accrues no ire in a mode with ire off. Survival
         // would raise the regional ledger for breaking ore; calm leaves it.
         let surface = player.block().unwrap().surface();
         let h = w.surface_height_at(surface);
-        let at = crate::planet::BlockPos::new(
-            surface.face(),
-            surface.u(),
-            (h - 1) as u8,
-            surface.v(),
-        )
-        .expect("block pos");
+        let at =
+            crate::planet::BlockPos::new(surface.face(), surface.u(), (h - 1) as u8, surface.v())
+                .expect("block pos");
         w.set_block_at(at, reg.block_id("base:copper_ore").expect("ore"));
         let before = w.regional_ire_at_surface(surface);
         w.break_block_at(at, None, true, true);
@@ -378,10 +385,8 @@ ire = false
 
     #[test]
     fn reserved_and_broken_modes_are_reported() {
-        let dir = std::env::temp_dir().join(format!(
-            "wildforge-ruleset-bad-{}",
-            std::process::id()
-        ));
+        let dir =
+            std::env::temp_dir().join(format!("wildforge-ruleset-bad-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         let mod_dir = dir.join("rules");
         std::fs::create_dir_all(&mod_dir).unwrap();
@@ -408,7 +413,9 @@ pvp = false
         let reg = crate::registry::load(&dir);
         let errors = reg.material_errors.clone();
         assert!(
-            errors.iter().any(|e| e.contains("built-in mode id is reserved")),
+            errors
+                .iter()
+                .any(|e| e.contains("built-in mode id is reserved")),
             "reserved mode not reported: {errors:?}"
         );
         assert!(

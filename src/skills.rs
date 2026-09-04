@@ -18,9 +18,7 @@ pub const DEFAULT_TIER_GATE: u32 = 3;
 
 /// The canonical engine XP sources. Content declares `base`/`decay` for the
 /// ones it wants; an undeclared source grants nothing.
-pub const XP_SOURCES: [&str; 7] = [
-    "mine", "build", "craft", "smelt", "kill", "fish", "harvest",
-];
+pub const XP_SOURCES: [&str; 7] = ["mine", "build", "craft", "smelt", "kill", "fish", "harvest"];
 
 fn qualify(mod_id: &str, id: &str) -> String {
     if id.contains(':') {
@@ -116,8 +114,7 @@ pub struct RawNodeToml {
 /// XP source ids stay engine-global (`mine`, `build`, ...) — they are the
 /// closed set of hook points, not content namespaces.
 pub fn parse_skills(text: &str, mod_id: &str) -> Result<RawSkillToml, String> {
-    let mut raw: RawSkillToml =
-        toml::from_str(text).map_err(|e| format!("skills.toml: {e}"))?;
+    let mut raw: RawSkillToml = toml::from_str(text).map_err(|e| format!("skills.toml: {e}"))?;
     if raw.schema_version != 1 {
         return Err("skills.toml: schema_version must be 1".into());
     }
@@ -239,10 +236,7 @@ pub fn resolve(raws: &[RawSkillToml]) -> Result<SkillTree, Vec<String>> {
                     continue;
                 }
                 if node.tier == 0 || node.tier > 4 {
-                    errors.push(format!(
-                        "skills.toml: node {} tier must be 1..=4",
-                        node.id
-                    ));
+                    errors.push(format!("skills.toml: node {} tier must be 1..=4", node.id));
                 }
                 tree.nodes.push(SkillNodeDef {
                     id: node.id.clone(),
@@ -284,12 +278,7 @@ impl SkillTree {
     }
 
     /// Allocated nodes in `branch` of exactly `tier` (the tier-gate count).
-    pub fn allocated_in_branch_tier(
-        &self,
-        state: &SkillState,
-        branch: &str,
-        tier: u8,
-    ) -> u32 {
+    pub fn allocated_in_branch_tier(&self, state: &SkillState, branch: &str, tier: u8) -> u32 {
         state
             .allocated
             .iter()
@@ -618,7 +607,11 @@ flat = 128
         let mut state = SkillState::default();
         assert_eq!(tree.grant_xp(&mut state, "mine"), 0.0);
         assert!(tree.allocate(&mut state, "any").is_err());
-        assert!(tree.stats_for(&state).effective(crate::stats::StatKind::Health, 14.0) == 14.0);
+        assert!(
+            tree.stats_for(&state)
+                .effective(crate::stats::StatKind::Health, 14.0)
+                == 14.0
+        );
     }
 
     #[test]
@@ -657,10 +650,7 @@ tier = 9
 
     #[test]
     fn registry_loads_skills_from_a_mod_dir() {
-        let dir = std::env::temp_dir().join(format!(
-            "wildforge-skills-{}",
-            std::process::id()
-        ));
+        let dir = std::env::temp_dir().join(format!("wildforge-skills-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         let mod_dir = dir.join("progression");
         std::fs::create_dir_all(&mod_dir).unwrap();

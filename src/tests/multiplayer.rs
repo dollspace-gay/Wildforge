@@ -82,7 +82,10 @@ fn net_protocol_round_trips() {
         },
         C2S::Break { pos: bp(1, 2, 3) },
         C2S::Place { pos: bp(-9, 70, 4) },
-        C2S::AttackMob { id: 3, heavy: false },
+        C2S::AttackMob {
+            id: 3,
+            heavy: false,
+        },
         C2S::FeedMob { id: 12 },
         C2S::BrushBlock { pos: bp(4, 30, -2) },
         C2S::BeginObserve {
@@ -2338,15 +2341,9 @@ fn host_refuses_and_consumes_blueprint_gated_craft() {
     let addr: std::net::SocketAddr = format!("127.0.0.1:{}", sess.net.port).parse().unwrap();
     let identity = crate::identity::LocalIdentity::load_or_create(&tmp_dir("mp-blueprint-id"))
         .expect("test identity");
-    let mut client = crate::net::Client::connect(
-        addr,
-        "tester".into(),
-        sess.content_hash,
-        0,
-        &identity,
-        None,
-    )
-    .expect("connect");
+    let mut client =
+        crate::net::Client::connect(addr, "tester".into(), sess.content_hash, 0, &identity, None)
+            .expect("connect");
 
     let mut entry = TestEntry::default();
     let ground = sim.world.surface_height(8, 8) as f32 + 1.0;

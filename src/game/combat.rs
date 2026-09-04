@@ -144,16 +144,13 @@ pub(crate) fn mob_facing_away(yaw: f32, mob_pos: EntityPos, from: EntityPos) -> 
 impl Game {
     /// A landed swing's cost and the display/report damage.
     pub(super) fn swing_cost(&self, heavy: bool) -> f32 {
-        if heavy {
-            HEAVY_STAMINA
-        } else {
-            LIGHT_STAMINA
-        }
+        if heavy { HEAVY_STAMINA } else { LIGHT_STAMINA }
     }
 
     /// Stamina gates the swing in survival; creative swings freely.
     pub(super) fn can_swing(&self, heavy: bool) -> bool {
-        self.creative || (self.survival.health > 0.0 && self.combat.stamina >= self.swing_cost(heavy))
+        self.creative
+            || (self.survival.health > 0.0 && self.combat.stamina >= self.swing_cost(heavy))
     }
 
     /// Raise or drop the guard from held input. Guard breaks (stamina
@@ -163,8 +160,7 @@ impl Game {
             && self.ui_state.screen == Screen::Playing
             && self.in_world
             && self.ui_state.screen != Screen::Dead
-            && (self.creative
-                || (self.combat.stamina > 0.0 && self.combat.guard_break <= 0.0));
+            && (self.creative || (self.combat.stamina > 0.0 && self.combat.guard_break <= 0.0));
     }
 
     /// Regen/drain accounting, called every sim frame with whether the
@@ -213,8 +209,8 @@ impl Game {
         let k = &self.input.keys;
         let forward = (k.w as i32 - k.s as i32) as f32;
         let strafe = (k.d as i32 - k.a as i32) as f32;
-        let mut dir = self.camera.local_flat_forward() * forward
-            + self.camera.local_right() * strafe;
+        let mut dir =
+            self.camera.local_flat_forward() * forward + self.camera.local_right() * strafe;
         if dir.length_squared() < 1e-4 {
             dir = -self.camera.local_flat_forward();
         }

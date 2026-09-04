@@ -277,7 +277,10 @@ impl Registry {
     /// Resolve a block `interaction` string to a machine kind. The string
     /// is a qualified id when it carries a `:`, otherwise a bare name
     /// (base's `interaction = "bloomery"` names `base:bloomery`).
-    pub fn machine_by_interaction(&self, interaction: &str) -> Option<crate::world::multiblock::MachineKind> {
+    pub fn machine_by_interaction(
+        &self,
+        interaction: &str,
+    ) -> Option<crate::world::multiblock::MachineKind> {
         if let Some(kind) = self.machine_kind(interaction) {
             return Some(kind);
         }
@@ -306,9 +309,7 @@ impl Registry {
 
     /// The nest index whose marker block is `block`, if any (capability E9).
     pub fn nest_index_for_block(&self, block: BlockId) -> Option<usize> {
-        self.nests
-            .iter()
-            .position(|nest| nest.block == block)
+        self.nests.iter().position(|nest| nest.block == block)
     }
 
     /// The nest def with the given index, if it still exists.
