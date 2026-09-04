@@ -1,0 +1,22 @@
+   Compiling wildforge v0.1.0 (/home/doll/Wildforge)
+    Finished `test` profile [optimized + debuginfo] target(s) in 49.65s
+     Running unittests src/lib.rs (target/debug/deps/wildforge-f0a33d411336b84d)
+
+running 1 test
+test tests::gameplay::gameplay_belt_depot_preserves_unaccepted_cargo ... PROOF belt depot: before staged=63 cargo=2; after staged=64 dropped=0 riding=0
+
+thread 'tests::gameplay::gameplay_belt_depot_preserves_unaccepted_cargo' (3079786) panicked at src/tests/gameplay.rs:96:5:
+assertion `left == right` failed: surplus leaves the belt as a collectible item instead of disappearing
+  left: (64, 0, 0)
+ right: (64, 1, 0)
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+FAILED
+
+failures:
+
+failures:
+    tests::gameplay::gameplay_belt_depot_preserves_unaccepted_cargo
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 1044 filtered out; finished in 0.03s
+
+error: test failed, to rerun pass `--lib`

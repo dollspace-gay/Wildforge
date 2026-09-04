@@ -1,0 +1,12 @@
+[[block]]
+id = "depot"
+name = "Test Settlement Depot"
+texture = "@stone"
+hardness = 2.0
+interaction = "depot:proof:haven"
+
+[[block]]
+id = "nest"
+name = "Test Den"
+texture = "@stone"
+hardness = 2.0

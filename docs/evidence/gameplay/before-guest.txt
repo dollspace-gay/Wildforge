@@ -1,0 +1,17 @@
+
+running 1 test
+test tests::multiplayer::gameplay_guest_depot_debits_only_the_accepted_held_goods ... PROOF guest depot: before other=7 held=16 staged=60; after other=3 held=16 staged=76 credited=Some(4)
+
+thread 'tests::multiplayer::gameplay_guest_depot_debits_only_the_accepted_held_goods' (3054668) panicked at src/tests/multiplayer.rs:1805:5:
+assertion `left == right` failed: guest delivery transfers exactly four units from the held stack
+  left: (3, 16, 76)
+ right: (7, 12, 64)
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+FAILED
+
+failures:
+
+failures:
+    tests::multiplayer::gameplay_guest_depot_debits_only_the_accepted_held_goods
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 1042 filtered out; finished in 0.52s

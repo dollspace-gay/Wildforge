@@ -1695,7 +1695,19 @@ fn loopback_pair_drained(
     u32,
     Vec<S2C>,
 ) {
-    let reg = base_reg();
+    loopback_pair_drained_with_reg(name, base_reg())
+}
+
+fn loopback_pair_drained_with_reg(
+    name: &str,
+    reg: Arc<Registry>,
+) -> (
+    crate::mp::HostSession,
+    crate::server::Server,
+    crate::net::Client,
+    u32,
+    Vec<S2C>,
+) {
     let world = test_world_with(name, reg);
     let mut sim = crate::server::Server::new(world, 0.3, 5);
     sim.world.set_edit_logging(true);
@@ -1748,6 +1760,70 @@ fn loopback_pair_drained(
     }
     let id = *sess.guests.keys().next().expect("guest admitted");
     (sess, sim, client, id, drained)
+}
+
+#[test]
+fn gameplay_guest_depot_debits_only_the_accepted_held_goods() {
+    use crate::net::C2S;
+    let reg = Arc::new(registry::load(
+        &Path::new(env!("CARGO_MANIFEST_DIR")).join("test-fixtures/gameplay/mods"),
+    ));
+    let (mut host, mut sim, mut client, id, _) =
+        loopback_pair_drained_with_reg("proof-guest-depot", reg.clone());
+    let pos = bp(8, 200, 10);
+    sim.world.set_block_at(pos, AIR);
+    assert!(sim.world.place_block_at(pos, b(&reg, "proof:depot")));
+    let clay = it(&reg, "base:clay_ball");
+    assert_eq!(
+        sim.world
+            .depot_deposit(pos, &ItemStack::new(&reg, clay, 60)),
+        60
+    );
+    let guest = host.guests.get_mut(&id).unwrap();
+    guest.pos = ep(Vec3::new(8.5, 200.0, 8.5));
+    guest.inventory = Inventory::new();
+    guest.hotbar = 3;
+    guest.inventory.slots[0] = Some(ItemStack::new(&reg, clay, 7));
+    guest.inventory.slots[3] = Some(ItemStack::new(&reg, clay, 16));
+    client.send(&C2S::DepotDeposit { pos });
+    let mut delivered = None;
+    let mut inventory_echo = None;
+    for _ in 0..200 {
+        host.pump(&mut sim, None, 0.05);
+        for message in client.poll() {
+            match message {
+                S2C::SettlementDelivery { units, .. } => delivered = Some(units),
+                S2C::PlayerState(state) => inventory_echo = Some(state.inventory),
+                _ => {}
+            }
+        }
+        if delivered.is_some() {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(5));
+    }
+    assert_eq!(
+        delivered,
+        Some(4),
+        "the real guest received a delivery acknowledgement"
+    );
+    let guest = &host.guests[&id];
+    let Some(crate::world::BlockEntity::Depot(depot)) = sim.world.block_entity_at(&pos) else {
+        panic!("depot still exists");
+    };
+    let stock: u32 = depot.storage.iter().flatten().map(|s| s.count).sum();
+    let other = guest.inventory.slots[0].map_or(0, |s| s.count);
+    let held = guest.inventory.slots[3].map_or(0, |s| s.count);
+    eprintln!(
+        "PROOF guest depot: before other=7 held=16 staged=60; after other={other} held={held} staged={stock} credited={delivered:?}"
+    );
+    assert_eq!(
+        (other, held, stock),
+        (7, 12, 64),
+        "guest delivery transfers exactly four units from the held stack"
+    );
+    let echo = inventory_echo.expect("the guest sees its new inventory immediately");
+    assert_eq!(echo[3].as_ref().map(|s| s.count), Some(12));
 }
 
 #[test]

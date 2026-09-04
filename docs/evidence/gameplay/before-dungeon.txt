@@ -1,0 +1,18 @@
+
+running 1 test
+test tests::gameplay::dungeon_reset_preserves_overworld_den_spawning ... diag-enter: markers=2 first=Some("spawn:npc:base:elder")
+PROOF dungeon reset: intact overworld den spawned before=1 after=0
+
+thread 'tests::gameplay::dungeon_reset_preserves_overworld_den_spawning' (3047436) panicked at src/tests/gameplay.rs:49:5:
+assertion `left == right` failed: visiting another face must not stop an intact overworld den from spawning
+  left: 0
+ right: 1
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+FAILED
+
+failures:
+
+failures:
+    tests::gameplay::dungeon_reset_preserves_overworld_den_spawning
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 1041 filtered out; finished in 0.41s

@@ -1,0 +1,41 @@
+   Compiling wildforge v0.1.0 (/home/doll/Wildforge)
+    Finished `test` profile [optimized + debuginfo] target(s) in 57.44s
+
+running 1 test
+test game::gameplay_proofs::real_depot_right_clicks_conserve_goods ... renderer: using NVIDIA GeForce RTX 5070 Ti Laptop GPU [Vulkan, DiscreteGpu]
+PROOF depot whole stack: before held=32 staged=0; after held=31 staged=32 standing=64
+
+thread 'game::gameplay_proofs::real_depot_right_clicks_conserve_goods' (3053076) panicked at src/game/gameplay_proofs.rs:125:5:
+assertion `left == right` failed: whole stack: only accepted units leave the hand and earn standing
+  left: (31, 32, "64")
+ right: (0, 32, "64")
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+PROOF depot remaining appetite: before held=16 staged=60; after held=15 staged=76 standing=8
+
+thread 'game::gameplay_proofs::real_depot_right_clicks_conserve_goods' (3053076) panicked at src/game/gameplay_proofs.rs:125:5:
+assertion `left == right` failed: remaining appetite: only accepted units leave the hand and earn standing
+  left: (15, 76, "8")
+ right: (12, 64, "8")
+PROOF depot unwanted goods: before held=16 staged=0; after held=16 staged=16 standing=0
+
+thread 'game::gameplay_proofs::real_depot_right_clicks_conserve_goods' (3053076) panicked at src/game/gameplay_proofs.rs:125:5:
+assertion `left == right` failed: unwanted goods: only accepted units leave the hand and earn standing
+  left: (16, 16, "0")
+ right: (16, 0, "0")
+PROOF depot food delivery: before held=8 staged=0; after held=8 staged=0 standing=0
+
+thread 'game::gameplay_proofs::real_depot_right_clicks_conserve_goods' (3053076) panicked at src/game/gameplay_proofs.rs:125:5:
+assertion `left == right` failed: food delivery: only accepted units leave the hand and earn standing
+  left: (8, 0, "0")
+ right: (0, 8, "16")
+
+thread 'game::gameplay_proofs::real_depot_right_clicks_conserve_goods' (3053076) panicked at src/game/gameplay_proofs.rs:151:5:
+gameplay failures: ["whole stack", "remaining appetite", "unwanted goods", "food delivery"]
+FAILED
+
+failures:
+
+failures:
+    game::gameplay_proofs::real_depot_right_clicks_conserve_goods
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 1042 filtered out; finished in 5.37s

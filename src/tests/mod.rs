@@ -21,6 +21,7 @@ mod climate;
 mod dungeon;
 mod dross;
 mod ecology;
+mod gameplay;
 mod geology;
 mod hearts;
 mod hydrology;
