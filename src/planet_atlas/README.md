@@ -31,6 +31,9 @@ audits, initial finite reservoirs, and versioned checkpoint encoding.
 `biomes/` separates zonal classification, soils, habitats, country nuclei and
 borders, heart selection, persisted records, validation, and local queries.
 
+`diagnostics/` separates census collection, ordered map definitions, value
+readers, image/CSV exports, resource estimates, and qualification-site selectors.
+
 Start with `biomes.rs`, `climate.rs`, `diagnostics.rs`, `geology.rs`, `hydrology.rs`, `water_cycle.rs`. See the [repository overview](../../README.md) for
 build prerequisites and complete checks. Commands below run from the repository root.
 
