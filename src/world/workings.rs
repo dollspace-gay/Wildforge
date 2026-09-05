@@ -4678,7 +4678,7 @@ impl World {
                 if self.reg.block(self.get_block_at(*target)).name != *block_name {
                     return Err("Nudge replay found a different physical mechanism.".into());
                 }
-                let Some(BlockEntity::Steam(steam)) = self.block_entities.get_mut(target) else {
+                let Some(BlockEntity::Steam(steam)) = self.installations.get_mut(target) else {
                     return Err("Nudge replay found no embodied draft latch.".into());
                 };
                 let actual = u8::from(steam.draft_closed);

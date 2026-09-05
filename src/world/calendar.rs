@@ -607,13 +607,8 @@ impl World {
         if !self.ruleset().ire || !self.ruleset().industrial_ire {
             return;
         }
-        self.industrial_ire_accum += dt;
-        if self.industrial_ire_accum < 1.0 {
-            return;
-        }
-        let step = std::mem::take(&mut self.industrial_ire_accum);
-        let lit: Vec<crate::planet::SurfacePos> = self
-            .block_entities
+        let Some(step) = self.installations.industrial_cycle(dt) else { return; };
+        let lit: Vec<crate::planet::SurfacePos> = self.installations
             .iter()
             .filter_map(|(pos, e)| {
                 let BlockEntity::Multiblock(m) = e else {
@@ -947,7 +942,7 @@ impl World {
             .map(|h| RegionCell::from_surface(h.pos.surface()))
             .collect();
         let mut taken: Vec<(crate::planet::BlockPos, RegionCell, usize, ItemStack)> = Vec::new();
-        for (&pos, e) in self.block_entities.iter_mut() {
+        for (&pos, e) in self.installations.iter_mut() {
             let BlockEntity::Offering(o) = e else {
                 continue;
             };

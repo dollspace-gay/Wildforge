@@ -301,10 +301,10 @@ impl World {
         let Some(to) = self.reg.block_id(to) else {
             return;
         };
-        let e = self.block_entities.remove(&pos);
+        let e = self.installations.remove(&pos);
         self.set_block_at(pos, to);
         if let Some(e) = e {
-            self.block_entities.insert(pos, e);
+            self.installations.insert(pos, e);
         }
     }
 
@@ -393,7 +393,7 @@ impl World {
             return Err("cover the pile with earth (one face open)");
         }
         let n = set.len();
-        self.block_entities.insert(
+        self.installations.insert(
             pos,
             BlockEntity::Clamp(ClampState {
                 logs,
@@ -447,8 +447,7 @@ impl World {
         {
             return false;
         }
-        let e = self
-            .block_entities
+        let e = self.installations
             .entry(pos)
             .or_insert_with(|| BlockEntity::Anvil(Default::default()));
         if let BlockEntity::Anvil(a) = e {
@@ -471,7 +470,7 @@ impl World {
     }
 
     pub fn anvil_take_at(&mut self, pos: BlockPos) -> Option<ItemStack> {
-        if let Some(BlockEntity::Anvil(a)) = self.block_entities.get_mut(&pos) {
+        if let Some(BlockEntity::Anvil(a)) = self.installations.get_mut(&pos) {
             a.strikes = 0;
             return a.bloom.take();
         }
@@ -482,7 +481,7 @@ impl World {
     pub fn anvil_strike_at(&mut self, pos: BlockPos) -> Option<ItemStack> {
         let reg = self.reg.clone();
         let st = self.station_at(pos)?;
-        if let Some(BlockEntity::Anvil(a)) = self.block_entities.get_mut(&pos)
+        if let Some(BlockEntity::Anvil(a)) = self.installations.get_mut(&pos)
             && let Some(b) = a.bloom
             && let Some(def) = reg
                 .worked
@@ -1009,7 +1008,7 @@ impl BlockRead for World {
     }
 
     fn block_entities(&self) -> &HashMap<BlockPos, BlockEntity> {
-        &self.block_entities
+        self.installations.entries()
     }
 
     fn reg(&self) -> &Arc<Registry> {
@@ -1032,7 +1031,7 @@ impl BlockRead for World {
 
 impl BlockStore for World {
     fn block_entities_mut(&mut self) -> &mut HashMap<BlockPos, BlockEntity> {
-        &mut self.block_entities
+        self.installations.entries_mut()
     }
 
     fn swap_block_keep_entity(&mut self, pos: BlockPos, block_name: &str) {

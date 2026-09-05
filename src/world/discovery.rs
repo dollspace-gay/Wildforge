@@ -63,7 +63,7 @@ impl World {
             if reference_kind.is_none() && !is_sample {
                 return Err("That is neither a measurable sample nor a reference standard.".into());
             }
-            let occupied = match self.block_entities.get(&pos) {
+            let occupied = match self.installations.get(&pos) {
                 Some(BlockEntity::DiscoveryApparatus(apparatus)) => {
                     if reference_kind.is_some() {
                         apparatus.reference.is_some()
@@ -89,8 +89,7 @@ impl World {
                 let _ = inventory.add_stack(&self.reg, physical);
                 return Err(error.to_string());
             }
-            let entity = self
-                .block_entities
+            let entity = self.installations
                 .entry(pos)
                 .or_insert_with(|| BlockEntity::DiscoveryApparatus(Default::default()));
             let BlockEntity::DiscoveryApparatus(apparatus) = entity else {
@@ -109,7 +108,7 @@ impl World {
             }
         } else {
             let Some(BlockEntity::DiscoveryApparatus(apparatus)) =
-                self.block_entities.get_mut(&pos)
+                self.installations.get_mut(&pos)
             else {
                 return Err("The apparatus bays are empty.".into());
             };
@@ -128,7 +127,7 @@ impl World {
         pos: BlockPos,
         kind: ExperimentKind,
     ) -> Result<ItemStack, String> {
-        let Some(BlockEntity::DiscoveryApparatus(apparatus)) = self.block_entities.get(&pos) else {
+        let Some(BlockEntity::DiscoveryApparatus(apparatus)) = self.installations.get(&pos) else {
             return Err("Load a sample and calibrated reference into the apparatus.".into());
         };
         let sample = apparatus
@@ -739,7 +738,7 @@ impl World {
                     } else if definition.name.ends_with("_sick") {
                         "strained"
                     } else {
-                        match self.block_entities.get(&pos) {
+                        match self.installations.get(&pos) {
                             Some(BlockEntity::DiscoveryApparatus(apparatus)) => {
                                 match (apparatus.sample.is_some(), apparatus.reference.is_some()) {
                                     (true, true) => "sample and reference installed",

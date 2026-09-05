@@ -30,8 +30,7 @@ impl World {
         let torch = reg.block_id("base:torch");
         let smoked = reg.item_id("base:smoked_meat");
         let raws = reg.tags.get("base:raw_meats").cloned().unwrap_or_default();
-        let keys: Vec<BlockPos> = self
-            .block_entities
+        let keys: Vec<BlockPos> = self.installations
             .iter()
             .filter(|(_, e)| matches!(e, BlockEntity::Smoker(_)))
             .map(|(k, _)| *k)
@@ -40,7 +39,7 @@ impl World {
             let lit = pos
                 .offset(0, -1, 0)
                 .is_some_and(|below| Some(self.get_block_at(below)) == torch);
-            let Some(BlockEntity::Smoker(sm)) = self.block_entities.get_mut(&pos) else {
+            let Some(BlockEntity::Smoker(sm)) = self.installations.get_mut(&pos) else {
                 continue;
             };
             let curing = sm.meat.iter().flatten().any(|s| raws.contains(&s.item));
@@ -77,11 +76,7 @@ impl World {
     /// perishable) initializes to fresh instead of rotting.
     pub(super) fn tick_perish(&mut self, dt: f32) {
         const PERISH_SWEEP_SECS: f32 = 20.0;
-        self.perish_accum += dt;
-        if self.perish_accum < PERISH_SWEEP_SECS {
-            return;
-        }
-        self.perish_accum -= PERISH_SWEEP_SECS;
+        if !self.installations.perish_cycle(dt, PERISH_SWEEP_SECS) { return; }
         let reg = self.reg.clone();
         let mush = reg.item_id("base:spoiled_mush");
         let mut consumed = Vec::new();
@@ -97,8 +92,7 @@ impl World {
             })
             .unwrap_or_default();
         let mut preparation_assessments = Vec::<(ItemStack, i32, u64)>::new();
-        let cellar_at: Vec<(BlockPos, bool)> = self
-            .block_entities
+        let cellar_at: Vec<(BlockPos, bool)> = self.installations
             .iter()
             .filter(|(_, e)| matches!(e, BlockEntity::Chest(_) | BlockEntity::Offering(_)))
             .map(|(&p, _)| p)
@@ -121,7 +115,7 @@ impl World {
                 (self.weather_at_surface(pos.surface()).temperature_c * 1_000.0)
                     .round()
                     .clamp(i32::MIN as f32, i32::MAX as f32) as i32;
-            let Some(e) = self.block_entities.get_mut(&pos) else {
+            let Some(e) = self.installations.get_mut(&pos) else {
                 continue;
             };
             let slots: &mut [Option<ItemStack>] = match e {
@@ -165,8 +159,7 @@ impl World {
         // nor a cellar. They still live on the same ordinary aging clock; an
         // active Holdfast may only reduce this real decrement. Collect first
         // so the workings ledger can be updated without aliasing block state.
-        let mounted: Vec<(BlockPos, u8, ItemStack)> = self
-            .block_entities
+        let mounted: Vec<(BlockPos, u8, ItemStack)> = self.installations
             .iter()
             .filter_map(|(&pos, entity)| match entity {
                 BlockEntity::DiscoveryApparatus(apparatus) => Some(
@@ -196,7 +189,7 @@ impl World {
                 PERISH_SWEEP_SECS as u32,
             );
             let Some(BlockEntity::DiscoveryApparatus(apparatus)) =
-                self.block_entities.get_mut(&pos)
+                self.installations.get_mut(&pos)
             else {
                 continue;
             };
@@ -233,15 +226,14 @@ impl World {
 
     /// Smolder every clamp; venting burns the exposed log away.
     pub(super) fn tick_clamps(&mut self, dt: f32) {
-        let keys: Vec<BlockPos> = self
-            .block_entities
+        let keys: Vec<BlockPos> = self.installations
             .iter()
             .filter(|(_, e)| matches!(e, BlockEntity::Clamp(_)))
             .map(|(k, _)| *k)
             .collect();
         let logs_tag = self.reg.tags.get("base:logs").cloned().unwrap_or_default();
         for pos in keys {
-            let Some(BlockEntity::Clamp(mut c)) = self.block_entities.remove(&pos) else {
+            let Some(BlockEntity::Clamp(mut c)) = self.installations.remove(&pos) else {
                 continue;
             };
             // Logs that stopped being logs (mined) leave the pile.
@@ -285,7 +277,7 @@ impl World {
                 }
                 continue; // done; entity retires
             }
-            self.block_entities.insert(pos, BlockEntity::Clamp(c));
+            self.installations.insert(pos, BlockEntity::Clamp(c));
         }
     }
 
@@ -296,8 +288,7 @@ impl World {
     /// and a sail in wind swap to their _run variants, and back.
     pub(super) fn tick_stations(&mut self, dt: f32) {
         let reg = self.reg.clone();
-        let keys: Vec<BlockPos> = self
-            .block_entities
+        let keys: Vec<BlockPos> = self.installations
             .iter()
             .filter(|(_, e)| matches!(e, BlockEntity::Anvil(_)))
             .map(|(k, _)| *k)
@@ -320,12 +311,11 @@ impl World {
                 if Some(self.get_block_at(pos)) != reg.block_id(want) {
                     self.swap_block_keep_entity_at(pos, want);
                 }
-                let w = self.station_work.entry(pos).or_insert(0.0);
-                *w += dt;
-                if *w < 1.0 {
+                let work = self.installations.accumulate_work(pos, dt);
+                if work < 1.0 {
                     continue;
                 }
-                *w = 0.0;
+                self.installations.reset_work(pos);
                 let pairs = [
                     ("base:arc_lamp", "base:arc_lamp_lit"),
                     ("base:blue_arc_lamp", "base:blue_arc_lamp_lit"),
@@ -361,13 +351,7 @@ impl World {
                     // Momentum: a wheel spins down over seconds, not
                     // the instant one cell of its race goes still.
                     let wet = self.wheel_live_at(pos) > 0.0;
-                    let bank = self.station_work.entry(pos).or_insert(0.0);
-                    if wet {
-                        *bank = super::power::WHEEL_SPINDOWN_SECS;
-                    } else {
-                        *bank = (*bank - dt).max(0.0);
-                    }
-                    if *bank > 0.0 { 1.0 } else { 0.0 }
+                    self.installations.wheel_momentum(pos, wet, dt, super::power::WHEEL_SPINDOWN_SECS)
                 } else {
                     self.sail_live_at(pos)
                 };
@@ -397,15 +381,14 @@ impl World {
             if st == "pump" {
                 let rate = self.power_at_pos(pos);
                 if rate <= 0.0 {
-                    self.station_work.remove(&pos);
+                    self.installations.forget_work(pos);
                     continue;
                 }
-                let w = self.station_work.entry(pos).or_insert(0.0);
-                *w += dt * rate;
-                if *w < PUMP_STROKE_SECS {
+                let work = self.installations.accumulate_work(pos, dt * rate);
+                if work < PUMP_STROKE_SECS {
                     continue;
                 }
-                *w -= PUMP_STROKE_SECS;
+                self.installations.consume_work(pos, PUMP_STROKE_SECS);
                 let lift = (1..=PUMP_REACH)
                     .filter_map(|d| pos.offset(0, -d, 0))
                     .find(|&at| self.reg.water_volume(self.get_block_at(at)).is_some());
@@ -442,7 +425,7 @@ impl World {
                 let Some(hp) = arm else { continue };
                 let rate = self.power_at_pos(hp);
                 let has_work = matches!(
-                    self.block_entities.get(&pos),
+                    self.installations.get(&pos),
                     Some(BlockEntity::Anvil(a)) if a.bloom.is_some()
                 );
                 let want = if rate > 0.0 && has_work {
@@ -454,13 +437,12 @@ impl World {
                     self.swap_block_keep_entity_at(hp, want);
                 }
                 if rate <= 0.0 || !has_work {
-                    self.station_work.remove(&pos);
+                    self.installations.forget_work(pos);
                     continue;
                 }
-                let w = self.station_work.entry(pos).or_insert(0.0);
-                *w += dt * rate;
-                if *w >= HELVE_STRIKE_SECS {
-                    *w = 0.0;
+                let work = self.installations.accumulate_work(pos, dt * rate);
+                if work >= HELVE_STRIKE_SECS {
+                    self.installations.reset_work(pos);
                     if let Some(out) = self.anvil_strike_at(pos)
                         && let Some(above) = pos.offset(0, 1, 0)
                     {
@@ -479,7 +461,7 @@ impl World {
                 rate = 1.0;
             }
             if rate <= 0.0 {
-                self.station_work.remove(&pos);
+                self.installations.forget_work(pos);
                 continue;
             }
             // Precision machines want workholding: an iron lathe or
@@ -487,7 +469,7 @@ impl World {
             if matches!(st.as_str(), "iron_lathe" | "boring") && !self.vice_near_at(pos) {
                 continue;
             }
-            let Some(BlockEntity::Anvil(a)) = self.block_entities.get(&pos) else {
+            let Some(BlockEntity::Anvil(a)) = self.installations.get(&pos) else {
                 continue;
             };
             let Some(pile) = a.bloom else { continue };
@@ -500,13 +482,12 @@ impl World {
             else {
                 continue;
             };
-            let w = self.station_work.entry(pos).or_insert(0.0);
-            *w += dt * rate;
-            if *w < STATION_STRIKE_SECS {
+            let work = self.installations.accumulate_work(pos, dt * rate);
+            if work < STATION_STRIKE_SECS {
                 continue;
             }
-            *w -= STATION_STRIKE_SECS;
-            let Some(BlockEntity::Anvil(a)) = self.block_entities.get_mut(&pos) else {
+            self.installations.consume_work(pos, STATION_STRIKE_SECS);
+            let Some(BlockEntity::Anvil(a)) = self.installations.get_mut(&pos) else {
                 continue;
             };
             a.strikes += 1;
@@ -544,8 +525,7 @@ impl World {
     /// leaves the river (mechanization stage 5).
     pub(super) fn tick_steam(&mut self, dt: f32) {
         let reg = self.reg.clone();
-        let keys: Vec<BlockPos> = self
-            .block_entities
+        let keys: Vec<BlockPos> = self.installations
             .iter()
             .filter(|(_, e)| matches!(e, BlockEntity::Steam(_)))
             .map(|(k, _)| *k)
@@ -558,7 +538,7 @@ impl World {
             // Drink: a low water bank swallows one adjacent cell.
             let mut drink: Option<(BlockPos, u8)> = None;
             if boiler_here
-                && let Some(BlockEntity::Steam(s)) = self.block_entities.get(&pos)
+                && let Some(BlockEntity::Steam(s)) = self.installations.get(&pos)
                 && s.water.water_hu < crate::planet_atlas::HYDRO_UNITS_PER_BLOCK
             {
                 'search: for (dx, dz) in [(1, 0), (-1, 0), (0, 1), (0, -1)] {
@@ -583,21 +563,20 @@ impl World {
                 };
                 if accepted {
                     self.set_block_at(c, AIR);
-                    if let Some(BlockEntity::Steam(s)) = self.block_entities.get_mut(&pos) {
+                    if let Some(BlockEntity::Steam(s)) = self.installations.get_mut(&pos) {
                         s.water
                             .add_assign(mass)
                             .expect("boiler water reservoir fits");
                     }
                 }
             }
-            let Some(BlockEntity::Steam(s)) = self.block_entities.get(&pos) else {
+            let Some(BlockEntity::Steam(s)) = self.installations.get(&pos) else {
                 continue;
             };
             let running = !s.draft_closed && boiler_here && s.fuel > 0.0 && s.water.water_hu > 0;
             if running {
                 let micros = (f64::from(dt) * 1_000_000.0).round().max(0.0) as u64;
-                let numerator = self
-                    .block_entities
+                let numerator = self.installations
                     .get(&pos)
                     .and_then(|entity| match entity {
                         BlockEntity::Steam(state) => Some(state.steam_numerator_remainder),
@@ -625,7 +604,7 @@ impl World {
                 } else {
                     requested
                 };
-                let Some(BlockEntity::Steam(s)) = self.block_entities.get_mut(&pos) else {
+                let Some(BlockEntity::Steam(s)) = self.installations.get_mut(&pos) else {
                     continue;
                 };
                 s.fuel = (s.fuel - dt).max(0.0);
@@ -686,7 +665,7 @@ impl World {
             self.reg.block_id("base:generator"),
             self.reg.block_id("base:generator_run"),
         ];
-        self.block_entities.iter().any(|(gpos, e)| {
+        self.installations.iter().any(|(gpos, e)| {
             matches!(e, BlockEntity::Anvil(_))
                 && gpos.entity_center().distance_to(pos.entity_center()) <= r as f32
                 && gens.contains(&Some(self.get_block_at(*gpos)))
@@ -715,7 +694,7 @@ impl World {
         let mut arcane_inputs = Vec::<(BlockPos, ItemStack)>::new();
         let mut material_losses = Vec::<crate::registry::MaterialVector>::new();
         let mut secondary_recoveries = Vec::<crate::registry::MaterialVector>::new();
-        for (&fpos, e) in self.block_entities.iter_mut() {
+        for (&fpos, e) in self.installations.iter_mut() {
             let BlockEntity::Furnace(f) = e else { continue };
             let smelt = f.input.and_then(|s| reg.smelt_for(s.item)).cloned();
             let output_ok = |f: &FurnaceState, out: crate::registry::ItemId| match f.output {

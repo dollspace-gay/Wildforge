@@ -1822,3 +1822,21 @@ inputs, regional ire/bloom, and fire. Read-only height/block/standing macros ret
 read access. This completes an expansion-specific part of the source migration;
 scene geometry, operation order, and capture content are unchanged. No macro
 compilation, native staging, or GPU capture validation has run yet.
+
+
+## Installation storage and work state (coding checkpoint; unverified)
+
+Installations owns the private on-grid block-entity map, station work banks,
+wheel momentum, spoilage cadence, and industrial-ire cadence. Lookups, insertion,
+removal, and shared container transactions now go through this owner. Work
+accumulation/consumption/reset and wheel decay are explicit operations; each
+caller retains its existing comparison and carry/discard policy. The spoilage
+sweep subtracts one period while industrial ire takes the accumulated interval,
+matching their different pre-extraction behavior. Shared machine BlockRead and
+BlockStore adapters borrow the owned entries; LocalStructure remains independent.
+
+Block edit/custody, machinery transfers, discovery/implements/workings, and save
+code retain their operation order and original codecs. No tests, compiler,
+format, analyzer, or runtime checks ran. Final station timing, powered/idle
+transitions, wheel inertia, container identity, save/load, block-removal drops,
+and all conservation regressions remain mandatory.

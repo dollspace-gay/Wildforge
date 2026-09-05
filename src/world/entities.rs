@@ -20,7 +20,7 @@ impl World {
                 pos.v()
             )
         };
-        for (pos, e) in &self.block_entities {
+        for (pos, e) in self.installations.iter() {
             let pos_line = format!("pos = {}", pos_value(*pos));
             match e {
                 BlockEntity::Furnace(f) => {
@@ -620,7 +620,7 @@ impl World {
             })
         };
         for fu in parsed.furnace {
-            self.block_entities.insert(
+            self.installations.insert(
                 fu.pos,
                 BlockEntity::Furnace(FurnaceState {
                     input: conv(&self.reg, fu.input),
@@ -650,7 +650,7 @@ impl World {
                     });
                 }
             }
-            self.block_entities
+            self.installations
                 .insert(ch.pos, BlockEntity::Chest(state));
         }
         for of in parsed.offering {
@@ -667,7 +667,7 @@ impl World {
                     });
                 }
             }
-            self.block_entities
+            self.installations
                 .insert(of.pos, BlockEntity::Offering(state));
         }
         for m in parsed.machine {
@@ -706,7 +706,7 @@ impl World {
                     }
                 }
             }
-            self.block_entities
+            self.installations
                 .insert(m.pos, BlockEntity::Multiblock(state));
             // Revalidate on load: fold stats and douse any machine whose
             // shell broke while it was saved.
@@ -717,7 +717,7 @@ impl World {
             for (i, l) in sg.lines.into_iter().take(3).enumerate() {
                 state.lines[i] = l;
             }
-            self.block_entities.insert(sg.pos, BlockEntity::Sign(state));
+            self.installations.insert(sg.pos, BlockEntity::Sign(state));
         }
         for st in parsed.stall {
             let mut state = StallState {
@@ -745,7 +745,7 @@ impl World {
                     }
                 }
             }
-            self.block_entities
+            self.installations
                 .insert(st.pos, BlockEntity::Stall(state));
         }
         for sm in parsed.smoker {
@@ -765,11 +765,11 @@ impl World {
                     });
                 }
             }
-            self.block_entities
+            self.installations
                 .insert(sm.pos, BlockEntity::Smoker(state));
         }
         for st in parsed.steam {
-            self.block_entities.insert(
+            self.installations.insert(
                 st.pos,
                 BlockEntity::Steam(SteamState {
                     fuel: st.fuel,
@@ -788,7 +788,7 @@ impl World {
             );
         }
         for cl in parsed.clamp {
-            self.block_entities.insert(
+            self.installations.insert(
                 cl.pos,
                 BlockEntity::Clamp(ClampState {
                     logs: cl.logs,
@@ -797,7 +797,7 @@ impl World {
             );
         }
         for an in parsed.anvil {
-            self.block_entities.insert(
+            self.installations.insert(
                 an.pos,
                 BlockEntity::Anvil(AnvilState {
                     bloom: conv(&self.reg, an.bloom),
@@ -807,7 +807,7 @@ impl World {
         }
         for folio in parsed.survey_folio {
             if folio.object_id != 0 {
-                self.block_entities.insert(
+                self.installations.insert(
                     folio.pos,
                     BlockEntity::SurveyFolio(SurveyFolioState {
                         object_id: folio.object_id,
@@ -816,7 +816,7 @@ impl World {
             }
         }
         for apparatus in parsed.discovery_apparatus {
-            self.block_entities.insert(
+            self.installations.insert(
                 apparatus.pos,
                 BlockEntity::DiscoveryApparatus(DiscoveryApparatusState {
                     sample: conv(&self.reg, apparatus.sample),
@@ -825,7 +825,7 @@ impl World {
             );
         }
         for frame in parsed.binding_frame {
-            self.block_entities.insert(
+            self.installations.insert(
                 frame.pos,
                 BlockEntity::BindingFrame(BindingFrameState {
                     body: conv(&self.reg, frame.body),
@@ -838,7 +838,7 @@ impl World {
             );
         }
         for vessel in parsed.charge_vessel {
-            self.block_entities.insert(
+            self.installations.insert(
                 vessel.pos,
                 BlockEntity::ChargeVessel(ChargeVesselState {
                     vessel: conv(&self.reg, vessel.vessel),
@@ -854,7 +854,7 @@ impl World {
                 "south" => crate::planet::Direction4::South,
                 _ => crate::planet::Direction4::North,
             };
-            self.block_entities
+            self.installations
                 .insert(sw.pos, BlockEntity::Switch(SwitchState { selected }));
         }
         for bt in parsed.belt {
@@ -901,7 +901,7 @@ impl World {
                     });
                 }
             }
-            self.block_entities
+            self.installations
                 .insert(dt_ent.pos, BlockEntity::Depot(state));
         }
     }

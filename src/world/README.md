@@ -82,3 +82,9 @@ and conservation coordinators sample that state without mutating clock fields.
 error abort, and development weather overrides. The existing PlanetaryWeather
 owns conserved water. World supplies immutable atlas/calendar/ire inputs and
 coordinates completed-hour water inboxes, springs, shores, and batched relighting.
+
+`installations.rs` owns on-grid block entities, transient station work, wheel
+momentum, spoilage cadence, and the industrial-ire beat. Container transactions
+operate on that owner's entries; machine recognition/ticking use the existing
+BlockRead/BlockStore adapter. LocalStructure continues to own its independent
+block map and outbox. World coordinates ledger effects and block-edit fan-out.

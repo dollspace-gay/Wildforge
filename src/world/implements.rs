@@ -355,10 +355,10 @@ impl World {
     /// Entities are temporarily detached so ledger/state mutation never
     /// aliases their inventory slots.
     pub(super) fn migrate_loaded_entity_charms(&mut self) {
-        let positions: Vec<BlockPos> = self.block_entities.keys().copied().collect();
+        let positions: Vec<BlockPos> = self.installations.keys().copied().collect();
         let mut changed = false;
         for pos in positions {
-            let Some(mut entity) = self.block_entities.remove(&pos) else {
+            let Some(mut entity) = self.installations.remove(&pos) else {
                 continue;
             };
             let mut migrate = |slot: &mut Option<ItemStack>| {
@@ -426,7 +426,7 @@ impl World {
                 | BlockEntity::Switch(_)
                 | BlockEntity::Depot(_) => {}
             }
-            self.block_entities.insert(pos, entity);
+            self.installations.insert(pos, entity);
         }
         if changed && let Err(error) = self.save_entities() {
             eprintln!("implements: migrated block-entity charms could not be saved: {error}");
@@ -521,7 +521,7 @@ impl World {
         let Some(ledger) = self.arcane_ledger.as_ref() else {
             return Vec::new();
         };
-        self.block_entities
+        self.installations
             .iter()
             .filter_map(|(&pos, entity)| {
                 if observer.distance_to(pos.entity_center()) > radius {
@@ -872,7 +872,7 @@ impl World {
         {
             return Err("There is no binding frame there.".into());
         }
-        let current_revision = match self.block_entities.get(&pos) {
+        let current_revision = match self.installations.get(&pos) {
             Some(BlockEntity::BindingFrame(frame)) => frame.revision,
             Some(_) => return Err("Another block entity occupies the frame.".into()),
             None => 0,
@@ -945,7 +945,7 @@ impl World {
             }
             return FrameAction::ExchangeSelected;
         }
-        let Some(BlockEntity::BindingFrame(frame)) = self.block_entities.get(&pos) else {
+        let Some(BlockEntity::BindingFrame(frame)) = self.installations.get(&pos) else {
             return FrameAction::Calibrate;
         };
         if let Some(output) = frame.output {
@@ -984,10 +984,10 @@ impl World {
         selected_slot: usize,
     ) -> Result<FrameResult, String> {
         let selected = inventory.slots[selected_slot];
-        self.block_entities
+        self.installations
             .entry(pos)
             .or_insert_with(|| BlockEntity::BindingFrame(Default::default()));
-        let Some(BlockEntity::BindingFrame(frame)) = self.block_entities.get_mut(&pos) else {
+        let Some(BlockEntity::BindingFrame(frame)) = self.installations.get_mut(&pos) else {
             return Err("Another block entity occupies the frame.".into());
         };
         let message = if let Some(stack) = selected {
@@ -1055,7 +1055,7 @@ impl World {
     }
 
     fn frame_preview(&self, pos: BlockPos) -> Result<crate::implements::ResolvedWand, String> {
-        let Some(BlockEntity::BindingFrame(frame)) = self.block_entities.get(&pos) else {
+        let Some(BlockEntity::BindingFrame(frame)) = self.installations.get(&pos) else {
             return Err("The frame has no mounts.".into());
         };
         let stacks = frame.mounts();
@@ -1079,7 +1079,7 @@ impl World {
 
     fn inspect_binding_frame(&self, pos: BlockPos) -> Result<FrameResult, String> {
         let layout = self.binding_frame_layout(pos);
-        let revision = match self.block_entities.get(&pos) {
+        let revision = match self.installations.get(&pos) {
             Some(BlockEntity::BindingFrame(frame)) => frame.revision,
             _ => 0,
         };
@@ -1092,7 +1092,7 @@ impl World {
         } else {
             layout.problems.clone()
         };
-        if let Some(BlockEntity::BindingFrame(frame)) = self.block_entities.get(&pos)
+        if let Some(BlockEntity::BindingFrame(frame)) = self.installations.get(&pos)
             && let Some(output) = frame.output
             && output.arcane_id != 0
             && let (Some(state), Some(ledger)) = (&self.implements_state, &self.arcane_ledger)
@@ -1121,7 +1121,7 @@ impl World {
         if !layout.valid {
             return Err(layout.problems.join(" "));
         }
-        let (mounts, revision, output_occupied) = match self.block_entities.get(&pos) {
+        let (mounts, revision, output_occupied) = match self.installations.get(&pos) {
             Some(BlockEntity::BindingFrame(frame)) => {
                 (frame.mounts(), frame.revision, frame.output.is_some())
             }
@@ -1323,7 +1323,7 @@ impl World {
             .commit_linked_files(transaction, vec![replacement])
             .map_err(|error| error.to_string())?;
         self.implements_state = Some(next_state);
-        let Some(BlockEntity::BindingFrame(frame)) = self.block_entities.get_mut(&pos) else {
+        let Some(BlockEntity::BindingFrame(frame)) = self.installations.get_mut(&pos) else {
             return Err("The frame vanished after assembly committed.".into());
         };
         frame.body = None;
@@ -1368,12 +1368,12 @@ impl World {
             .into_iter()
             .find(|at| {
                 matches!(
-                    self.block_entities.get(at),
+                    self.installations.get(at),
                     Some(BlockEntity::ChargeVessel(_))
                 )
             })
             .ok_or("The adjacent vessel has no physical state.")?;
-        let (stack, damage, vessel_revision) = match self.block_entities.get(&vessel_pos) {
+        let (stack, damage, vessel_revision) = match self.installations.get(&vessel_pos) {
             Some(BlockEntity::ChargeVessel(vessel)) => (
                 vessel.vessel.ok_or("The vessel shell is missing.")?,
                 vessel.damage,
@@ -1510,7 +1510,7 @@ impl World {
             .commit_linked_files(transaction, vec![replacement])
             .map_err(|error| error.to_string())?;
         self.implements_state = Some(next_state);
-        let Some(BlockEntity::ChargeVessel(vessel)) = self.block_entities.get_mut(&vessel_pos)
+        let Some(BlockEntity::ChargeVessel(vessel)) = self.installations.get_mut(&vessel_pos)
         else {
             return Err("The vessel vanished after calibration committed.".into());
         };
@@ -1523,7 +1523,7 @@ impl World {
         physical.arcane_id = instance_id;
         vessel.revision = vessel.revision.saturating_add(1);
         self.save_entities().map_err(|error| error.to_string())?;
-        let frame_revision = match self.block_entities.get(&pos) {
+        let frame_revision = match self.installations.get(&pos) {
             Some(BlockEntity::BindingFrame(frame)) => frame.revision,
             _ => 0,
         };
@@ -1550,7 +1550,7 @@ impl World {
         if !layout.valid {
             return Err(layout.problems.join(" "));
         }
-        let (blank, mounts, frame_revision) = match self.block_entities.get(&pos) {
+        let (blank, mounts, frame_revision) = match self.installations.get(&pos) {
             Some(BlockEntity::BindingFrame(frame)) => (
                 frame
                     .output
@@ -1756,7 +1756,7 @@ impl World {
             .commit_linked_files(transaction, vec![replacement])
             .map_err(|error| error.to_string())?;
         self.implements_state = Some(next_state);
-        let Some(BlockEntity::BindingFrame(frame)) = self.block_entities.get_mut(&pos) else {
+        let Some(BlockEntity::BindingFrame(frame)) = self.installations.get_mut(&pos) else {
             return Err("The frame vanished after binding committed.".into());
         };
         for mount in [
@@ -1813,7 +1813,7 @@ impl World {
         // Once either reservoir holds charge, the ordinary vessel direction
         // remains deterministic and players can stage cargo deliberately.
         if self.conductor_place_source(pos).is_some()
-            && let Some(BlockEntity::BindingFrame(frame)) = self.block_entities.get(&pos)
+            && let Some(BlockEntity::BindingFrame(frame)) = self.installations.get(&pos)
             && let Some(output) = frame.output
             && output.arcane_id != 0
             && let Ok((_, vessel, _)) = self.adjacent_vessel(pos)
@@ -1848,7 +1848,7 @@ impl World {
         let (source_region, source_kind) = self
             .conductor_place_source(pos)
             .ok_or("The loaded conductor no longer touches a confluence or well.")?;
-        let (output, frame_revision) = match self.block_entities.get(&pos) {
+        let (output, frame_revision) = match self.installations.get(&pos) {
             Some(BlockEntity::BindingFrame(frame)) => (
                 frame
                     .output
@@ -2096,7 +2096,7 @@ impl World {
             .expect("geography survived linked commit")
             .accept_linked_manifest(manifest);
         self.implements_state = Some(next_state);
-        let revision = match self.block_entities.get_mut(&pos) {
+        let revision = match self.installations.get_mut(&pos) {
             Some(BlockEntity::BindingFrame(frame)) => {
                 frame.revision = frame.revision.saturating_add(1);
                 frame.revision
@@ -2136,7 +2136,7 @@ impl World {
         if !layout.valid {
             return Err(layout.problems.join(" "));
         }
-        let (output, frame_revision) = match self.block_entities.get(&pos) {
+        let (output, frame_revision) = match self.installations.get(&pos) {
             Some(BlockEntity::BindingFrame(frame)) => (
                 frame
                     .output
@@ -2318,7 +2318,7 @@ impl World {
             .commit_linked_files(transaction, vec![replacement])
             .map_err(|error| error.to_string())?;
         self.implements_state = Some(next_state);
-        let revision = match self.block_entities.get_mut(&pos) {
+        let revision = match self.installations.get_mut(&pos) {
             Some(BlockEntity::BindingFrame(frame)) => {
                 frame.revision = frame.revision.saturating_add(1);
                 frame.revision
@@ -2368,7 +2368,7 @@ impl World {
         if !layout.valid {
             return Err(layout.problems.join(" "));
         }
-        let (output, frame_revision) = match self.block_entities.get(&pos) {
+        let (output, frame_revision) = match self.installations.get(&pos) {
             Some(BlockEntity::BindingFrame(frame)) => (
                 frame
                     .output
@@ -2586,10 +2586,10 @@ impl World {
             .commit_linked_files(transaction, vec![replacement])
             .map_err(|error| error.to_string())?;
         self.implements_state = Some(next_state);
-        if let Some(BlockEntity::BindingFrame(frame)) = self.block_entities.get_mut(&pos) {
+        if let Some(BlockEntity::BindingFrame(frame)) = self.installations.get_mut(&pos) {
             frame.revision = frame.revision.saturating_add(1);
         }
-        if let Some(BlockEntity::ChargeVessel(vessel)) = self.block_entities.get_mut(&vessel_pos) {
+        if let Some(BlockEntity::ChargeVessel(vessel)) = self.installations.get_mut(&vessel_pos) {
             let after_usable = if target_id == vessel_stack.arcane_id {
                 vessel_usable.saturating_add(selected.total())
             } else {
@@ -2626,7 +2626,7 @@ impl World {
                 "transfer strain exceeded the implement's physical limit",
             );
         }
-        let vessel_failed = self.block_entities.get(&vessel_pos).is_some_and(
+        let vessel_failed = self.installations.get(&vessel_pos).is_some_and(
             |entity| matches!(entity, BlockEntity::ChargeVessel(vessel) if vessel.damage >= 1_000),
         );
         if vessel_failed {
@@ -2638,8 +2638,7 @@ impl World {
             self.save_entities().map_err(|error| error.to_string())?;
             return Ok(FrameResult {
                 success: false,
-                revision: self
-                    .block_entities
+                revision: self.installations
                     .get(&pos)
                     .and_then(|entity| match entity {
                         BlockEntity::BindingFrame(frame) => Some(frame.revision),
@@ -2655,7 +2654,7 @@ impl World {
                 ],
             });
         }
-        let revision = match self.block_entities.get(&pos) {
+        let revision = match self.installations.get(&pos) {
             Some(BlockEntity::BindingFrame(frame)) => frame.revision,
             _ => frame_revision,
         };
@@ -2683,14 +2682,14 @@ impl World {
     }
 
     fn fail_frame_output(&mut self, pos: BlockPos, reason: &str) -> Result<FrameResult, String> {
-        let output = match self.block_entities.get(&pos) {
+        let output = match self.installations.get(&pos) {
             Some(BlockEntity::BindingFrame(frame)) => frame
                 .output
                 .ok_or("The critically strained implement is no longer in the frame.")?,
             _ => return Err("The binding frame vanished before failure settled.".into()),
         };
         let fragments = self.fracture_implement_at(pos, output, reason)?;
-        let revision = match self.block_entities.get_mut(&pos) {
+        let revision = match self.installations.get_mut(&pos) {
             Some(BlockEntity::BindingFrame(frame)) => {
                 frame.output = None;
                 frame.revision = frame.revision.saturating_add(1);
@@ -2715,7 +2714,7 @@ impl World {
         if !layout.valid {
             return Err(layout.problems.join(" "));
         }
-        let (output, frame_revision) = match self.block_entities.get(&pos) {
+        let (output, frame_revision) = match self.installations.get(&pos) {
             Some(BlockEntity::BindingFrame(frame)) => (
                 frame
                     .output
@@ -2815,7 +2814,7 @@ impl World {
             .map_err(|error| error.to_string())?;
         self.implements_state = Some(next_state);
         let revision =
-            if let Some(BlockEntity::BindingFrame(frame)) = self.block_entities.get_mut(&pos) {
+            if let Some(BlockEntity::BindingFrame(frame)) = self.installations.get_mut(&pos) {
                 frame.revision = frame.revision.saturating_add(1);
                 frame.revision
             } else {
@@ -2850,7 +2849,7 @@ impl World {
         pos: BlockPos,
         controlled: bool,
     ) -> Result<(), String> {
-        let output = match self.block_entities.get(&pos) {
+        let output = match self.installations.get(&pos) {
             Some(BlockEntity::BindingFrame(frame)) => frame.output,
             _ => None,
         };
@@ -3029,7 +3028,7 @@ impl World {
         if !selected.is_some_and(|stack| self.reg.item(stack.item).shears) {
             return Err("Safe disassembly requires shears in the selected hand.".into());
         }
-        let (output, frame_revision) = match self.block_entities.get(&pos) {
+        let (output, frame_revision) = match self.installations.get(&pos) {
             Some(BlockEntity::BindingFrame(frame)) => (
                 frame
                     .output
@@ -3214,7 +3213,7 @@ impl World {
             .commit_linked_files(transaction, vec![replacement])
             .map_err(|error| error.to_string())?;
         self.implements_state = Some(next_state);
-        let Some(BlockEntity::BindingFrame(frame)) = self.block_entities.get_mut(&pos) else {
+        let Some(BlockEntity::BindingFrame(frame)) = self.installations.get_mut(&pos) else {
             return Err("The frame vanished after disassembly committed.".into());
         };
         frame.output = None;
@@ -3284,7 +3283,7 @@ impl World {
         if !layout.valid {
             return Err(layout.problems.join(" "));
         }
-        let (output, replacement_focus, frame_revision) = match self.block_entities.get(&pos) {
+        let (output, replacement_focus, frame_revision) = match self.installations.get(&pos) {
             Some(BlockEntity::BindingFrame(frame)) => (
                 frame
                     .output
@@ -3460,7 +3459,7 @@ impl World {
             .commit_linked_files(transaction, vec![replacement])
             .map_err(|error| error.to_string())?;
         self.implements_state = Some(next_state);
-        let Some(BlockEntity::BindingFrame(frame)) = self.block_entities.get_mut(&pos) else {
+        let Some(BlockEntity::BindingFrame(frame)) = self.installations.get_mut(&pos) else {
             return Err("The frame vanished after focus swap committed.".into());
         };
         frame.focus = None;
@@ -3507,7 +3506,7 @@ impl World {
         if !layout.valid {
             return Err(layout.problems.join(" "));
         }
-        let (output, frame_revision) = match self.block_entities.get(&pos) {
+        let (output, frame_revision) = match self.installations.get(&pos) {
             Some(BlockEntity::BindingFrame(frame)) => (
                 frame
                     .output
@@ -3711,7 +3710,7 @@ impl World {
         inventory.take_one_stack(material_slot);
         inventory.wear_tool(&self.reg, hammer_slot);
         let revision =
-            if let Some(BlockEntity::BindingFrame(frame)) = self.block_entities.get_mut(&pos) {
+            if let Some(BlockEntity::BindingFrame(frame)) = self.installations.get_mut(&pos) {
                 frame.revision = frame.revision.saturating_add(1);
                 frame.revision
             } else {
@@ -3737,8 +3736,7 @@ impl World {
     /// this once per five seconds, so a no-magic world pays one cheap empty
     /// block-entity scan at that cadence rather than work on every 30 Hz tick.
     pub fn tick_implements(&mut self, cursor: &mut usize) {
-        let mut vessel_positions: Vec<BlockPos> = self
-            .block_entities
+        let mut vessel_positions: Vec<BlockPos> = self.installations
             .iter()
             .filter_map(|(&pos, entity)| {
                 matches!(entity, BlockEntity::ChargeVessel(_)).then_some(pos)
@@ -3755,7 +3753,7 @@ impl World {
         let end = (*cursor + crate::implements::MAX_CONDUCTOR_NETWORK).min(vessel_positions.len());
         let vessels: Vec<(BlockPos, ItemStack, u16)> = vessel_positions[*cursor..end]
             .iter()
-            .filter_map(|pos| match self.block_entities.get(pos) {
+            .filter_map(|pos| match self.installations.get(pos) {
                 Some(BlockEntity::ChargeVessel(state)) => {
                     state.vessel.map(|stack| (*pos, stack, state.damage))
                 }
@@ -3782,7 +3780,7 @@ impl World {
                 let containment = self.vessel_containment_at(pos, stack.arcane_id);
                 let heat_damage = 24u16.saturating_sub(containment.saturating_div(50)).max(2);
                 damage = damage.saturating_add(heat_damage).min(1_000);
-                if let Some(BlockEntity::ChargeVessel(state)) = self.block_entities.get_mut(&pos) {
+                if let Some(BlockEntity::ChargeVessel(state)) = self.installations.get_mut(&pos) {
                     state.damage = damage;
                     state.revision = state.revision.saturating_add(1);
                     entity_changed = true;
@@ -3993,7 +3991,7 @@ impl World {
             .commit_linked_files(transaction, vec![replacement])
             .map_err(|error| error.to_string())?;
         self.implements_state = Some(next_state);
-        if let Some(BlockEntity::ChargeVessel(state)) = self.block_entities.get_mut(&pos) {
+        if let Some(BlockEntity::ChargeVessel(state)) = self.installations.get_mut(&pos) {
             state.revision = state.revision.saturating_add(1);
         }
         Ok(())
@@ -4006,7 +4004,7 @@ impl World {
         reason: &str,
     ) -> Result<(), String> {
         let fragments = self.fracture_implement_at(pos, stack, reason)?;
-        self.block_entities.remove(&pos);
+        self.installations.remove(&pos);
         self.set_block_at(pos, AIR);
         self.push_drop_at(pos, fragments);
         Ok(())
@@ -4311,7 +4309,7 @@ impl World {
     fn adjacent_vessel(&self, pos: BlockPos) -> Result<(BlockPos, ItemStack, u64), String> {
         horizontal_neighbors(pos)
             .into_iter()
-            .find_map(|at| match self.block_entities.get(&at) {
+            .find_map(|at| match self.installations.get(&at) {
                 Some(BlockEntity::ChargeVessel(vessel)) => {
                     vessel.vessel.map(|stack| (at, stack, vessel.revision))
                 }

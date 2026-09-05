@@ -591,7 +591,7 @@ impl World {
         // plentiful; player trust is not.
         if self.player_touched.contains(&pos)
             || self.structure_chunks.contains(&pos)
-            || self.block_entities.keys().any(|at| at.chunk() == pos)
+            || self.installations.keys().any(|at| at.chunk() == pos)
         {
             return;
         }
@@ -1093,7 +1093,7 @@ impl World {
                                         }
                                     }
                                 }
-                                self.block_entities.insert(pos, BlockEntity::Chest(state));
+                                self.installations.insert(pos, BlockEntity::Chest(state));
                             }
                         }
                         c => {

@@ -52,6 +52,7 @@ mod standing;
 mod country_view;
 mod calendar_state;
 mod weather_state;
+mod installations;
 mod population;
 mod view;
 pub(crate) use view::WorldView;
@@ -1074,18 +1075,10 @@ pub struct World {
     /// Authored bulk edits preserve ordinary block-edit behavior while
     /// settling lighting once per touched chunk.
     edit_relight_batch: bool,
-    /// Accumulator for the food-freshness sweep (containers).
-    perish_accum: f32,
-    /// Industrial ire cadence (capability E12): seconds since the last
-    /// one-second charge for running machines.
-    industrial_ire_accum: f32,
     /// Multiblock revalidations triggered by block edits since construction.
     /// Test-only: proves the 2c edit hook is scoped, not global.
     #[cfg(test)]
     multiblock_revalidations: usize,
-    /// Seconds of work banked per powered station (transient: a
-    /// partial strike is honest to lose across a save).
-    station_work: HashMap<BlockPos, f32>,
     /// Belt cells carrying cargo (spec §2.2). Persisted as `[[belt]]`
     /// records in `entities.toml` (capability E8), so a reloaded line
     /// resumes with its cargo, progress, entry direction, and splitter
@@ -1136,7 +1129,7 @@ pub struct World {
     /// When each chunk last took its random ticks (persisted, so the
     /// world can live on while a chunk is away).
     last_random: HashMap<ChunkPos, f64>,
-    block_entities: HashMap<crate::planet::BlockPos, BlockEntity>,
+    installations: installations::Installations,
     /// Named, world-shared structural templates (spec Part 1.4). Structure
     /// only — no `BlockEntity` contents — so the library is persistable and
     /// duplication-safe with a single TOML sidecar.
@@ -1505,15 +1498,12 @@ impl World {
             pending_relight: HashSet::new(),
             edit_relight_batch: false,
             last_random: HashMap::new(),
-            block_entities: HashMap::new(),
+            installations: installations::Installations::default(),
             templates: Vec::new(),
             pending_fills: Vec::new(),
             local_structures: Vec::new(),
             next_local_structure_id: 0,
             pending_drops: Vec::new(),
-            perish_accum: 0.0,
-            industrial_ire_accum: 0.0,
-            station_work: HashMap::new(),
             belt_state: HashMap::new(),
             regional_ire: HashMap::new(),
             whispers: Vec::new(),
@@ -2011,7 +2001,7 @@ impl World {
 
     /// Every sign and waystone with its text (world rendering, join sync).
     pub fn sign_texts(&self) -> impl Iterator<Item = (crate::planet::BlockPos, &SignState)> {
-        self.block_entities.iter().filter_map(|(&p, e)| match e {
+        self.installations.iter().filter_map(|(&p, e)| match e {
             BlockEntity::Sign(s) => Some((p, s)),
             _ => None,
         })
@@ -2196,33 +2186,31 @@ impl World {
     #[cfg(test)]
     pub fn block_entity(&self, pos: &(i32, i32, i32)) -> Option<&BlockEntity> {
         crate::planet::BlockPos::of_world(pos.0, pos.1, pos.2)
-            .and_then(|pos| self.block_entities.get(&pos))
+            .and_then(|pos| self.installations.get(&pos))
     }
 
     #[cfg(test)]
     pub fn block_entity_mut(&mut self, pos: &(i32, i32, i32)) -> Option<&mut BlockEntity> {
         let pos = crate::planet::BlockPos::of_world(pos.0, pos.1, pos.2)?;
-        self.block_entities.get_mut(&pos)
+        self.installations.get_mut(&pos)
     }
 
     pub(crate) fn click_container(
         &mut self, position: BlockPos, cursor: &mut Option<ItemStack>,
         request: crate::player_ops::container::Click,
     ) -> Result<crate::player_ops::container::Effect, crate::player_ops::container::Rejected> {
-        let entity = self.block_entities.get_mut(&position)
-            .ok_or(crate::player_ops::container::Rejected::Missing)?;
-        crate::player_ops::container::click(&self.reg, entity, cursor, request)
+        self.installations.click(&self.reg, position, cursor, request)
     }
 
     pub fn block_entity_at(&self, pos: &crate::planet::BlockPos) -> Option<&BlockEntity> {
-        self.block_entities.get(pos)
+        self.installations.get(pos)
     }
 
     pub fn block_entity_mut_at(
         &mut self,
         pos: &crate::planet::BlockPos,
     ) -> Option<&mut BlockEntity> {
-        self.block_entities.get_mut(pos)
+        self.installations.get_mut(pos)
     }
 
     #[cfg(test)]
@@ -2232,7 +2220,7 @@ impl World {
         entity: BlockEntity,
     ) -> Option<BlockEntity> {
         let pos = crate::planet::BlockPos::of_world(pos.0, pos.1, pos.2)?;
-        self.block_entities.insert(pos, entity)
+        self.installations.insert(pos, entity)
     }
 
     pub fn insert_block_entity_at(
@@ -2240,7 +2228,7 @@ impl World {
         pos: crate::planet::BlockPos,
         entity: BlockEntity,
     ) -> Option<BlockEntity> {
-        self.block_entities.insert(pos, entity)
+        self.installations.insert(pos, entity)
     }
 
     /// Insert a development-authored machine/container while keeping every
@@ -2251,7 +2239,7 @@ impl World {
         entity: BlockEntity,
         source: &str,
     ) -> Option<BlockEntity> {
-        let old = self.block_entities.remove(&pos);
+        let old = self.installations.remove(&pos);
         if let Some(previous) = old.as_ref()
             && let Err(error) = self.record_admin_block_entity_deletion(previous)
         {
@@ -2260,7 +2248,7 @@ impl World {
         if let Err(error) = self.record_external_block_entity_contents(&entity, source) {
             eprintln!("materials: authored block-entity source failed: {error}");
         }
-        self.block_entities.insert(pos, entity);
+        self.installations.insert(pos, entity);
         old
     }
 
@@ -2269,17 +2257,17 @@ impl World {
         pos: crate::planet::BlockPos,
         default: BlockEntity,
     ) -> &mut BlockEntity {
-        self.block_entities.entry(pos).or_insert(default)
+        self.installations.entry(pos).or_insert(default)
     }
 
     #[cfg(test)]
     pub fn has_block_entity(&self, pos: &(i32, i32, i32)) -> bool {
         crate::planet::BlockPos::of_world(pos.0, pos.1, pos.2)
-            .is_some_and(|pos| self.block_entities.contains_key(&pos))
+            .is_some_and(|pos| self.installations.contains_key(&pos))
     }
 
     pub fn block_entities(&self) -> impl Iterator<Item = (&crate::planet::BlockPos, &BlockEntity)> {
-        self.block_entities.iter()
+        self.installations.iter()
     }
 
     /// Live nest spawn-gate records (capability E9), for tests and tooling.
@@ -3114,12 +3102,12 @@ impl World {
         // station sweep finds them without scanning the world.
         match self.reg.block(block).interaction.as_deref() {
             Some("wheel" | "sail" | "pump" | "generator") => {
-                self.block_entities
+                self.installations
                     .entry(pos)
                     .or_insert_with(|| BlockEntity::Anvil(Default::default()));
             }
             Some("firebox") => {
-                self.block_entities
+                self.installations
                     .entry(pos)
                     .or_insert_with(|| BlockEntity::Steam(Default::default()));
             }
@@ -3127,7 +3115,7 @@ impl World {
             // binds the depot to that settlement's delivery needs.
             Some(interaction) if interaction.starts_with("depot:") => {
                 let settlement = interaction.trim_start_matches("depot:").to_string();
-                self.block_entities.entry(pos).or_insert_with(|| {
+                self.installations.entry(pos).or_insert_with(|| {
                     BlockEntity::Depot(DepotState {
                         settlement,
                         storage: Default::default(),
@@ -3148,7 +3136,7 @@ impl World {
                     .reg
                     .machine_by_interaction(interaction)
                     .expect("resolved above");
-                self.block_entities.entry(pos).or_insert_with(|| {
+                self.installations.entry(pos).or_insert_with(|| {
                     BlockEntity::Multiblock(MachineInstance {
                         kind,
                         ..Default::default()
@@ -3156,12 +3144,12 @@ impl World {
                 });
             }
             Some("discovery_lab") => {
-                self.block_entities
+                self.installations
                     .entry(pos)
                     .or_insert_with(|| BlockEntity::DiscoveryApparatus(Default::default()));
             }
             Some("binding_frame") => {
-                self.block_entities
+                self.installations
                     .entry(pos)
                     .or_insert_with(|| BlockEntity::BindingFrame(Default::default()));
             }
@@ -3195,7 +3183,7 @@ impl World {
                 self.set_block_at(pos, AIR);
                 return false;
             }
-            self.block_entities.insert(
+            self.installations.insert(
                 pos,
                 BlockEntity::ChargeVessel(ChargeVesselState {
                     vessel: Some(ItemStack { count: 1, ..stack }),
@@ -3218,7 +3206,7 @@ impl World {
                 self.set_block_at(pos, AIR);
                 return false;
             }
-            self.block_entities.insert(
+            self.installations.insert(
                 pos,
                 BlockEntity::SurveyFolio(SurveyFolioState {
                     object_id: physical.arcane_id,
@@ -3579,7 +3567,7 @@ impl World {
         // mechanism latch, water level) and must not silently delete its
         // embodied block entity.
         if old != block
-            && let Some(entity) = self.block_entities.remove(&pos)
+            && let Some(entity) = self.installations.remove(&pos)
         {
             let spilled: Vec<ItemStack> = match entity {
                 BlockEntity::Furnace(f) => {
