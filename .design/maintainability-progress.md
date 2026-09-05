@@ -212,3 +212,32 @@ worker tests pass after the move; codec bytes, palette rules, and the existing
 legacy-placeholder repair are unchanged. This structural checkpoint precedes
 the separate missing/corrupt/unreadable read correction. Directory coverage is
 now 54 maintained directories. Full slice/runtime acceptance remains pending.
+
+## Terrain read and write errors (in verification)
+
+The decoder distinguishes missing terrain, stored WFC6-WFC8 terrain, and the
+named valid legacy-placeholder repair. Bounded byte/RLE parsing rejects
+truncation, zero/overflow runs, and trailing data. Region I/O distinguishes
+absence from corruption/I/O errors, bounds offsets and allocations, refuses to
+rewrite damaged headers, and aborts compaction rather than dropping unreadable
+payloads. Region code and scenario tests now live with storage primitives.
+
+Worker failures retain position, cause, and session identity. Failed requested
+positions are suppressed while interest persists. The graphical adapter pauses
+and reports a read failure; the host refuses affected entry/view requests.
+Synchronous adoption also refuses failed reads. Saved bytes are not regenerated
+on ordinary corruption or I/O failure; the previously supported valid
+all-placeholder repair remains explicit and tested.
+
+Focused results: 3 saved-version/decoder tests, 9 region scenarios, and 3 actual
+worker/save-retry/QUIC admission scenarios pass. The 12 terrain-worker and 25 multiplayer scenarios also pass, along with
+strict all-feature Clippy. A failed region write retains dirty edits and can be retried after repair.
+The read contract and region-write behavior are corrective changes, separate
+from the prior immutable-reader extraction. Full Rust/runtime gates remain pending.
+
+Code inspection also identified a concurrency requirement for the next immediate
+step: cold readers and the authoritative writer must share region coordination,
+so a read cannot observe a partially published header/index. Prepared terrain
+also needs persisted-revision validation after a player edit is saved/unloaded.
+These checks are required before accepting the streaming slice; they are not
+resolved by the existing resident-chunk edit regression alone.

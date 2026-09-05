@@ -800,7 +800,7 @@ fn prepared_chunk_digest(save_dir: &std::path::Path, chunks: &[ChunkPos]) -> std
         {
             hash = (hash ^ u64::from(byte)).wrapping_mul(0x1000_0000_01b3);
         }
-        let payload = region::read_chunk(save_dir, *position).ok_or_else(|| {
+        let payload = region::read_chunk(save_dir, *position)?.ok_or_else(|| {
             std::io::Error::new(
                 std::io::ErrorKind::InvalidData,
                 format!("prepared spawn chunk {position:?} is missing"),

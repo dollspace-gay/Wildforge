@@ -48,7 +48,7 @@ fn receive(jobs: &mut TerrainJobs) -> PreparedChunk {
     let deadline = Instant::now() + Duration::from_secs(10);
     loop {
         if let Some(result) = jobs.try_ready() {
-            return result;
+            return result.unwrap();
         }
         assert!(
             Instant::now() < deadline,
@@ -124,7 +124,7 @@ fn old_session_completion_cannot_release_or_replace_new_session_work() {
 
     let mut current = jobs(&world, WorkerPolicy::Dedicated);
     current.request(position, Priority::Ordinary, 2);
-    assert!(current.finish(late).is_none());
+    assert!(current.finish(Ok(late)).is_none());
     assert_eq!(
         current.pending_count(),
         1,
@@ -159,7 +159,7 @@ fn shutdown_and_drop_wait_for_running_workers_then_reject_late_work() {
                 pool.shutdown().unwrap();
                 assert!(pool.workers.is_empty());
                 assert_eq!(pool.pending_count(), 0);
-                assert!(pool.finish(late).is_none());
+                assert!(pool.finish(Ok(late)).is_none());
                 pool.request(position, Priority::Entry, 2);
                 assert_eq!(pool.pending_count(), 0);
                 assert!(pool.try_ready().is_none());

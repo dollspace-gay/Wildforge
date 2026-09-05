@@ -160,7 +160,11 @@ impl Game {
         // two-job concurrency budget because a single job can itself exceed a
         // small millisecond allowance.
         const ADOPT_BUDGET_MS: u128 = 3;
+        let mut terrain_error = None;
         if let Some(pool) = &mut self.gen_pool {
+            pool.cancel_queued(&|position| {
+                position.distance(center) <= f64::from(vd * CHUNK_X as i32) + 1.0
+            });
             // Keep the workers fed a nearest-first pipeline.
             for (_, pos) in wanted.iter().take(ask) {
                 if pool.pending_count() >= flight {
@@ -172,13 +176,24 @@ impl Game {
             // still belong to the authoritative world on this thread, while
             // pure mesh construction runs in the bounded pool below.
             let t0 = self.stream_t0;
-            while let Some(prepared) = pool.try_ready() {
-                let pos = prepared.position;
-                let fresh = prepared.is_fresh();
-                if self.server.world.adopt_prepared(pos, prepared.chunk, fresh) {
-                    // New terrain changes neighbors' faces at the border.
-                    for (dx, dz) in [(-1, 0), (1, 0), (0, -1), (0, 1)] {
-                        self.server.world.mark_chunk_dirty(pos.offset(dx, dz));
+            while let Some(result) = pool.try_ready() {
+                match result {
+                    Ok(prepared) => {
+                        let pos = prepared.position;
+                        let fresh = prepared.is_fresh();
+                        if self.server.world.adopt_prepared(pos, prepared.chunk, fresh) {
+                            for (dx, dz) in [(-1, 0), (1, 0), (0, -1), (0, 1)] {
+                                self.server.world.mark_chunk_dirty(pos.offset(dx, dz));
+                            }
+                        }
+                    }
+                    Err(failure) => {
+                        let message = format!(
+                            "Could not load terrain {:?}: {}",
+                            failure.position, failure.source
+                        );
+                        eprintln!("{message}");
+                        terrain_error = Some(message);
                     }
                 }
                 if t0.elapsed().as_millis() >= ADOPT_BUDGET_MS {
@@ -194,6 +209,11 @@ impl Game {
                     self.server.world.mark_chunk_dirty(pos.offset(dx, dz));
                 }
             }
+        }
+
+        if let Some(message) = terrain_error {
+            self.set_screen(Screen::Paused);
+            self.toast(message);
         }
 
         // Unload chunks far outside the view radius. The same residency rule

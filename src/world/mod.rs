@@ -46,6 +46,7 @@ pub(crate) mod pieces;
 mod power;
 pub(crate) mod power_draw;
 #[cfg_attr(test, allow(unused))]
+#[path = "storage/region.rs"]
 pub(crate) mod region;
 mod storage;
 
@@ -57,7 +58,7 @@ pub use machines::{station_powered, worked_table_for};
 pub mod soil;
 mod spawn;
 pub(crate) use spawn::player_entry_chunks;
-pub(crate) use storage::{ChunkLoader, encode_stream_chunk};
+pub(crate) use storage::{ChunkLoader, ChunkRead, encode_stream_chunk};
 pub(crate) mod local_structure;
 pub(crate) mod rail;
 pub(crate) mod template;

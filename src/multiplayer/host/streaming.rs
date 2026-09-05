@@ -98,7 +98,9 @@ impl HostChunkJobs {
             let Some(prepared) = self.terrain.try_ready() else {
                 break;
             };
-            if wanted(prepared.position) {
+            if let Ok(prepared) = prepared
+                && wanted(prepared.position)
+            {
                 let fresh = prepared.is_fresh();
                 server
                     .world
@@ -190,6 +192,7 @@ impl HostSession {
         if let Some(jobs) = &mut self.chunk_jobs {
             jobs.drain_into(server, &wanted);
         }
+        self.refuse_failed_terrain();
         let prepared: Vec<u32> = self
             .pending_guests
             .iter()
@@ -440,6 +443,42 @@ impl HostSession {
         );
         if let Some(g) = self.guests.get_mut(&id) {
             g.sent_chunks.insert(pos);
+        }
+    }
+
+    fn refuse_failed_terrain(&mut self) {
+        let failures: Vec<_> = self
+            .chunk_jobs
+            .as_ref()
+            .map(|jobs| jobs.terrain.failures().cloned().collect())
+            .unwrap_or_default();
+        for failure in failures {
+            let mut affected: HashSet<_> = self
+                .pending_guests
+                .iter()
+                .filter(|(_, pending)| pending.required.contains(&failure.position))
+                .map(|(id, _)| *id)
+                .collect();
+            affected.extend(
+                self.guests
+                    .iter()
+                    .filter(|(_, guest)| {
+                        (!guest.entry_ready && guest.entry_required.contains(&failure.position))
+                            || (guest.entry_ready
+                                && guest.pos.chunk().is_some_and(|center| {
+                                    failure.position.distance(center)
+                                        <= f64::from(guest.view_dist * 16) + 1.0
+                                }))
+                    })
+                    .map(|(id, _)| *id),
+            );
+            for id in affected {
+                self.refuse_server_error(
+                    id,
+                    &format!("terrain {:?}", failure.position),
+                    &failure.source,
+                );
+            }
         }
     }
 
