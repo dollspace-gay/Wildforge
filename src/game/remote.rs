@@ -1,6 +1,26 @@
 //! Guest connection setup and remote snapshot application.
 
-use super::*;
+use crate::atlas;
+use crate::audio;
+use crate::audio::Sfx;
+use crate::chunk::CHUNK_X;
+use crate::chunk::ChunkPos;
+use crate::identity;
+use crate::inventory::HOTBAR_SLOTS;
+use crate::inventory::ItemStack;
+use crate::mesher;
+use crate::net;
+use crate::physics::Player;
+use crate::server;
+use crate::world;
+use crate::world::World;
+use glam::Vec3;
+use std::path::PathBuf;
+use std::sync::Arc;
+use super::Game;
+use super::Lerp;
+use super::Remote;
+use super::navigation::Screen;
 use crate::client_session::{ContentMap, GuestSession, PresentationRequirement};
 
 impl Game {

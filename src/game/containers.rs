@@ -1,6 +1,16 @@
 //! Inventory, crafting, armor, and machine-container interactions.
 
-use super::*;
+use crate::audio::Sfx;
+use crate::crafting;
+use crate::identity;
+use crate::inventory;
+use crate::inventory::ItemStack;
+use crate::inventory::TOTAL_SLOTS;
+use crate::net;
+use crate::registry::ItemId;
+use crate::world;
+use super::Game;
+use super::navigation::Screen;
 use crate::registry::RecipeDef;
 
 impl Game {

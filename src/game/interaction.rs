@@ -1,6 +1,12 @@
 //! Player interaction, combat, stations, and script-driven actions.
 
-use super::*;
+use crate::audio::Sfx;
+use crate::identity;
+use crate::net;
+use crate::world;
+use super::DiscoveryAim;
+use super::Game;
+use super::navigation::Screen;
 
 impl Game {
     pub(super) fn open_discovery_catalogue(

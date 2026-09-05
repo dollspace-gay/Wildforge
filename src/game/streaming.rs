@@ -4,7 +4,12 @@
 //! main thread only adopts finished chunks (light, seams, reconcile), captures
 //! immutable mesh inputs, and uploads completed meshes on a per-frame budget.
 
-use super::*;
+use crate::chunk::CHUNK_X;
+use crate::chunk::ChunkPos;
+use crate::mesher;
+use super::GEN_BUDGET;
+use super::Game;
+use super::navigation::Screen;
 use crate::terrain_jobs::Priority;
 
 impl Game {

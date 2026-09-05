@@ -1,6 +1,10 @@
 //! Fail-closed identity snapshots for native visual qualification captures.
 
-use super::*;
+use crate::visual_capture;
+use crate::world;
+use super::BUILD_MARKER;
+use super::Game;
+use super::SHOT_SETTLE_FRAMES;
 
 fn required_capture_label(name: &str) -> Result<String, String> {
     let value =

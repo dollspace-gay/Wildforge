@@ -3,7 +3,10 @@
 //! feed one `StatBlock`; derived values route health, stamina, carry,
 //! build reach, scan radius, and move speed.
 
-use super::*;
+use super::Game;
+use super::MAX_HEALTH;
+use super::REACH;
+use super::combat;
 use crate::stats::{StatBlock, StatKind, StatModifier};
 
 /// Default carry capacity in weight units (one default item weighs one).

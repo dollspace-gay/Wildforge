@@ -54,32 +54,26 @@ pub(crate) use survival::reduced_damage;
 #[cfg(test)]
 pub(crate) use world_loading_ui::next_world_name;
 use content_watch::{content_tree_stamp, script_mod_dirs};
-use input::{InputState, KeysDown};
-use navigation::{AccountTaskResult, Screen, UiState};
+use input::InputState;
+use navigation::{Screen, UiState};
 use presentation::PresentationState;
 
-use crate::{atlas, audio, bounce, config, crafting, entity, identity, inventory, lights, mesher, mobs, mp, net, particles, physics, raycast, registry, renderer, script, server, style, visual_capture, world, worldgen};
+use crate::{atlas, audio, bounce, identity, mobs, mp, net, renderer, script, server, style, visual_capture};
 
-use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Instant;
 
 use glam::Vec3;
-use winit::event_loop::ActiveEventLoop;
-use winit::keyboard::KeyCode;
-use winit::window::{Fullscreen, Window};
+use winit::window::Window;
 
-use crate::audio::{Audio, BreakMat, Sfx};
+use crate::audio::{Audio, Sfx};
 use crate::camera::Camera;
-use crate::chunk::{CHUNK_X, ChunkPos, SEA_LEVEL};
+use crate::chunk::ChunkPos;
 use crate::config::Config;
-use crate::entity::ItemEntity;
-use crate::inventory::{HOTBAR_SLOTS, Inventory, ItemStack, TOTAL_SLOTS};
-use crate::physics::{EYE_HEIGHT, Player};
-use crate::registry::{AIR, ItemId, Registry, ToolKind};
-use crate::renderer::FrameInput;
+use crate::inventory::{Inventory, ItemStack};
+use crate::physics::Player;
+use crate::registry::Registry;
 use crate::ui::UiBatch;
-use crate::world::World;
 
 const GEN_BUDGET: usize = 4; // chunk generations per frame (256-tall gen is pricey)
 pub(crate) const SHOT_SETTLE_FRAMES: u64 = 10;

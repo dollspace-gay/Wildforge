@@ -1,6 +1,8 @@
 //! Compact, hold-to-view multiplayer roster.
 
-use super::*;
+use crate::identity;
+use crate::ui::UiBatch;
+use super::Game;
 
 impl Game {
     pub(super) fn draw_roster_overlay(&self, ui: &mut UiBatch, screen_width: f32) {

@@ -8,7 +8,12 @@
 //! numbers — the failure mode of a hand-written `desc` field is a lie,
 //! and a lie about a mechanic is worse than silence.
 
-use super::*;
+use crate::crafting;
+use crate::inventory::TOTAL_SLOTS;
+use crate::ui::UiBatch;
+use crate::world;
+use super::Game;
+use super::navigation::Screen;
 use crate::inventory::ItemStack;
 use crate::registry::{ArmorSlot, NUTRIENTS, Registry, ToolKind};
 

@@ -1,6 +1,12 @@
 //! Keyboard mapping and high-level key actions.
 
-use super::*;
+use crate::audio::Sfx;
+use glam::Vec3;
+use super::Game;
+use super::navigation::Screen;
+use winit::event_loop::ActiveEventLoop;
+use winit::keyboard::KeyCode;
+use winit::window::Fullscreen;
 
 impl Game {
     pub(super) fn key(&mut self, code: KeyCode, pressed: bool, _event_loop: &ActiveEventLoop) {

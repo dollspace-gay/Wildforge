@@ -1,9 +1,23 @@
 //! Hardware-backed tests of the actual client interaction path. The runner
 //! creates a temporary working directory so no personal save or identity is used.
 
-use super::*;
+use crate::camera::Camera;
+use crate::game::Game;
+use crate::inventory::{Inventory, ItemStack};
+use crate::physics::Player;
+use crate::registry::AIR;
+use crate::world::World;
+use crate::{raycast, server, world};
+use glam::Vec3;
 use std::panic::{AssertUnwindSafe, catch_unwind};
+use std::path::PathBuf;
+use std::sync::Arc;
+use winit::application::ApplicationHandler;
+use winit::dpi::PhysicalSize;
+use winit::event::WindowEvent;
+use winit::event_loop::{ActiveEventLoop, EventLoop};
 use winit::platform::x11::EventLoopBuilderExtX11;
+use winit::window::{Window, WindowId};
 
 #[path = "gameplay_proofs/guest.rs"]
 mod guest;

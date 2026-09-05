@@ -1,6 +1,17 @@
 //! Survival ticking, item pickup, and player-facing status messages.
 
-use super::*;
+use crate::audio;
+use crate::audio::Sfx;
+use crate::entity;
+use crate::inventory::HOTBAR_SLOTS;
+use crate::inventory::ItemStack;
+use crate::net;
+use crate::physics;
+use crate::world;
+use glam::Vec3;
+use super::Game;
+use super::MAX_AIR;
+use super::navigation::Screen;
 
 pub(super) fn dross_warning_text(band: u8) -> (&'static str, &'static str) {
     match band {

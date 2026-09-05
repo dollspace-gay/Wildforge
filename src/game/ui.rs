@@ -1,7 +1,20 @@
 //! UI layout, drawing, and screen composition.
 
 use super::widgets;
-use super::*;
+use crate::atlas;
+use crate::identity;
+use crate::inventory::HOTBAR_SLOTS;
+use crate::inventory::ItemStack;
+use crate::inventory::TOTAL_SLOTS;
+use crate::net;
+use crate::raycast;
+use crate::style;
+use crate::ui::UiBatch;
+use crate::world;
+use glam::Vec3;
+use super::Game;
+use super::MAX_AIR;
+use super::navigation::Screen;
 use glam::Mat4;
 
 fn project_world_label(

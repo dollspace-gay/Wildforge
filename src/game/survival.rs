@@ -1,6 +1,15 @@
 //! Player survival, damage, death, respawn, and inventory drops.
 
-use super::*;
+use crate::audio::Sfx;
+use crate::entity::ItemEntity;
+use crate::inventory::ItemStack;
+use crate::net;
+use crate::physics::Player;
+use glam::Vec3;
+use super::Game;
+use super::MAX_AIR;
+use super::combat;
+use super::navigation::Screen;
 
 impl Game {
     pub(super) fn armor_points(&self) -> u32 {

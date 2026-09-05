@@ -1492,3 +1492,17 @@ No Python tests, byte comparisons, reports, or campaigns ran. Final coverage
 must compare serialized fixtures, nested scalar failures, read/write failures,
 source freshness, and the full newly captured qualification campaign. Larger
 tool decomposition and architecture checks remain implementation work.
+
+
+## Explicit graphical module dependencies (coding checkpoint; unverified)
+
+Production graphical modules no longer import the full parent namespace. Each
+names the game state, domain modules, constants, and platform types it uses.
+The facade drops aliases used only by those children, and native proof source
+imports its dependencies directly. Method bodies and proof cases are unchanged.
+This makes dependency checks meaningful without claiming that broad Game state
+access has already been replaced by narrow domain interfaces.
+
+No formatting, build, lint, test, or runtime validation ran. Import resolution
+and unused imports remain part of the final Rust gates; session, interaction,
+world ownership, large dispatchers, and architecture checks are still open.

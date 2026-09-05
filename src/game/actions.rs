@@ -1,6 +1,29 @@
 //! Combat, world interaction, held-item art, and script command application.
 
-use super::*;
+use crate::atlas;
+use crate::audio::BreakMat;
+use crate::audio::Sfx;
+use crate::entity::ItemEntity;
+use crate::identity;
+use crate::inventory::ItemStack;
+use crate::inventory::TOTAL_SLOTS;
+use crate::mobs;
+use crate::net;
+use crate::physics::Player;
+use crate::raycast;
+use crate::registry;
+use crate::registry::AIR;
+use crate::registry::ItemId;
+use crate::registry::ToolKind;
+use crate::script;
+use crate::style;
+use crate::world;
+use glam::Vec3;
+use super::DiscoveryAim;
+use super::Game;
+use super::LocalWorkingChannel;
+use super::combat;
+use super::navigation::Screen;
 
 #[cfg(all(test, target_os = "linux"))]
 #[path = "gameplay_proofs.rs"]

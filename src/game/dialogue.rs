@@ -1,6 +1,8 @@
 //! Dialogue screen logic (spec 3.2 runtime).
 
-use super::*;
+use crate::identity;
+use super::Game;
+use super::navigation::Screen;
 use crate::registry::{DialogueChoice, ScriptHook};
 use std::cell::RefCell;
 use std::collections::HashMap;

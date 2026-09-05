@@ -71,3 +71,9 @@ read-only inputs. `inventory_panel.rs` owns shared inventory/crafting geometry
 and the borrowed storage-grid view. Drawing and hit testing use the same layout;
 station controls, alternate loadout geometry, and browser placement retain
 their separate screen policies.
+
+Production modules import their domain dependencies explicitly. The game facade
+contains composition state and selected test entry points; it does not supply a
+broad namespace to child modules. Input, navigation, widgets, and presentation
+helpers expose their own contracts. Native proof imports name their actual
+dependencies even though the proof remains attached to the action adapter.

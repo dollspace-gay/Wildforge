@@ -1,6 +1,18 @@
 //! Menu click handling and screen transitions.
 
-use super::*;
+use crate::atlas;
+use crate::audio::Sfx;
+use crate::identity;
+use crate::inventory::TOTAL_SLOTS;
+use crate::mp;
+use crate::net;
+use crate::style;
+use crate::world;
+use std::path::PathBuf;
+use super::Game;
+use super::navigation::AccountTaskResult;
+use super::navigation::Screen;
+use winit::event_loop::ActiveEventLoop;
 
 impl Game {
     pub(super) fn menu_click(&mut self, event_loop: &ActiveEventLoop, right: bool) {

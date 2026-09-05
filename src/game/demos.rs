@@ -10,7 +10,20 @@
 //! Nothing here runs unless the matching environment variable is set, so an
 //! ordinary session pays one function call for the lot.
 
-use super::*;
+use crate::chunk::ChunkPos;
+use crate::chunk::SEA_LEVEL;
+use crate::identity;
+use crate::inventory::Inventory;
+use crate::inventory::ItemStack;
+use crate::lights;
+use crate::registry::AIR;
+use crate::registry::ItemId;
+use crate::registry::Registry;
+use crate::world;
+use crate::world::World;
+use glam::Vec3;
+use super::Game;
+use super::navigation::Screen;
 use crate::planet::{BlockPos, EntityPos, Face, SurfacePos};
 
 /// Face-local drafting coordinates for capture scenes. Scene descriptions use

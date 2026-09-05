@@ -1,7 +1,10 @@
 //! Player combat depth: stamina, light/light/heavy combo, dodge with
 //! i-frames, block, backstab, and floating damage numbers.
 
-use super::*;
+use crate::audio::Sfx;
+use glam::Vec3;
+use super::Game;
+use super::navigation::Screen;
 use crate::planet::EntityPos;
 use glam::Vec2;
 

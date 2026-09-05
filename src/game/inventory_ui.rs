@@ -6,7 +6,13 @@
 
 use super::widgets;
 use super::ui::wrap_ui_status;
-use super::*;
+use crate::crafting;
+use crate::inventory::HOTBAR_SLOTS;
+use crate::inventory::ItemStack;
+use crate::ui::UiBatch;
+use crate::world;
+use super::Game;
+use super::MAX_HEALTH;
 
 impl Game {
     pub(super) const DISCOVERY_ROWS: usize = 7;

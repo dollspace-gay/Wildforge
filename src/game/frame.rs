@@ -1,6 +1,36 @@
 //! Per-frame client update, scene assembly, and renderer submission.
 
-use super::*;
+use crate::atlas;
+use crate::audio;
+use crate::audio::Sfx;
+use crate::chunk::CHUNK_X;
+use crate::entity;
+use crate::entity::ItemEntity;
+use crate::lights;
+use crate::mesher;
+use crate::mobs;
+use crate::mp;
+use crate::net;
+use crate::physics;
+use crate::raycast;
+use crate::registry::ItemId;
+use crate::renderer::FrameInput;
+use crate::server;
+use crate::style;
+use crate::visual_capture;
+use crate::world;
+use crate::world::World;
+use glam::Vec3;
+use std::time::Instant;
+use super::Game;
+use super::advance_capture_clock;
+use super::SHOT_FIXED_DT;
+use super::SHOT_MAX_FRAMES;
+use super::SHOT_SETTLE_FRAMES;
+use super::combat;
+use super::content_watch::content_tree_stamp;
+use super::input::KeysDown;
+use super::navigation::Screen;
 
 /// Local authority pauses for solo play, but a windowed host keeps serving
 /// guests. Remote guests never enter this path at all.

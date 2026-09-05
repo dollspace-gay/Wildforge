@@ -1,6 +1,21 @@
 //! World/session lifecycle, player persistence, and client configuration.
 
-use super::*;
+use crate::entity::ItemEntity;
+use crate::identity;
+use crate::inventory::HOTBAR_SLOTS;
+use crate::inventory::Inventory;
+use crate::inventory::ItemStack;
+use crate::inventory::TOTAL_SLOTS;
+use crate::physics::Player;
+use crate::server;
+use crate::world;
+use crate::world::World;
+use glam::Vec3;
+use std::path::PathBuf;
+use super::Game;
+use super::MAX_AIR;
+use super::combat;
+use super::navigation::Screen;
 
 impl Game {
     pub(super) fn apply_config(&mut self) {
