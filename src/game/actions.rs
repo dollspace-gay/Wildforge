@@ -562,6 +562,7 @@ impl Game {
                 self.reach(),
             )
         {
+            if self.reject_guest_action() { return; }
             let pos = w.block;
             if reg.is_water(self.runtime.view().get_block_at(pos))
                 && let Some(bi) = reg.animal_id("base:boat")
@@ -1733,6 +1734,7 @@ impl Game {
             self.input.right_held = false;
             match self.interaction.fishing.take() {
                 Some((bobber, _, bite)) if bite > 0.0 => {
+                    if self.reject_guest_action() { return; }
                     // The strike: a real fish first, thin luck second.
                     let caught = self.runtime.local_mut().world.catch_fish_near_at(bobber, 6.0).is_some()
                         || self.rand01() < 0.25;
@@ -1786,6 +1788,7 @@ impl Game {
             let tb = self.runtime.view().get_block_at(h.block);
             // Harvestable blocks (berry bushes).
             if let Some((item, n, becomes)) = reg.block(tb).harvest {
+                if self.reject_guest_action() { return; }
                 self.runtime.local_mut().world.set_block_at(h.block, becomes);
                 let left = self.inventory.add(&reg, item, n);
                 if left > 0 {
@@ -1800,7 +1803,11 @@ impl Game {
             // pen, guano from the cave, compost from the heap.
             if let Some(hi) = held {
                 let v = world::soil::fertilizer_value(&reg.item(hi).name);
-                if v > 0 && self.runtime.local_mut().world.feed_soil_at(h.block, v) {
+                if v > 0 && self.runtime.is_guest() && reg.block(tb).fert_tiles.is_some() {
+                    self.reject_guest_action();
+                    return;
+                }
+                if v > 0 && !self.runtime.is_guest() && self.runtime.local_mut().world.feed_soil_at(h.block, v) {
                     self.inventory.take_one(self.input.hotbar_sel);
                     self.sfx(Sfx::Place);
                     self.input.action_cooldown = 0.3;
@@ -1812,6 +1819,7 @@ impl Game {
             // mark is inherited by everything it spreads to — so a
             // burn cannot change hands halfway down a hillside.
             if held.is_some_and(|i| reg.item(i).striker) {
+                if self.reject_guest_action() { return; }
                 let f = h.adjacent;
                 if reg.block(tb).burns > 0 && self.runtime.local_mut().world.light_fire_at(f, true) {
                     self.inventory.wear_tool(&reg, self.input.hotbar_sel);
@@ -1831,6 +1839,7 @@ impl Game {
             ) {
                 let name = reg.block(tb).name.as_str();
                 if name == "base:grass" || name == "base:dirt" {
+                    if self.reject_guest_action() { return; }
                     // The till reads the ground it came from: grass-fed
                     // loam starts richer than bare dirt (soil.rs).
                     let meta = self.runtime.local().world.till_meta_at(h.block);
@@ -1898,6 +1907,10 @@ impl Game {
                 }
                 Some("furnace") => {
                     self.input.right_held = false;
+                    if let Some(remote) = &self.multiplayer.remote {
+                        remote.session.send(&net::C2S::OpenContainer { pos: h.block });
+                        return;
+                    }
                     self.runtime.local_mut().world.ensure_block_entity_at(
                         h.block,
                         world::BlockEntity::Furnace(Default::default()),
@@ -2108,6 +2121,7 @@ impl Game {
                     return;
                 }
                 Some("heart") if self.input.action_cooldown <= 0.0 => {
+                    if self.reject_guest_action() { return; }
                     self.input.action_cooldown = 0.5;
                     self.input.right_held = false;
                     let carried = held.and_then(|i| world::seed_nature(&reg.item(i).name));
@@ -2207,6 +2221,7 @@ impl Game {
                     return;
                 }
                 Some("compost") if self.input.action_cooldown <= 0.0 => {
+                    if self.reject_guest_action() { return; }
                     self.input.action_cooldown = 0.3;
                     // A ripened heap hands over its compost bare-handed;
                     // a fresh one eats greens item by item.
@@ -2296,6 +2311,7 @@ impl Game {
                     return;
                 }
                 Some("smoker") if self.input.action_cooldown <= 0.0 => {
+                    if self.reject_guest_action() { return; }
                     self.input.action_cooldown = 0.35;
                     let raws = reg.tags.get("base:raw_meats").cloned().unwrap_or_default();
                     let holding_raw = held.is_some_and(|h| raws.contains(&h));
@@ -2429,6 +2445,7 @@ impl Game {
                             reg.machine(kind).is_some_and(|def| def.handler.hand_fed())
                         }) =>
                 {
+                    if self.reject_guest_action() { return; }
                     // Powder and fuel in by hand; bare hands take the
                     // split back out (smoker rules, no screen).
                     self.input.action_cooldown = 0.3;
@@ -2518,6 +2535,7 @@ impl Game {
                     return;
                 }
                 Some("firebox") if self.input.action_cooldown <= 0.0 => {
+                    if self.reject_guest_action() { return; }
                     // Coal in at the door; bare hands read the gauges.
                     self.input.action_cooldown = 0.3;
                     let fuel = held.and_then(|i| reg.fuel_value(i));
@@ -2918,6 +2936,7 @@ impl Game {
                     .map(|item| (item.pos, item.stable_id, 0.35)),
             )
             .filter_map(|(pos, stable_id, radius)| {
+                if stable_id == 0 { return None; }
                 let delta = eye.local_delta_to(pos);
                 let along = delta.dot(forward);
                 (along > 0.0 && along <= reach && (delta - forward * along).length() <= radius)
@@ -3118,6 +3137,10 @@ impl Game {
     pub(super) fn apply_script_cmds(&mut self) {
         let reg = self.content.reg.clone();
         for cmd in self.content.scripts.take_cmds() {
+            if self.runtime.is_guest() && cmd.requires_authority() {
+                eprintln!("scripts: guest world mutation rejected; commands execute on the host");
+                continue;
+            }
             match cmd {
                 script::Cmd::SetBlock(pos, name) => {
                     if let Some(b) = reg.block_id(&name) {

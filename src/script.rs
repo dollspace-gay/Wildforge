@@ -49,6 +49,14 @@ pub enum Cmd {
     },
 }
 
+impl Cmd {
+    pub(crate) fn requires_authority(&self) -> bool {
+        matches!(self, Self::SetBlock(..) | Self::Give(..) | Self::SpawnAnimal(..)
+            | Self::SpawnNpc(..) | Self::QuestProgress { .. } | Self::QuestAccept(..)
+            | Self::ArcaneMoveWorking { .. })
+    }
+}
+
 pub struct ScriptMod {
     pub id: String,
     pub ast: Option<AST>,

@@ -1681,3 +1681,24 @@ station state prediction, script command authority, and read-only soil/heart
 queries. The temporary World replication adapter remains until its final fixture
 migration. No format, compiler, tests, analyzer, native proof, or GPU campaign ran;
 all current-source validation remains at the end of the implementation phase.
+
+
+## Guest mutation routing correction (coding checkpoint; unverified)
+
+Source review found guest actions that spent inventory or changed local world
+state without a corresponding C2S operation: boat launch, fishing payout,
+harvesting, fertilizer/fire/tilling, heart/compost/smoker/hand-fed machine/firebox
+operations, and station crafting. They now reject before their mutation and item
+cost with an explicit multiplayer-unavailable message. This preserves the wire
+schema and prevents temporary client-only outcomes from masquerading as host
+state; implementing new host operations is a separate feature. Local play is
+unchanged. Furnace opening now sends the existing OpenContainer request so the
+host admits the cursor/container session before clicks. Physical script commands
+also cannot mutate a guest. Cosmetic drops carry no fabricated host identity and
+are excluded from identity-targeted workings until a host snapshot replaces them.
+
+These are explicit correctness changes, separate from the preceding ownership
+move. Final regression work must prove no inventory cost on rejection, local
+operation preservation, actual furnace admission/click echo, script authority,
+and no guest generation, save, stable-ID allocation, or physical simulation.
+No tests or validation ran; the implementation-first schedule remains active.

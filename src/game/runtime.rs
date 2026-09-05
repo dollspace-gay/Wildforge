@@ -178,3 +178,16 @@ impl PlayRuntime {
         }
     }
 }
+
+impl super::Game {
+    /// Old guest-only mutations had no host operation and were overwritten by
+    /// snapshots. Reject before charging inventory; supported actions send their
+    /// explicit request instead. This does not introduce new protocol variants.
+    pub(super) fn reject_guest_action(&mut self) -> bool {
+        if !self.runtime.is_guest() { return false; }
+        self.toast("This action is not supported in multiplayer yet.".into());
+        self.input.right_held = false;
+        self.input.action_cooldown = 0.35;
+        true
+    }
+}

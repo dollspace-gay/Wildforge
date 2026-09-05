@@ -623,6 +623,7 @@ impl Game {
     /// one of each ingredient and adds the output, exactly like the free
     /// grid but bound to the machine rather than the player's hands.
     pub(super) fn workbench_craft(&mut self, pos: crate::planet::BlockPos, recipe_index: usize) {
+        if self.reject_guest_action() { return; }
         let reg = self.content.reg.clone();
         let Some(world::BlockEntity::Multiblock(m)) = self.runtime.view().block_entity_at(&pos)
         else {
