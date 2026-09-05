@@ -82,3 +82,28 @@ shutdown and collapsed save-read errors remain deliberately separate repairs.
 Prepared chunks still commit only through the authoritative world adoption
 operation. No public API, MSRV, dependency, codec, or generation algorithm
 changes were introduced. Actual GPU/runtime qualification remains pending.
+
+## Folder guidance and content identity
+
+All 53 maintained repository directories now have local README/AGENTS guides.
+`tools/check_folder_guides.py` inventories tracked/unignored source ancestors,
+requires both guides, rejects heading-only stubs, and ignores private runtime
+and generated trees through Git's existing ignore rules. CI runs the checker.
+Human review still determines whether the guidance is accurate and useful.
+
+A separate compatibility correction extracts mod inventory/hash code into
+`src/net/content.rs`. Only new `README.md`/`AGENTS.md` files beginning with
+`<!-- wildforge:guide -->` are omitted from content hashes and transfer.
+Historical unmarked files, including `mods/README.md`, retain their bytes and
+hash contribution. Scripts retain the existing host-only exclusion. Runtime
+TOML/images cannot use the guide marker to opt out.
+
+Evidence: 21 Python tests, 2 content/hash regressions, the genesis-content
+regression, 51 registry scenarios, 45 rendering/atlas tests, strict all-feature
+Clippy, actionlint, folder coverage, and whitespace checks pass. The installed
+`mods` path hashes to `4d96ccb51157d021` both before and after adding guides.
+An initial registry filter matched zero tests; it was corrected to
+`tests::registry_tests::` in commands and new guides, then actually exercised.
+Logs are in `target/maintainability/folder-guides/`. Full post-correction Rust
+and runtime gates remain pending; the previous five stale visual evidence
+checks have not been bypassed or relabeled as passing.

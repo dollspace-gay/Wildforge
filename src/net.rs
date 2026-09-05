@@ -17,9 +17,10 @@ pub use protocol::{
 #[path = "net/handshake.rs"]
 mod handshake;
 
+#[path = "net/content.rs"]
+mod content;
+pub use content::{collect_mod_files, content_hash};
+
 #[path = "net/transport.rs"]
 mod transport;
-pub use transport::{
-    Client, DiscoveredServer, Discovery, GAME_PORT, Host, HostEvent, collect_mod_files,
-    content_hash,
-};
+pub use transport::{Client, DiscoveredServer, Discovery, GAME_PORT, Host, HostEvent};
