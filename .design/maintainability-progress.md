@@ -1282,3 +1282,16 @@ are retained; capped queries return the intended prefix. This is separate from
 the atlas move. Final regressions must cover zero/one limits, queued overflow,
 face seams, and unchanged output when the cap does not bind. Pinned generation
 and runtime checks remain part of the deferred final validation phase.
+
+
+## Private atlas storage and owned weather buffers (coding checkpoint; unverified)
+
+`AtlasGrid` now keeps its backing vector private. Weather's atmosphere/water
+scratch buffers are complete grids, allocated or cloned with their validated
+shape. Completed-hour publication and rollback swap these owners in constant
+time; cell mutation uses fixed-length slices. No caller can resize a grid's
+storage independently of its dimensions. Weather's arithmetic, transaction
+sequence, and buffer allocation count are retained. Full world/weather state
+encapsulation remains a later boundary; this change closes only the dense-grid
+storage seam. Rollback, slice partition, conservation, and performance checks
+are deferred to the final validation phase along with the other coding changes.

@@ -59,7 +59,7 @@ impl PlanetaryWeather {
         }
         for index in 0..count {
             available[index].add_assign(inbound[index])?;
-            let cell = &mut self.water.cells.values[index];
+            let cell = &mut self.water.cells.values_mut()[index];
             cell.groundwater = available[index];
             let ground = atlas.genesis.ground.values()[index];
             let capacity = u64::from(ground.aquifer_capacity)
@@ -79,7 +79,7 @@ impl PlanetaryWeather {
         // This keeps their pressure response visible without voxelizing pores.
         for aquifer in &mut self.water.aquifers {
             let index = aquifer.pos.index(side);
-            let shallow = &mut self.water.cells.values[index];
+            let shallow = &mut self.water.cells.values_mut()[index];
             if aquifer.head_milliblocks > shallow.groundwater_head_milliblocks {
                 let parcel = aquifer.mass.take((aquifer.mass.water_hu / 2048).max(1));
                 shallow.groundwater.add_assign(parcel)?;

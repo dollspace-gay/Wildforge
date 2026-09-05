@@ -10,7 +10,7 @@ impl PlanetaryWeather {
     pub fn ecology_soil_water_hu(&self, pos: AtlasPos) -> u64 {
         let index = pos.index(self.water.cells.side());
         if self.active_hour.is_some() && index < self.cursor {
-            self.water_scratch[index].soil.water_hu
+            self.water_scratch.values()[index].soil.water_hu
         } else {
             self.water.cells.values()[index].soil.water_hu
         }
@@ -24,7 +24,7 @@ impl PlanetaryWeather {
         let index = pos.index(self.water.cells.side());
         let in_scratch = self.active_hour.is_some() && index < self.cursor;
         let (water, atmosphere) = if in_scratch {
-            (&mut self.water_scratch[index], &mut self.scratch[index])
+            (&mut self.water_scratch.values_mut()[index], &mut self.scratch.values_mut()[index])
         } else {
             (
                 &mut self.water.cells.values_mut()[index],
@@ -46,7 +46,7 @@ impl PlanetaryWeather {
         let index = pos.index(self.water.cells.side());
         let in_scratch = self.active_hour.is_some() && index < self.cursor;
         let water = if in_scratch {
-            &mut self.water_scratch[index]
+            &mut self.water_scratch.values_mut()[index]
         } else {
             &mut self.water.cells.values_mut()[index]
         };
@@ -72,7 +72,7 @@ impl PlanetaryWeather {
         let index = pos.index(self.water.cells.side());
         let in_scratch = self.active_hour.is_some() && index < self.cursor;
         let water = if in_scratch {
-            &mut self.water_scratch[index]
+            &mut self.water_scratch.values_mut()[index]
         } else {
             &mut self.water.cells.values_mut()[index]
         };

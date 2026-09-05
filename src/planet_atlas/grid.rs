@@ -148,7 +148,7 @@ pub struct AtlasCell {
 #[derive(Clone, Debug, PartialEq)]
 pub struct AtlasGrid<T> {
     side: u16,
-    pub(super) values: Vec<T>,
+    values: Vec<T>,
 }
 
 impl<T> AtlasGrid<T> {
@@ -168,6 +168,18 @@ impl<T> AtlasGrid<T> {
         T: Clone,
     {
         Self::from_values(side, vec![value; atlas_count(side)?])
+    }
+
+    /// Allocate a second grid with this validated shape, without exposing the
+    /// backing vector or allowing a caller to change its length.
+    pub(super) fn filled_like(&self, value: T) -> Self
+    where
+        T: Clone,
+    {
+        Self {
+            side: self.side,
+            values: vec![value; self.values.len()],
+        }
     }
 
     #[inline]

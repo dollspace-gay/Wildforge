@@ -65,7 +65,7 @@ impl PlanetaryWeather {
         let index = pos.index(self.water.cells.side());
         let in_scratch = self.active_hour.is_some() && index < self.cursor;
         let soil = if in_scratch {
-            self.water_scratch.get(index).map(|cell| cell.soil)
+            self.water_scratch.values().get(index).map(|cell| cell.soil)
         } else {
             self.water.cells.values().get(index).map(|cell| cell.soil)
         };
@@ -79,7 +79,7 @@ impl PlanetaryWeather {
         let index = pos.index(self.water.cells.side());
         let in_scratch = self.active_hour.is_some() && index < self.cursor;
         let water = if in_scratch {
-            &mut self.water_scratch[index]
+            &mut self.water_scratch.values_mut()[index]
         } else {
             &mut self.water.cells.values_mut()[index]
         };
@@ -168,7 +168,7 @@ impl PlanetaryWeather {
         };
         if self.active_hour.is_some()
             && index < self.cursor
-            && self.scratch[index]
+            && self.scratch.values()[index]
                 .atmospheric_vapor
                 .checked_add(amount)
                 .is_none()
@@ -178,7 +178,7 @@ impl PlanetaryWeather {
         self.water.ledger.industrial.water_hu -= water_hu;
         self.cells.cells.values_mut()[index].atmospheric_vapor = next;
         if self.active_hour.is_some() && index < self.cursor {
-            self.scratch[index].atmospheric_vapor += amount;
+            self.scratch.values_mut()[index].atmospheric_vapor += amount;
         }
         water_hu
     }

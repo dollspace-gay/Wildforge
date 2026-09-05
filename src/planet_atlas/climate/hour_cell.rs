@@ -259,50 +259,50 @@ impl PlanetaryWeather {
         let cloud_transport = source.cloud_water * 3 / 10;
         source.atmospheric_vapor -= vapor_transport;
         source.cloud_water -= cloud_transport;
-        let vapor_room = u32::MAX - self.scratch[index].atmospheric_vapor;
+        let vapor_room = u32::MAX - self.scratch.values()[index].atmospheric_vapor;
         let local_vapor = source.atmospheric_vapor.min(vapor_room);
-        self.scratch[index].atmospheric_vapor += local_vapor;
+        self.scratch.values_mut()[index].atmospheric_vapor += local_vapor;
         let mut rejected_vapor = source.atmospheric_vapor - local_vapor;
-        let cloud_room = u32::MAX - self.scratch[index].cloud_water;
+        let cloud_room = u32::MAX - self.scratch.values()[index].cloud_water;
         let local_cloud = source.cloud_water.min(cloud_room);
-        self.scratch[index].cloud_water += local_cloud;
+        self.scratch.values_mut()[index].cloud_water += local_cloud;
         let mut rejected_cloud = source.cloud_water - local_cloud;
         distribute_u32(vapor_transport, stencil, |target, share| {
-            let room = u32::MAX - self.scratch[target].atmospheric_vapor;
+            let room = u32::MAX - self.scratch.values()[target].atmospheric_vapor;
             let accepted = share.min(room);
-            self.scratch[target].atmospheric_vapor += accepted;
+            self.scratch.values_mut()[target].atmospheric_vapor += accepted;
             rejected_vapor += share - accepted;
         });
-        spill_vapor(&mut self.scratch, index, rejected_vapor)?;
+        spill_vapor(self.scratch.values_mut(), index, rejected_vapor)?;
         distribute_u32(cloud_transport, stencil, |target, share| {
-            let room = u32::MAX - self.scratch[target].cloud_water;
+            let room = u32::MAX - self.scratch.values()[target].cloud_water;
             let accepted = share.min(room);
-            self.scratch[target].cloud_water += accepted;
+            self.scratch.values_mut()[target].cloud_water += accepted;
             rejected_cloud += share - accepted;
         });
-        spill_cloud(&mut self.scratch, index, rejected_cloud)?;
+        spill_cloud(self.scratch.values_mut(), index, rejected_cloud)?;
 
         let temperature_transport = temperature_anomaly * 3 / 10;
         add_i16(
-            &mut self.scratch[index].weather_temperature_anomaly,
+            &mut self.scratch.values_mut()[index].weather_temperature_anomaly,
             temperature_anomaly - temperature_transport,
         );
         add_i16(
-            &mut self.scratch[receiver_index].weather_temperature_anomaly,
+            &mut self.scratch.values_mut()[receiver_index].weather_temperature_anomaly,
             temperature_transport,
         );
         let pressure_transport = pressure * 3 / 10;
         add_i16(
-            &mut self.scratch[index].pressure_anomaly,
+            &mut self.scratch.values_mut()[index].pressure_anomaly,
             pressure - pressure_transport,
         );
         add_i16(
-            &mut self.scratch[receiver_index].pressure_anomaly,
+            &mut self.scratch.values_mut()[receiver_index].pressure_anomaly,
             pressure_transport,
         );
 
-        let destination = &mut self.scratch[index];
-        self.water_scratch[index] = water;
+        let destination = &mut self.scratch.values_mut()[index];
+        self.water_scratch.values_mut()[index] = water;
         destination.local_weather_anomaly = temperature_anomaly;
         destination.storm_energy = storm_energy;
         destination.precipitation_rate = precipitation.min(u32::from(u16::MAX)) as u16;

@@ -32,7 +32,7 @@ impl PlanetaryWeather {
     }
 
     pub(super) fn finish_hour(&mut self, atlas: &PlanetAtlas, climate_hour: u64) -> Result<WeatherStepReport, AtlasError> {
-        for (cell, inbound) in self.water_scratch.iter_mut().zip(&self.water_inbound) {
+        for (cell, inbound) in self.water_scratch.values_mut().iter_mut().zip(&self.water_inbound) {
             cell.runoff.add_assign(*inbound)?;
         }
         for (id, (debit, credit)) in std::mem::take(&mut self.surface_fluxes) {
@@ -66,8 +66,8 @@ impl PlanetaryWeather {
             }
             reservoir.coarse.add_assign(credit)?;
         }
-        std::mem::swap(&mut self.cells.cells.values, &mut self.scratch);
-        std::mem::swap(&mut self.water.cells.values, &mut self.water_scratch);
+        std::mem::swap(&mut self.cells.cells, &mut self.scratch);
+        std::mem::swap(&mut self.water.cells, &mut self.water_scratch);
         self.cells_swapped = true;
         self.precipitate_terminal_lake_salt(atlas);
         self.water.completed_surface_hours = self.water.completed_surface_hours.saturating_add(1);

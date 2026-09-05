@@ -33,15 +33,15 @@ impl PlanetaryWeather {
         let index = pos.index(side);
         let processed = self.active_hour.is_some() && index < self.cursor;
         let source = match form {
-            PrecipitationForm::Rain => &mut self.water.cells.values[index].runoff,
-            PrecipitationForm::Snow => &mut self.water.cells.values[index].snow,
+            PrecipitationForm::Rain => &mut self.water.cells.values_mut()[index].runoff,
+            PrecipitationForm::Snow => &mut self.water.cells.values_mut()[index].snow,
             PrecipitationForm::None => return ReservoirMass::default(),
         };
         let transferred_mass = source.take(u64::from(requested));
         if processed {
             let scratch_source = match form {
-                PrecipitationForm::Rain => &mut self.water_scratch[index].runoff,
-                PrecipitationForm::Snow => &mut self.water_scratch[index].snow,
+                PrecipitationForm::Rain => &mut self.water_scratch.values_mut()[index].runoff,
+                PrecipitationForm::Snow => &mut self.water_scratch.values_mut()[index].snow,
                 PrecipitationForm::None => unreachable!(),
             };
             let _ = scratch_source.take(transferred_mass.water_hu);
@@ -86,7 +86,7 @@ impl PlanetaryWeather {
         };
         if self.active_hour.is_some()
             && index < self.cursor
-            && self.scratch[index]
+            && self.scratch.values()[index]
                 .atmospheric_vapor
                 .checked_add(water_hu)
                 .is_none()
@@ -98,10 +98,10 @@ impl PlanetaryWeather {
         }
         self.cells.cells.values_mut()[index].atmospheric_vapor = next;
         if self.active_hour.is_some() && index < self.cursor {
-            let Some(next) = self.scratch[index].atmospheric_vapor.checked_add(water_hu) else {
+            let Some(next) = self.scratch.values()[index].atmospheric_vapor.checked_add(water_hu) else {
                 return false;
             };
-            self.scratch[index].atmospheric_vapor = next;
+            self.scratch.values_mut()[index].atmospheric_vapor = next;
         }
         self.water.ledger.precipitated_salt_mass = self
             .water

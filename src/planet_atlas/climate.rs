@@ -2,7 +2,7 @@
 
 use std::collections::BTreeMap;
 use crate::planet::SurfacePos;
-use super::{AtlasPos, AtlasError, PlanetAtlas, DynamicLayers, DynamicCell, WaterCell, WaterCycleState, ReservoirMass, SparseAquiferState, SurfaceReservoirState, SpringState, FluxInbox, WaterLedger};
+use super::{AtlasGrid, AtlasPos, AtlasError, PlanetAtlas, DynamicLayers, DynamicCell, WaterCell, WaterCycleState, ReservoirMass, SparseAquiferState, SurfaceReservoirState, SpringState, FluxInbox, WaterLedger};
 
 mod solar;
 pub use solar::{rotation_axis, prime_meridian, solar_declination, solar_direction, day_length_hours, daily_mean_insolation, local_season, latitude_longitude};
@@ -64,8 +64,8 @@ struct WeatherCheckpoint {
 pub struct PlanetaryWeather {
     pub cells: DynamicLayers,
     pub water: WaterCycleState,
-    scratch: Vec<DynamicCell>,
-    water_scratch: Vec<WaterCell>,
+    scratch: AtlasGrid<DynamicCell>,
+    water_scratch: AtlasGrid<WaterCell>,
     water_inbound: Vec<ReservoirMass>,
     surface_fluxes: BTreeMap<u64, (ReservoirMass, ReservoirMass)>,
     cursor: usize,
@@ -87,8 +87,8 @@ pub struct PlanetaryWeather {
 
 impl PlanetaryWeather {
     pub fn new(cells: DynamicLayers, water: WaterCycleState) -> Self {
-        let scratch = vec![DynamicCell::default(); cells.cells.len()];
-        let water_scratch = water.cells.values().to_vec();
+        let scratch = cells.cells.filled_like(DynamicCell::default());
+        let water_scratch = water.cells.clone();
         let water_inbound = vec![ReservoirMass::default(); cells.cells.len()];
         let completed_hours = cells.completed_climate_hours;
         Self {
@@ -143,8 +143,8 @@ impl PlanetaryWeather {
             completed_groundwater_days: self.water.completed_groundwater_days,
         });
         self.cells_swapped = false;
-        self.scratch.fill(DynamicCell::default());
-        self.water_scratch
+        self.scratch.values_mut().fill(DynamicCell::default());
+        self.water_scratch.values_mut()
             .clone_from_slice(self.water.cells.values());
         self.water_inbound.fill(ReservoirMass::default());
         self.surface_fluxes.clear();
@@ -170,8 +170,8 @@ impl PlanetaryWeather {
             return;
         };
         if self.cells_swapped {
-            std::mem::swap(&mut self.cells.cells.values, &mut self.scratch);
-            std::mem::swap(&mut self.water.cells.values, &mut self.water_scratch);
+            std::mem::swap(&mut self.cells.cells, &mut self.scratch);
+            std::mem::swap(&mut self.water.cells, &mut self.water_scratch);
         }
         if let Some(checkpoint) = self.checkpoint.take() {
             self.water.aquifers = checkpoint.aquifers;

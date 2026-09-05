@@ -7,7 +7,9 @@ Climate, geology, hydrology, biomes, water cycles, and diagnostics operate on th
 `climate/` separates astronomy, circulation, moisture relaxation, and immutable
 normals from weather cell preparation, completed-hour publication, and external
 water exchanges. The climate parent owns the weather grids and rollback state;
-water/salt accounting stays in the existing water-cycle ledger.
+water/salt accounting stays in the existing water-cycle ledger. Weather scratch
+state uses complete validated grids, so publication and rollback swap grid
+owners without exposing resizable storage.
 
 `geology/` separates stable records and classifications, plate/tectonic fields,
 volcanism, relief, strata/provinces, finite deposits, validation, and queries.
@@ -17,7 +19,7 @@ Its parent retains the bounded deterministic attempt-selection coordinator.
 watersheds, river/channel geometry, validation, sampling, and finite placers.
 Its parent keeps the generation sequence and final dense-cell accounting.
 
-`grid.rs` owns canonical addressing and dense storage; `layers.rs`, `dynamic.rs`,
+`grid.rs` owns canonical addressing and private dense storage; `layers.rs`, `dynamic.rs`,
 and `history.rs` define the layer schemas. `generation.rs` coordinates stages,
 `sampling.rs` exposes bounded queries, and `validation.rs` checks complete state.
 `manifest.rs` owns compatibility; `codec/` and `storage/` own serialization and
