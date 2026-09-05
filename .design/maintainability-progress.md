@@ -16,7 +16,8 @@ Local baseline checkpoints:
 
 - `f41df43`: existing agent navigation and predator repairs, separately recorded.
 - `c6d9589`: design, baseline measurements, and advisory tooling.
-- Work branch: `refactor/maintainable-engine` (not published).
+- Initial local branch: `refactor/maintainable-engine`.
+- Published work branch: `refactor/maintainability-migration` (draft review; full migration remains active).
 
 Baseline verification completed at `c6d9589`: format, strict all-feature
 Clippy, Rust 1.95 MSRV, 1,017 subsystem tests (24 ignored), 15 serial agent
