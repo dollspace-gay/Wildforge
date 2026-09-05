@@ -80,7 +80,7 @@ impl World {
         fresh: bool,
         revision: &ChunkRevision,
     ) -> bool {
-        if !self.region_store.is_current(pos, revision) {
+        if !revision.is_current(pos, &self.chunk_loader()) {
             return false;
         }
         self.adopt_prepared(pos, chunk, fresh)
@@ -645,7 +645,7 @@ impl World {
                     return;
                 }
                 self.palette_stale = false;
-                self.load_remap = self.read_palette_remap();
+                self.load_remap = Arc::new(self.read_palette_remap());
             }
             if let Err(error) = self.save_chunk(pos) {
                 eprintln!("materials: retrogen chunk write failed for {pos:?}: {error}");

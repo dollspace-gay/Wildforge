@@ -236,8 +236,7 @@ pub struct HostSession {
     pub fresh_spawn: Option<EntityPos>,
     /// Pure terrain work for cold guest horizons. Created lazily from the
     /// authoritative world's seed/content; the host pump only adopts results.
-    chunk_jobs: Option<chunk_jobs::HostChunkJobs>,
-    chunk_jobs_error: Option<std::sync::Arc<std::io::Error>>,
+    chunk_jobs: chunk_jobs::HostChunkState,
     /// Horizon assigned before a client negotiates one. Tests may shrink this
     /// for compact protocol fixtures; production retains the legacy five.
     initial_view_dist: i32,
@@ -387,8 +386,7 @@ impl HostSession {
             moderation: None,
             banned: HashSet::new(),
             fresh_spawn: None,
-            chunk_jobs: None,
-            chunk_jobs_error: None,
+            chunk_jobs: chunk_jobs::HostChunkState::default(),
             initial_view_dist: 5,
             snapshot_timer: 0.0,
             snapshot_seq: 0,
@@ -777,7 +775,7 @@ impl HostSession {
         // Authoritative block edits out.
         if !server.world.edits().is_empty() {
             for (pos, b, meta, salt_mass, soil_salinity) in server.world.take_edits() {
-                if let Some(jobs) = &mut self.chunk_jobs {
+                if let Some(jobs) = self.chunk_jobs.as_mut() {
                     jobs.invalidate_encoded(pos.chunk());
                 }
                 self.broadcast_ready(&S2C::BlockSet {

@@ -36,6 +36,10 @@ pub(crate) struct ChunkRevision {
 }
 
 impl RegionStore {
+    pub(in crate::world) fn same_instance(&self, other: &Self) -> bool {
+        Arc::ptr_eq(&self.0, &other.0)
+    }
+
     pub(in crate::world) fn new(directory: PathBuf) -> Self {
         Self(Arc::new(StoreState {
             directory,

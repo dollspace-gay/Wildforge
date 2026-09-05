@@ -8,9 +8,10 @@ use crate::atlas::TileVariants;
 use crate::background::SnapshotJobs;
 use crate::chunk::ChunkPos;
 use crate::mesher::{ChunkMesh, ChunkMeshInput, mesh_chunk_input};
+use crate::registry::Registry;
 
 type MeshSignature = Vec<(u16, Vec<u16>)>;
-type MeshResult = (ChunkPos, ChunkMesh, MeshSignature);
+type MeshResult = (ChunkPos, ChunkMesh, MeshSignature, Arc<Registry>);
 
 struct MeshJob {
     input: ChunkMeshInput,
@@ -31,8 +32,9 @@ impl MeshPool {
             .unwrap_or(1);
         let jobs = SnapshotJobs::new("chunk-mesh", workers, 2, |job: MeshJob| {
             let position = job.input.position();
+            let registry = Arc::clone(job.input.registry());
             let mesh = mesh_chunk_input(&job.input, &job.variants);
-            (position, mesh, job.signature)
+            (position, mesh, job.signature, registry)
         })?;
         Ok(Self {
             jobs,
@@ -62,10 +64,20 @@ impl MeshPool {
         true
     }
 
-    pub(super) fn try_ready(&mut self) -> Option<MeshResult> {
-        let result = self.jobs.try_ready()?;
-        self.in_flight.remove(&result.0);
-        Some(result)
+    pub(super) fn try_ready(
+        &mut self,
+        registry: &Arc<Registry>,
+        signature: &[(u16, Vec<u16>)],
+    ) -> Option<(ChunkPos, ChunkMesh)> {
+        while let Some((position, mesh, requested_signature, requested_registry)) =
+            self.jobs.try_ready()
+        {
+            self.in_flight.remove(&position);
+            if Arc::ptr_eq(&requested_registry, registry) && requested_signature == signature {
+                return Some((position, mesh));
+            }
+        }
+        None
     }
 
     pub(super) fn positions(&self) -> impl Iterator<Item = ChunkPos> + '_ {
@@ -121,8 +133,8 @@ mod tests {
         ));
         assert_eq!(pool.pending_count(), 1);
         let deadline = Instant::now() + Duration::from_secs(10);
-        let (at, actual, signature) = loop {
-            if let Some(result) = pool.try_ready() {
+        let (at, actual) = loop {
+            if let Some(result) = pool.try_ready(&world.reg, &variants.signature()) {
                 break result;
             }
             assert!(
@@ -132,7 +144,6 @@ mod tests {
             std::thread::yield_now();
         };
         assert_eq!(at, position);
-        assert_eq!(signature, variants.signature());
         assert!(!actual.opaque_idx.is_empty());
         assert_eq!(actual.opaque_idx, expected.opaque_idx);
         assert_eq!(actual.water_idx, expected.water_idx);
@@ -153,5 +164,48 @@ mod tests {
         assert_eq!(emitters(&actual), emitters(&expected));
         assert_eq!(pool.pending_count(), 0);
         assert!(!pool.contains(position));
+    }
+
+    #[test]
+    fn changed_registry_or_variants_discard_old_meshes_and_release_the_slot() {
+        for change_registry in [false, true] {
+            let reg = Arc::new(registry::load(Path::new("/nonexistent-mods-dir")));
+            let mut world = World::new(42, "saves/.none".into(), reg);
+            let position = ChunkPos::new(Face::PosZ, 256, 256).unwrap();
+            world.ensure_chunk(position);
+            let mut pool = MeshPool::new().unwrap();
+            let variants = TileVariants::default();
+            let mut signature = variants.signature();
+            assert!(pool.request(
+                ChunkMeshInput::capture(&world, position).unwrap(),
+                variants.clone(),
+                signature.clone()
+            ));
+            if change_registry {
+                world.reg = Arc::new((*world.reg).clone());
+            } else {
+                signature.push((1, vec![2]));
+            }
+            let deadline = Instant::now() + Duration::from_secs(10);
+            while pool.pending_count() != 0 {
+                assert!(pool.try_ready(&world.reg, &signature).is_none());
+                assert!(Instant::now() < deadline, "stale mesh was not discarded");
+                std::thread::yield_now();
+            }
+            assert!(!pool.contains(position));
+            assert!(pool.request(
+                ChunkMeshInput::capture(&world, position).unwrap(),
+                variants,
+                signature.clone()
+            ));
+            loop {
+                if let Some((at, _)) = pool.try_ready(&world.reg, &signature) {
+                    assert_eq!(at, position);
+                    break;
+                }
+                assert!(Instant::now() < deadline, "current mesh was not delivered");
+                std::thread::yield_now();
+            }
+        }
     }
 }

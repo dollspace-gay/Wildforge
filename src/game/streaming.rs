@@ -104,6 +104,14 @@ impl Game {
         const ADOPT_BUDGET_MS: u128 = 3;
         let mut terrain_error = None;
         if let Some(pool) = &mut self.gen_pool {
+            pool.reconfigure(
+                crate::terrain_jobs::TerrainContext::new(
+                    self.server.world.seed,
+                    self.server.world.planet_atlas(),
+                    self.server.world.chunk_loader(),
+                ),
+                crate::terrain_jobs::WorkerPolicy::Interactive,
+            );
             if let Some(error) = pool.take_failure_notification() {
                 terrain_error = Some(format!("Terrain streaming stopped: {error}"));
             }
@@ -204,20 +212,21 @@ impl Game {
         let current_variant_signature = self.content.tile_variants.signature();
         let completed_meshes = if let Some(pool) = &mut self.mesh_pool {
             let mut completed = Vec::new();
-            while let Some((position, mesh, signature)) = pool.try_ready() {
-                completed.push((position, mesh, signature));
+            while let Some(result) =
+                pool.try_ready(&self.server.world.reg, &current_variant_signature)
+            {
+                completed.push(result);
             }
             completed
         } else {
             Vec::new()
         };
-        for (position, mesh, signature) in completed_meshes {
-            let still_current = signature == current_variant_signature
-                && self
-                    .server
-                    .world
-                    .chunk(position)
-                    .is_some_and(|chunk| !chunk.dirty);
+        for (position, mesh) in completed_meshes {
+            let still_current = self
+                .server
+                .world
+                .chunk(position)
+                .is_some_and(|chunk| !chunk.dirty);
             if !still_current {
                 continue;
             }

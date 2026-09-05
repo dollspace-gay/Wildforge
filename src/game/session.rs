@@ -39,7 +39,6 @@ impl Game {
         let jobs = match crate::terrain_jobs::TerrainJobs::new(
             crate::terrain_jobs::TerrainContext::new(
                 world.seed,
-                Arc::clone(&self.content.reg),
                 world.planet_atlas(),
                 world.chunk_loader(),
             ),

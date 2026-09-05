@@ -28,3 +28,9 @@ retain their cause and are suppressed while interest remains. Startup returns
 an I/O error and joins any workers already started. A panic or poisoned queue
 stops all further preparation/adoption and retains an observable fatal error;
 UI notification is one-shot while the host can refuse later arrivals too.
+
+The retained context binds seed, atlas, registry, palette snapshot, and region
+owner. Registry inputs come from the immutable loader, so generation and saved
+decoding cannot use different block IDs. Reconfiguration joins the old workers
+and creates a new session identity. A failed restart retains its requested
+context and error; repeating that request never starts another pool.

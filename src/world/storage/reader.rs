@@ -4,7 +4,7 @@ use std::io;
 use std::sync::Arc;
 
 use super::decoder::{Decoder, invalid};
-use super::region_store::{ChunkRevision, RegionStore};
+use super::region_store::{ChunkRevision as SavedRevision, RegionStore};
 use crate::chunk::{CHUNK_X, CHUNK_Y, CHUNK_Z, Chunk, ChunkPos, HydrologyVolumeRecord};
 use crate::registry::{BlockId, Registry};
 
@@ -19,7 +19,7 @@ pub(crate) enum ChunkRead {
 #[derive(Clone)]
 pub(crate) struct ChunkLoader {
     pub(super) store: RegionStore,
-    pub(super) load_remap: Vec<BlockId>,
+    pub(super) load_remap: Arc<Vec<BlockId>>,
     pub(super) reg: Arc<Registry>,
     pub(super) palette_stale: bool,
 }
@@ -29,18 +29,50 @@ pub(crate) struct ChunkLoad {
     pub(crate) revision: ChunkRevision,
 }
 
+/// Prepared bytes are meaningful only with the registry and palette that
+/// decoded them, as well as the saved-chunk revision they were read from.
+pub(crate) struct ChunkRevision {
+    saved: SavedRevision,
+    context: ChunkLoader,
+}
+
+impl ChunkRevision {
+    pub(in crate::world) fn is_current(&self, pos: ChunkPos, loader: &ChunkLoader) -> bool {
+        self.context.matches(loader) && loader.store.is_current(pos, &self.saved)
+    }
+}
+
 impl ChunkLoader {
+    pub(crate) fn registry(&self) -> &Arc<Registry> {
+        &self.reg
+    }
+
+    /// Pointer identity stays valid while any worker or prepared result owns
+    /// its snapshot. This check performs no save reads or palette allocation.
+    pub(crate) fn matches(&self, other: &Self) -> bool {
+        self.store.same_instance(&other.store)
+            && Arc::ptr_eq(&self.reg, &other.reg)
+            && Arc::ptr_eq(&self.load_remap, &other.load_remap)
+            && self.palette_stale == other.palette_stale
+    }
+
     pub(crate) fn load(&self, pos: ChunkPos) -> io::Result<ChunkRead> {
         self.load_versioned(pos).map(|loaded| loaded.content)
     }
 
     pub(crate) fn load_versioned(&self, pos: ChunkPos) -> io::Result<ChunkLoad> {
-        let (data, revision) = self.store.read(pos)?;
+        let (data, saved) = self.store.read(pos)?;
         let content = match data {
             Some(data) => self.decode(&data)?,
             None => ChunkRead::Missing,
         };
-        Ok(ChunkLoad { content, revision })
+        Ok(ChunkLoad {
+            content,
+            revision: ChunkRevision {
+                saved,
+                context: self.clone(),
+            },
+        })
     }
 
     fn decode(&self, data: &[u8]) -> io::Result<ChunkRead> {
@@ -134,7 +166,11 @@ mod tests {
         let reg = Arc::new(registry::load(Path::new("/nonexistent-mods-dir")));
         ChunkLoader {
             store: RegionStore::new(PathBuf::new()),
-            load_remap: vec![AIR, reg.block_id("base:water").unwrap(), reg.unknown_block],
+            load_remap: Arc::new(vec![
+                AIR,
+                reg.block_id("base:water").unwrap(),
+                reg.unknown_block,
+            ]),
             reg,
             palette_stale: false,
         }

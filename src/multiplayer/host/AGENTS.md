@@ -13,6 +13,11 @@ state so later arrivals cannot wait forever on a failed pool. Stop both terrain
 and encoding before joining; preserve encoder backpressure and release cancelled
 deduplication keys. Exercise actual guest admission after injected worker failure.
 
+Keep startup failure in the same context owner as successful work. A changed
+registry/palette must retire old encodings and cache entries before new delivery.
+Do not treat worker cache invalidation as proof that connected clients have
+negotiated a changed palette; that is a separate session protocol obligation.
+
 Aim for cohesive source modules around 400 lines and review those above 500.
 Add local README/AGENTS guidance when introducing a subdirectory. Run
 `cargo test --locked tests::multiplayer::` from the repository root for focused feedback, then the applicable

@@ -2,7 +2,6 @@
 
 use std::io::ErrorKind;
 use std::path::Path;
-use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use super::{base_reg, ep, tchunk, tmp_dir};
@@ -13,12 +12,7 @@ use crate::world::{ChunkRead, World, region};
 
 fn pool(world: &World, policy: WorkerPolicy) -> TerrainJobs {
     TerrainJobs::new(
-        TerrainContext::new(
-            world.seed,
-            Arc::clone(&world.reg),
-            world.planet_atlas(),
-            world.chunk_loader(),
-        ),
+        TerrainContext::new(world.seed, world.planet_atlas(), world.chunk_loader()),
         policy,
     )
     .unwrap()

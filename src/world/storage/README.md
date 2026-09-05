@@ -17,6 +17,11 @@ Production region reads, including spawn fingerprints, use this owner. Raw
 region APIs remain for codec tests; they do not coordinate independent processes
 or separately constructed World owners pointing at the same save directory.
 
+The reader's prepared revision also retains its registry and immutable palette
+snapshot. Authoritative adoption checks both that context and the region revision.
+Refreshing a palette replaces its shared allocation; cloning a loader is cheap
+and does not copy the remapping table or read the filesystem.
+
 Preserve WFC6-WFC8 compatibility, water units, stable IDs, and modified/dirty
 flags. Keep read errors distinct from missing content. The authoritative world
 alone adopts decoded terrain and commits lighting, ecology, and accounting.

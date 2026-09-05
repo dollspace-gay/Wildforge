@@ -18,3 +18,7 @@ join before adoption, preserve a successfully published save if entry is cancell
 and reject preparation requested from obsolete content. Read errors and panics
 are failures even if the user also requested cancellation; never classify them
 by searching their message text.
+
+Content reload must invalidate prepared terrain and mesh registry identities,
+including reloads whose texture variants look unchanged. Keep save-palette context
+checks on the terrain path; meshes consume current runtime IDs, not disk IDs.
