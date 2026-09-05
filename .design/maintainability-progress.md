@@ -1075,3 +1075,20 @@ No checks run under the coding-first schedule. Pinned chunk/atlas byte and hash
 comparisons, worker-order scenarios, full Rust gates, and actual GPU/runtime
 qualification remain required. Atlas internals and registry decomposition are
 still outstanding; Phase 6 is not accepted by this implementation checkpoint.
+
+
+## Registry definitions and graph owners (implementation, unverified)
+
+Registry domain definitions moved into cohesive block, item, material/magic,
+fauna, narrative, recipe, and structure modules. Existing type names remain
+available through the registry facade. Material fixed-point inference/balance,
+derived salvage, arcane transformation validation, and ecology/scar validation
+now have separate owners with explicit imports and the same call order.
+Runtime policy queries and saved-placeholder reconstruction are separate from
+loading, and the runtime lookup module no longer uses a broad parent import.
+
+New modules remain below 400 lines before final formatting. This is a structural
+checkpoint with no tests/build/lint execution under the requested schedule.
+Raw TOML schemas, loader/linker stages, atomic registry publication, and their
+final remap/hot-reload/determinism verification remain open; the registry and
+full refactor are not accepted yet.

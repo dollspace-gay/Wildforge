@@ -2,7 +2,16 @@
 
 # Runtime content linkage
 
-runtime.rs supplements registry.rs with runtime definition and lookup behavior. The migration will separate raw definitions, linking, validation, and publication.
+Domain definition modules cover blocks, items, material/magic contracts, fauna,
+narrative content, recipes, and structures. The parent re-exports their existing
+names and owns raw loading/linking during the remaining migration.
+
+`material_graph.rs` owns fixed-point material inference and balance validation;
+`salvage.rs` derives physical recovery chains; arcane/ecology validators enforce
+their conserved content contracts. Their call order remains explicit.
+`runtime.rs` holds lookups, `policy.rs` resolves runtime content policy, and
+`placeholders.rs` restores saved content names/payloads before remapping.
+Raw deserialization, linking stages, and atomic publication remain in progress.
 
 Start with `runtime.rs`. See the [repository overview](../../README.md) for
 build prerequisites and complete checks. Commands below run from the repository root.
