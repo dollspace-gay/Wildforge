@@ -1840,3 +1840,17 @@ code retain their operation order and original codecs. No tests, compiler,
 format, analyzer, or runtime checks ran. Final station timing, powered/idle
 transitions, wheel inertia, container identity, save/load, block-removal drops,
 and all conservation regressions remain mandatory.
+
+
+## Construction membership and ghost progress (coding checkpoint; unverified)
+
+Construction owns the template library, pending ghost fills, independent local
+structures, and their allocation cursor. Named operations retain duplicate-name
+admission, same-anchor replacement, exact-name ghost completion, structure order,
+and loaded cursor advancement. Rail stepping takes/returns structures at their
+original indices while World coordinates rail queries and machine work. Existing
+TOML adapters and in-memory publication before fallible save remain unchanged.
+
+No tests/compiler/format/analyzers ran. Final template capture/stamp, ghost
+completion/cancellation, structure identity/load, rail order and machine cargo
+checks remain pending the end-of-implementation verification phase.

@@ -39,8 +39,7 @@ This is the shared storage seam used by the separate replica migration.
 
 `ReplicaWorld` is the independent agent world owner. `observations.rs` owns
 bounded host weather, arcane, item, and apparatus data. `replication.rs` defines
-the shared incoming mutation contract; its World adapter is temporary until
-graphical migration finishes. Replica block updates share resident writes and
+the shared incoming mutation contract, implemented only by the replica. Replica block updates share resident writes and
 support classification with authority, without spawning drops or simulation.
 
 `CalendarView` shares astronomical/seasonal observations without simulation
@@ -88,3 +87,8 @@ momentum, spoilage cadence, and the industrial-ire beat. Container transactions
 operate on that owner's entries; machine recognition/ticking use the existing
 BlockRead/BlockStore adapter. LocalStructure continues to own its independent
 block map and outbox. World coordinates ledger effects and block-edit fan-out.
+
+`construction.rs` owns template identity, ghost completion, independent structure
+membership, and the structure ID cursor. Rail stepping temporarily takes and
+returns each structure at its existing index. Persistence adapters keep the
+same TOML codecs and the existing in-memory-before-save failure semantics.

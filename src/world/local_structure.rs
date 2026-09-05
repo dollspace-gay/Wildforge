@@ -444,8 +444,7 @@ fn save_machine(reg: &Registry, offset: (i32, i32, i32), m: &MachineInstance) ->
 impl World {
     /// Persist the spawned local structures to `local_structures.toml`.
     pub(super) fn save_local_structures(&self) -> std::io::Result<()> {
-        let structures: Vec<SavedStructure> = self
-            .local_structures
+        let structures: Vec<SavedStructure> = self.construction.structures()
             .iter()
             .map(|structure| {
                 let mut cells: Vec<super::template::TemplateCell> = structure
@@ -587,35 +586,28 @@ impl World {
             }
             loaded.push(structure);
         }
-        self.local_structures = loaded;
-        self.next_local_structure_id = self.next_local_structure_id.max(next);
+        self.construction.restore_structures(loaded, next);
     }
 
     #[allow(dead_code)]
     pub fn local_structures(&self) -> &[LocalStructure] {
-        &self.local_structures
+        self.construction.structures()
     }
 
     #[allow(dead_code)]
     pub fn local_structure(&self, id: LocalStructureId) -> Option<&LocalStructure> {
-        self.local_structures
-            .iter()
-            .find(|structure| structure.id == id)
+        self.construction.structure(id)
     }
 
     #[allow(dead_code)]
     pub fn local_structure_mut(&mut self, id: LocalStructureId) -> Option<&mut LocalStructure> {
-        self.local_structures
-            .iter_mut()
-            .find(|structure| structure.id == id)
+        self.construction.structure_mut(id)
     }
 
     /// Remove a spawned structure by id (and persist). Returns whether one
     /// was removed; a nonexistent id is a clean no-op.
     pub fn remove_structure(&mut self, id: LocalStructureId) -> bool {
-        let before = self.local_structures.len();
-        self.local_structures.retain(|structure| structure.id != id);
-        let removed = self.local_structures.len() < before;
+        let removed = self.construction.remove_structure(id);
         if removed {
             let _ = self.save_local_structures();
         }
@@ -627,11 +619,7 @@ impl World {
     /// player-triggered "set onto track" path; the step itself is transient.
     #[allow(dead_code)]
     pub fn set_rail(&mut self, id: LocalStructureId, rail: Option<RailState>) -> bool {
-        let Some(structure) = self.local_structures.iter_mut().find(|s| s.id == id) else {
-            return false;
-        };
-        structure.rail = rail;
-        true
+        self.construction.set_rail(id, rail)
     }
 
     /// Spawn a [`LocalStructure`] from a saved template at `anchor`,
@@ -645,16 +633,7 @@ impl World {
         anchor: BlockPos,
         rot: Rotation,
     ) -> Result<LocalStructureId, String> {
-        if template.cells.is_empty() {
-            return Err("template has no cells".into());
-        }
-        let mut structure = from_template(template, &self.reg);
-        structure.id = LocalStructureId(self.next_local_structure_id);
-        structure.transform.anchor = anchor;
-        structure.transform.rotation = rot;
-        self.next_local_structure_id += 1;
-        let id = structure.id;
-        self.local_structures.push(structure);
+        let id = self.construction.spawn_structure(&self.reg, template, anchor, rot)?;
         self.save_local_structures()
             .map_err(|error| format!("saved in memory but not to disk: {error}"))?;
         Ok(id)

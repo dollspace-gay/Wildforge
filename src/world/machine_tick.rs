@@ -816,7 +816,7 @@ impl World {
     /// the main world's ire and material ledger by design; their
     /// outputs collect in `LocalStructure.outbox`.
     pub(super) fn tick_local_structure_machines(&mut self, dt: f32) {
-        for structure in self.local_structures.iter_mut() {
+        for structure in self.construction.structures_mut() {
             tick_bloomery_machines(structure, dt);
             tick_kiln_machines(structure, dt);
             tick_forge_machines(structure, dt);

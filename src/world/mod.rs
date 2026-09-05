@@ -53,6 +53,7 @@ mod country_view;
 mod calendar_state;
 mod weather_state;
 mod installations;
+mod construction;
 mod population;
 mod view;
 pub(crate) use view::WorldView;
@@ -1017,6 +1018,7 @@ pub struct RevealKey {
 }
 
 pub struct World {
+    construction: construction::Construction,
     calendar_state: calendar_state::CalendarState,
     population: population::Population,
     chunks: terrain::TerrainStore,
@@ -1130,20 +1132,6 @@ pub struct World {
     /// world can live on while a chunk is away).
     last_random: HashMap<ChunkPos, f64>,
     installations: installations::Installations,
-    /// Named, world-shared structural templates (spec Part 1.4). Structure
-    /// only — no `BlockEntity` contents — so the library is persistable and
-    /// duplication-safe with a single TOML sidecar.
-    templates: Vec<crate::world::template::Template>,
-    /// Active ghost overlays: the world cells a player still has to place,
-    /// keyed absolutely and mapped to the required block name.
-    pending_fills: Vec<crate::world::template::PendingFill>,
-    /// Spawned local structures (spec Part 1.1, scoped): self-contained
-    /// block stores that exist off the chunk grid, each with its own static
-    /// world transform. Persisted to `local_structures.toml`.
-    local_structures: Vec<crate::world::local_structure::LocalStructure>,
-    /// Allocator for [`World::local_structures`] ids, advanced on every
-    /// spawn so ids stay unique across a session.
-    next_local_structure_id: u64,
     /// Items spilled by removed block entities, for the game loop to spawn.
     pending_drops: Vec<(crate::planet::BlockPos, ItemStack)>,
     /// The entry-piece anchor of the most recent `place_assembly` that
@@ -1467,6 +1455,7 @@ impl World {
                 .ok()
         });
         World {
+            construction: construction::Construction::default(),
             calendar_state: calendar_state::CalendarState::default(),
             population: population::Population::default(),
             chunks: terrain::TerrainStore::default(),
@@ -1499,10 +1488,6 @@ impl World {
             edit_relight_batch: false,
             last_random: HashMap::new(),
             installations: installations::Installations::default(),
-            templates: Vec::new(),
-            pending_fills: Vec::new(),
-            local_structures: Vec::new(),
-            next_local_structure_id: 0,
             pending_drops: Vec::new(),
             belt_state: HashMap::new(),
             regional_ire: HashMap::new(),
