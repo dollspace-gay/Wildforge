@@ -339,15 +339,15 @@ mesh buffer/emitter parity scenario, four worker/save/QUIC scenarios (including
 an actual worker panic before admission), and 25 multiplayer scenarios pass.
 Strict all-target/all-feature Clippy, format, folder coverage, and advisory
 analysis pass. Logs are under `target/maintainability/worker-*`,
-`snapshot-owner-*`, and `mesh-owner-*`. Full gates and a fresh native hardware
-capture follow the clean source checkpoint; this is not runtime acceptance.
+`snapshot-owner-*`, and `mesh-owner-*`. The clean source checkpoint is `932d1f8`;
+its broad gates and native smoke evidence are recorded below.
 
 Hardware execution map: immutable meshing still runs through
 `mesher::mesh_chunk_input` on CPU; `renderer/resources.rs::upload_chunk` creates
 wgpu buffers and the existing indexed draws in `renderer/frame.rs` run on GPU.
 No shader/kernel or device fallback was added. The available native adapter is
-an NVIDIA RTX 5070 Ti Laptop GPU, driver 610.57.04, with 12,227 MiB. Actual
-capture evidence is still required; CPU worker tests alone cannot establish it.
+an NVIDIA RTX 5070 Ti Laptop GPU, driver 610.57.04, with 12,227 MiB. CPU worker
+tests alone cannot establish rendering; the native capture below exercises it.
 
 Remaining Phase 2/13 work includes hot-reload context invalidation, caller-level
 world-switch/disconnect/save-failure proof, entry/creation task ownership, and
@@ -355,3 +355,38 @@ dedicated/graphical graceful shutdown. The auto-capture path still calls
 `process::exit`, so a capture can prove drawing but not owner Drop execution.
 Controlled cold/warm entry and travel performance, the five visual evidence
 requalifications, and all remaining Phase 3–8 ownership work stay in scope.
+
+## Clean worker-owner gates and native smoke evidence
+
+On `932d1f8`, format, strict all-feature Clippy, Rust 1.95 MSRV, all 15 serial
+agent scenarios, doctests (zero defined), and release build pass. The complete
+subsystem run records **1,053 passes, 24 ignored, and five failures**, all the
+known stale visual-source fingerprints. The corrected save-error fixture passes
+in this complete run. Exact commands, durations, and exit codes are in
+`target/maintainability/worker-owner-gates/results.json`. An earlier gate attempt
+was interrupted before the clean checkpoint; it is separately retained under
+`worker-owner-gates-interrupted` and is not this revision's acceptance evidence.
+
+Two native captures ran on a disposable copy of the playtest world, each exiting
+with code zero after 15.65 seconds. The first wrote absolute artifact references,
+which the existing converter rejects. The second used relative names and passed
+both `verify_visual_polish.py report` and `check-report`; no raw pixels, checksum,
+scene identity, or historical qualification manifest was changed to pass.
+The first requested view distance three was clamped to the actual minimum four;
+the second invocation explicitly requests four.
+
+Validated metadata identifies the clean `932d1f8` build, NVIDIA discrete Vulkan
+adapter, 1280x720 output, seed 20260904, generation version 10, and a settled
+frame after 180 eligible frames (115 settled). It records 65 resident chunks,
+63 uploaded opaque meshes, and 30 water meshes. Visual inspection of the PNG
+shows the textured woodland, terrain, shadows, and in-world HUD. The invocation,
+executable hash, raw PPM/WFD, metadata, verified report, and PNG are retained in
+`target/maintainability/worker-owner-native/`. The accepted raw capture is under
+its `runtime/` directory and is referenced by `invocation-relative.json`.
+
+All 59 files (294,610,196 bytes) in the user's original playtest world remain
+byte-for-byte unchanged, verified with before/after SHA-256 inventories. Both
+capture processes are terminal and absent from `/proc`. This proves one native
+mesh-to-GPU path; it is not a paired performance baseline, a travel benchmark,
+graceful Drop-path shutdown proof, or replacement for the five full visual
+requalification suites. Those requirements and the remaining phases stay open.
