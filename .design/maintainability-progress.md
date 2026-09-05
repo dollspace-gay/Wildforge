@@ -1631,3 +1631,15 @@ No validation ran. Final Rust/API checks must update applicable trait imports
 and test fixtures, and verify calendar boundaries, machine recognition/rotation,
 structure/world parity, and unchanged firing/accounting. Graphical ownership
 migration continues; these source checkpoints do not accept its criteria.
+
+## Guest eviction must not settle physical blocks (corrective checkpoint; unverified)
+
+Source inspection for the replica migration found that World::evict_chunks ran
+settle_falling even in guest mode. That calls the physical falling tick and can
+plant blocks locally while merely unloading distant terrain. Eviction now settles
+falling blocks only for authority; guests retain the host's falling snapshots.
+This behavior correction is committed separately from graphical ownership moves.
+
+No validation ran. The final regression must evict guest chunks with a falling
+snapshot and prove no local landing/block edit occurs, while authoritative
+save/unload still settles physical falling blocks before persistence.

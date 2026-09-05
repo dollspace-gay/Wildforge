@@ -2402,7 +2402,9 @@ impl World {
         if candidates.is_empty() {
             return (report, released);
         }
-        self.settle_falling();
+        if !self.remote {
+            self.settle_falling();
+        }
         for pos in candidates {
             match self.save_chunk_if_modified(pos) {
                 Ok(_) => {
