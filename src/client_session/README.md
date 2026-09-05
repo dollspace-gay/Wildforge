@@ -12,9 +12,11 @@ those same names against the replacement registry, including removed and
 reinstalled definitions; the wire numbers remain owned by the host.
 
 `snapshots.rs` owns the five independent stream receivers for a connection.
-`assembly.rs` reconstructs one bounded incomplete generation per stream.
-Welcome replaces all receivers together. Wire decoding and host batching stay
-in `net/`; ordering corrections are recorded separately.
+`assembly.rs` keeps one bounded incomplete generation per stream, rejects old,
+duplicate, or inconsistent fragments, and understands the wrapping host counter.
+Welcome replaces all receivers together. Packet geometry is checked before a
+new generation can discard older incomplete work. A single-packet snapshot uses
+the same freshness rule as fragmented data.
 
 Admission, replica ownership, and content renegotiation are still being migrated
 from the two adapters under the maintainability plan. Guests receive authoritative

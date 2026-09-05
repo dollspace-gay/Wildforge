@@ -761,3 +761,31 @@ correction follows as a separately reviewable change. No public crate API,
 dependency, MSRV, save/wire format, or generation algorithm changes are part of
 this extraction. Full admission/replica ownership, protocol failure handling,
 new native guest evidence, and final full Rust/GPU gates remain outstanding.
+
+## Snapshot generation correction
+
+Category B (local correctness): the shared receiver now represents collecting
+and applied generations explicitly. Single-packet and fragmented snapshots obey
+one freshness rule. Old or duplicated generations cannot roll replica state
+backward, a duplicated fragment cannot overwrite the first copy, and conflicting
+fragment counts cannot mix layouts. Invalid part indices or zero part counts
+are rejected before replacing valid pending work. Sequence comparisons accept
+forward progress across the host's wrapping `u32` counter and reject an ambiguous
+half-range jump. Only one incomplete generation and at most 255 fragment slots
+are retained; the common single-packet path adds no assembly allocation.
+
+All six regressions that failed on the original implementation now pass, along
+with the five content-map scenarios and the independent-stream/reconnect test:
+12 focused passes. Strict all-target/all-feature Clippy, Rust 1.95 checking,
+format, all 25 multiplayer scenarios, all 15 serial agent scenarios, and advisory
+analysis pass. Logs use `target/maintainability/client-session-snapshots-*`.
+The new authored Rust modules range from 10 to 158 lines. This changes acceptance
+of stale, duplicate, or malformed incoming data, while retaining the existing
+protocol, batching, latest-wins policy, and valid snapshot payloads.
+
+Call-site inspection with `rg -n 'SnapshotAssembler|snapshots\.' src --glob '*.rs'`
+shows both guest consumers routed through `client_session::Snapshots`, plus
+focused and existing serialization/reassembly tests. `net` no longer depends on
+or exports the client receiver. Full session admission and replica extraction,
+content transfer failure handling, broad Rust gates, and new native runtime/GPU
+qualification remain open; the full migration is not accepted at this checkpoint.
