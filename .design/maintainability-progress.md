@@ -1872,3 +1872,18 @@ is not a final linter result. The long mining transaction still needs the final
 function/exception review. No format/compiler/tests/analyzers ran. Final source
 integration, codec and deterministic fixtures, transaction fault paths, and
 native/GPU/runner qualification remain pending after implementation finishes.
+
+
+## Explicit arcane observation and custody contexts (coding checkpoint; unverified)
+
+ArcaneEnvironment borrows only immutable geography and the existing Current
+ledger. It produces the same bands/survey/item observations and typed ward
+pressure snapshots from supplied atlas/workings inputs. World applies each
+controller's wake before dross after transport completion. Linked ecology
+destruction now takes explicit mutable geography/parent-ledger references plus
+registry/save location, keeping the old snapshot rollback and commit-before-voxel
+ordering. Existing ledger types remain the sole owners of conserved quantities.
+
+No checks ran. Final tests must cover absent fixture owners, exact pressure
+bounds/order, missing accounts, linked-write failure restoration, reload after
+commit before voxel removal, and all Current/ecology conservation suites.

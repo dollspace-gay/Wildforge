@@ -456,6 +456,8 @@ pub const NPC_CAP: usize = 24;
 
 mod initialization;
 mod arcane_environment;
+mod arcane_context;
+mod ecology_custody;
 mod item_custody;
 mod world_events;
 mod installation_access;

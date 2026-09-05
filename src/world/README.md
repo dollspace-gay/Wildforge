@@ -107,3 +107,11 @@ visibility/gates, and `spawn_rescue.rs` prepares authoritative standing position
 Read and installation facades live in `voxel_access.rs`/`installation_access.rs`;
 `world_events.rs` publishes edit/drop/give queues. These remain World coordinators
 where transactions cross owners; moving them does not make them independent domains.
+
+`arcane_context.rs` borrows immutable geography/Current accounts to produce
+bounded observations and typed ward pressures. World applies wake pressure before
+dross pressure after each completed transport step. `ecology_custody.rs` receives
+only geography, its parent ledger, registry, and save location for linked
+biomass/crystal destruction. It commits before representative voxel removal and
+restores the same site/cell/event snapshot on preparation or commit failure.
+Neither helper owns a second conserved-quantity account.
