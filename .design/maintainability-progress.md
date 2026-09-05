@@ -1950,3 +1950,21 @@ physical stack the host already delivers. Cosmetic position/RNG remain unchanged
 No tests/compiler/analyzers ran. Final refusal cases must preserve actor state,
 and charged harvest/drop/pickup/reload must retain the original account rather
 than creating a fresh uncharged item or rebinding a second account.
+
+
+## Ordered graphical action pipeline (coding checkpoint; unverified)
+
+The former 3,000-line action file now captures immutable definition/target inputs
+and explicitly orders handler consumption. Portable items, preparation use,
+held timers, observation/station channels, melee, mining, held use, fishing, and
+block use preserve the original priority and unit-return behavior. The block
+match retains its exact guard/pattern order and delegates focused menu,
+exploration, household, and machinery bodies. Helper arguments were narrowed to
+the inputs each uses. Wand/script application, art, and feedback have separate
+modules with explicit imports and local guides.
+
+These handlers remain Game coordinators because they combine input, transport,
+UI, and physical operations; they do not introduce a second simulation owner.
+No tests/compiler/format/analyzers ran. Final checks must prove simultaneous
+button/channel priority, script cancellation, stale captured target behavior,
+local/guest action paths, RNG order, and real native play before acceptance.

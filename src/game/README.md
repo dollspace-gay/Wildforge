@@ -85,3 +85,9 @@ bookkeeping do not require a simulation or save-capable World. Local operation
 adapters must handle their guest request path before borrowing authority.
 Player waystone knowledge and KV keep their existing client sidecar directory;
 that path belongs to the graphical runtime, not the replica terrain owner.
+
+`actions.rs` now owns ordered input arbitration over an immutable ActionFrame.
+`actions/` separates channels, physical action adapters, block-specific controls,
+wand/script application, and visual feedback. A single block-interaction match
+retains guard precedence; helpers receive only the targeting inputs they use.
+These are application coordinators, while shared rules remain in player_ops.
