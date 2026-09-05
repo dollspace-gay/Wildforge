@@ -324,11 +324,9 @@ impl Game {
             && self.ui_state.screen == Screen::Playing
             && let Some(f) = food
         {
-            let want = self.survival.hunger < 19.5
-                || f.nutrition
-                    .iter()
-                    .zip(&self.survival.nutrition)
-                    .any(|(a, b)| *a > 0.0 && *b < 99.0);
+            let want = crate::player_ops::nutrition::wants_food(
+                self.survival.hunger, &self.survival.nutrition, &f,
+            );
             if want {
                 self.survival.eating += dt;
                 if self.survival.eating >= f.eat_time {
@@ -336,10 +334,9 @@ impl Game {
                     if let Some(remote) = &self.multiplayer.remote {
                         remote.session.send(&net::C2S::EatSelected);
                     }
-                    self.survival.hunger = (self.survival.hunger + f.hunger).min(20.0);
-                    for (n, add) in self.survival.nutrition.iter_mut().zip(&f.nutrition) {
-                        *n = (*n + add).min(100.0);
-                    }
+                    crate::player_ops::nutrition::eat(
+                        &mut self.survival.hunger, &mut self.survival.nutrition, &f,
+                    );
                     let consumed = self.inventory.slots[self.input.hotbar_sel]
                         .map(|stack| ItemStack::new(&self.content.reg, stack.item, 1));
                     if self.multiplayer.remote.is_none()

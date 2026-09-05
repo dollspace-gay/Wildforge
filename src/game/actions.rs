@@ -1092,17 +1092,9 @@ impl Game {
                 if let Some(mob) = self.runtime.local_mut().world.mob_mut(mi) {
                     let base = held.map(|i| reg.item(i).damage).unwrap_or(1.0);
                     let backstab = !self.creative
-                        && combat::mob_facing_away(mob.yaw, mob.pos, self.player.pos);
-                    let mut dmg = base;
-                    let mut crit = false;
-                    if heavy {
-                        dmg *= combat::HEAVY_MULT;
-                        crit = true;
-                    }
-                    if backstab {
-                        dmg *= combat::BACKSTAB_MULT;
-                        crit = true;
-                    }
+                        && crate::player_ops::combat::mob_facing_away(mob.yaw, mob.pos, self.player.pos);
+                    let damage = crate::player_ops::combat::melee_damage(base, heavy, backstab);
+                    let (dmg, crit) = (damage.amount, damage.critical);
                     let dmg_type = held.and_then(|i| reg.item(i).damage_type.clone());
                     mob.hurt(&def, dmg, dmg_type.as_deref(), self.player.eye());
                     // Heavy finishers shove: mob.hurt already knocked back
@@ -1418,8 +1410,7 @@ impl Game {
                 let Some(mob) = self.runtime.view().mob(mi) else {
                     return;
                 };
-                let (sp, mob_id, growth, breed_cd, fed) =
-                    (mob.species, mob.id, mob.growth, mob.breed_cd, mob.fed);
+                let (sp, mob_id) = (mob.species, mob.id);
                 let (tamed, led_by, has_cargo) = (mob.tamed, mob.led_by, mob.cargo.is_some());
                 let def = &reg.animals[sp];
                 let def_carrier = def.carrier;
@@ -1470,34 +1461,27 @@ impl Game {
                 }
                 // Feeding: breeds as ever, and repeated meals TAME —
                 // a tamed animal never flees people and takes a lead.
-                if let (Some(bf), Some(h)) = (def.breed_food, held)
-                    && bf == h
-                    && !def.hostile
-                    && growth >= 1.0
+                let feeding = self.runtime.view().mob_by_id(mob_id)
+                    .and_then(|mob| crate::player_ops::feeding::FeedPlan::prepare(def, mob, held));
+                if let Some(feeding) = feeding
+                    && (self.creative || self.inventory.take_one(self.input.hotbar_sel).is_some())
                 {
-                    let can_breed = breed_cd <= 0.0 && !fed;
-                    let can_tame = !tamed;
-                    if (can_breed || can_tame)
-                        && (self.creative
-                            || self.inventory.take_one(self.input.hotbar_sel).is_some())
-                    {
                         // Guests request; local change is the
                         // prediction until the snapshot echoes it.
                         if let Some(rc) = &self.multiplayer.remote {
                             rc.session.send(&net::C2S::FeedMob { id: mob_id });
                         } else if !self.creative
-                            && let Err(error) = self.runtime.local_mut().world.record_consumed_stacks([ItemStack::new(&reg, h, 1)])
+                            && let Err(error) = self.runtime.local_mut().world.record_consumed_stacks([ItemStack::new(&reg, feeding.food(), 1)])
                         {
                             eprintln!("materials: animal feed accounting failed: {error}");
                         }
-                        let now_tamed = self.runtime.present_mob_feeding(mob_id, can_tame, can_breed);
+                        let now_tamed = self.runtime.present_mob_feeding(mob_id, feeding);
                         if now_tamed {
                             self.toast(format!("The {def_label} trusts you now."));
                         }
                         self.input.action_cooldown = 0.4;
                         self.sfx(Sfx::Pickup);
                         return;
-                    }
                 }
                 // The lead: attach to a tamed animal, click again to
                 // release (the strip comes back).

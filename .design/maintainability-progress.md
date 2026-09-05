@@ -1898,3 +1898,25 @@ on the matching resident mob; host requests and inventory/accounting order are
 unchanged. Local feeding takes the same operation on its authoritative member.
 Final native guest feeding/host echo and tame/breed regressions remain required.
 No test, compiler, or analyzer ran for this source-identified correction.
+
+
+## Shared feeding, nutrition, and melee rules (coding checkpoint; unverified)
+
+Meal admission/nutrient bounds and animal feeding eligibility/tame/breed/calm
+updates now have shared operations. Feeding returns a prepared action before
+inventory spending; each adapter retains its existing accounting/spend order.
+Graphical prediction applies the same member transition and remains subject to
+host snapshots. Inventory stack clicks were reviewed and already delegate to
+inventory::click_stack, so no redundant forwarding layer was added.
+
+Melee backstab geometry and heavy/backstab multiplication moved out of graphical
+combat into player_ops. The host no longer imports Game combat code. Existing
+adapter differences (host base-damage clamp, creative backstab eligibility,
+local heavy shove, stamina/hunger/ire) are deliberately preserved; this is not a
+claim that the old complete combat adapters were already equivalent. Final
+parity cases must compare the shared operation with the same admitted inputs,
+and separately record these retained adapter policies.
+
+No tests/compiler/format/analyzers ran. Final scenarios include full hunger with
+missing nutrients, meal refusal, juvenile/hostile/already-fed animals, taming
+completion, prediction/host echo, tangent-frame seams, and combined modifiers.

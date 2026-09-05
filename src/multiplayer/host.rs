@@ -2320,16 +2320,9 @@ impl HostSession {
                 {
                     let def = reg.animals[m.species].clone();
                     let surface = m.pos.surface();
-                    let mut final_dmg = dmg;
-                    let mut crit = false;
-                    if heavy {
-                        final_dmg *= crate::game::combat::HEAVY_MULT;
-                        crit = true;
-                    }
-                    if crate::game::combat::mob_facing_away(m.yaw, m.pos, gpos) {
-                        final_dmg *= crate::game::combat::BACKSTAB_MULT;
-                        crit = true;
-                    }
+                    let backstab = crate::player_ops::combat::mob_facing_away(m.yaw, m.pos, gpos);
+                    let damage = crate::player_ops::combat::melee_damage(dmg, heavy, backstab);
+                    let (final_dmg, crit) = (damage.amount, damage.critical);
                     m.hurt(&def, final_dmg, dmg_type.as_deref(), from);
                     m.last_hit_by = id;
                     if !def.hostile {
@@ -2358,23 +2351,12 @@ impl HostSession {
                 let reg = server.world.reg.clone();
                 if let Some(m) = server.world.mob_by_id_mut(mob_id) {
                     let def = &reg.animals[m.species];
-                    let can_breed = m.breed_cd <= 0.0 && !m.fed;
-                    let can_tame = !m.tamed;
                     if (m.pos - gpos).length() <= REACH
-                        && !def.hostile
-                        && def.breed_food.is_some()
-                        && m.growth >= 1.0
-                        && (can_breed || can_tame)
-                        && guest.inventory.slots[guest.hotbar].map(|stack| stack.item)
-                            == def.breed_food
+                        && let Some(feeding) = crate::player_ops::feeding::FeedPlan::prepare(
+                            def, m, guest.inventory.slots[guest.hotbar].map(|stack| stack.item),
+                        )
                     {
-                        if can_tame {
-                            m.feed_tame();
-                        }
-                        if can_breed {
-                            m.fed = true;
-                        }
-                        m.calm = 30.0;
+                        feeding.apply(m);
                         if server.world.mode != "creative" {
                             let consumed = guest.inventory.slots[guest.hotbar]
                                 .map(|stack| ItemStack::new(&reg, stack.item, 1));
@@ -3879,18 +3861,8 @@ impl HostSession {
                 let Some(food) = server.world.reg.item(stack.item).food.clone() else {
                     return;
                 };
-                let wants = guest.hunger < 19.5
-                    || food
-                        .nutrition
-                        .iter()
-                        .zip(&guest.nutrition)
-                        .any(|(add, value)| *add > 0.0 && *value < 99.0);
-                if !wants {
+                if !crate::player_ops::nutrition::eat(&mut guest.hunger, &mut guest.nutrition, &food) {
                     return;
-                }
-                guest.hunger = (guest.hunger + food.hunger).min(20.0);
-                for (value, add) in guest.nutrition.iter_mut().zip(&food.nutrition) {
-                    *value = (*value + add).min(100.0);
                 }
                 if server.world.mode != "creative" {
                     let consumed = ItemStack::new(&server.world.reg, stack.item, 1);
