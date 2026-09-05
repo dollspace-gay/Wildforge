@@ -6,7 +6,8 @@ This module owns protocol interpretation shared by graphical guests and agents.
 `session.rs` coordinates one world lifetime: Welcome replaces its content map,
 receivers, admission, queued chunks, and block updates together. Closure drops
 queued work. `terrain.rs` paces decoding at the caller's existing budget and
-applies the poll's block updates after terrain. Queued block IDs remain host IDs
+keeps chunks and block edits in wire order across pumps. Consecutive chunks and
+their following edits retain batched lighting. Queued block IDs remain host IDs
 until application, including across local content reload.
 
 `palette.rs` resolves host block/item IDs against one immutable registry and

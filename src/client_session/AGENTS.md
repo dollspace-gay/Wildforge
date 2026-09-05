@@ -15,5 +15,8 @@ Discard queued terrain and receivers when Welcome starts a new world.
 Keep this reset inside `GuestSession::begin`; adapters must not reconstruct a
 subset of session state independently. Retain host IDs in queued block updates
 so registry reload cannot make deferred work refer to another local definition.
+Keep chunk snapshots and edits ordered when a decode budget spans several
+pumps. Do not apply an edit ahead of its chunk or replay it after a later
+snapshot. Preserve batched lighting for contiguous terrain and edit groups.
 Test malformed, partial, duplicate, out-of-order, and reconnect sequences for
 both consumers. Keep new modules near 400 lines and document new subdirectories.

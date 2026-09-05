@@ -192,3 +192,57 @@ fn malformed_payload_is_attempted_without_satisfying_entry() {
     assert!(!world.has_chunk(center));
     assert!(!session.take_ready());
 }
+
+#[test]
+fn paced_chunks_hold_following_edits_until_their_chunk_has_decoded() {
+    let reg = reg();
+    let center = spawn().chunk().unwrap();
+    let block = spawn().block().unwrap().offset(16, 0, 0).unwrap();
+    let neighbor = block.chunk();
+    let stone = reg.block_id("base:stone").unwrap();
+    let mut session = session(&reg, PresentationRequirement::TerrainOnly);
+    let mut world = replica(&reg);
+    session.queue_chunk(center, chunk_bytes(&reg));
+    session.queue_chunk(neighbor, chunk_bytes(&reg));
+    session.queue_block(block, stone.0, 0, 0, 0);
+    session.apply_terrain(&mut world, 1);
+    assert!(!world.has_chunk(neighbor));
+    session.apply_terrain(&mut world, 1);
+    assert_eq!(world.get_block_at(block), stone);
+}
+
+#[test]
+fn a_later_chunk_supersedes_an_earlier_block_edit() {
+    let reg = reg();
+    let center = spawn().chunk().unwrap();
+    let block = spawn().block().unwrap();
+    let stone = reg.block_id("base:stone").unwrap();
+    let mut session = session(&reg, PresentationRequirement::TerrainOnly);
+    let mut world = replica(&reg);
+    world.insert_empty_chunks_for_test([center]);
+    session.queue_block(block, stone.0, 0, 0, 0);
+    session.queue_chunk(center, chunk_bytes(&reg));
+    session.apply_terrain(&mut world, 2);
+    assert_eq!(world.get_block_at(block), registry::AIR);
+}
+
+#[test]
+fn alternating_snapshots_and_edits_preserve_order_across_decode_budgets() {
+    let reg = reg();
+    let center = spawn().chunk().unwrap();
+    let block = spawn().block().unwrap();
+    let stone = reg.block_id("base:stone").unwrap();
+    for budget in [1, 2] {
+        let mut session = session(&reg, PresentationRequirement::TerrainOnly);
+        let mut world = replica(&reg);
+        session.queue_chunk(center, chunk_bytes(&reg));
+        session.queue_block(block, stone.0, 0, 0, 0);
+        session.queue_chunk(center, chunk_bytes(&reg));
+        session.apply_terrain(&mut world, budget);
+        if budget == 1 {
+            assert_eq!(world.get_block_at(block), stone);
+            session.apply_terrain(&mut world, budget);
+        }
+        assert_eq!(world.get_block_at(block), registry::AIR);
+    }
+}

@@ -854,3 +854,24 @@ This consolidates protocol lifetime and terrain application, not the complete
 replica domain. Entity replication, shared outgoing requests/events, content
 transfer failure handling, explicit authority types, and new native runtime/GPU
 qualification remain open. Full phase acceptance is not claimed.
+
+## Terrain snapshot and edit ordering correction
+
+Three new regressions failed against `421cf63`: an edit following a chunk beyond
+the decode budget disappeared, an older edit replayed after a newer snapshot,
+and alternating snapshot/edit sequences changed outcome with the decode budget.
+The failing output is retained in `client-session-terrain-order-before.log`.
+
+Category A (root cause): the terrain inbox now keeps a single ordered mutation
+queue. A paced chunk retains the edits behind it until it can decode; a newer
+snapshot follows earlier edits. Consecutive chunks and their following edits
+still use batched lighting. Chunk budgets remain two for agents and eight for
+graphics. This corrects update ordering without changing payloads, decoding,
+authority, or registry identity. Edits behind a queued snapshot can now wait for
+that snapshot's paced adoption, which needs runtime latency qualification.
+
+All three formerly failing regressions pass, together with the remaining
+session tests (30 total), 18 serial agent tests, 25 multiplayer tests, strict
+Clippy, Rust 1.95 checking, format, advisory analysis, and folder guidance.
+Logs use `target/maintainability/client-session-terrain-order-*`. Full subsystem,
+release, and new native guest/GPU evidence remain outstanding for this source.
