@@ -56,6 +56,7 @@ cargo build --locked --release
 cargo deny check advisories
 python3 -m unittest discover -s tools/tests -v
 python3 tools/check_maintainability.py
+python3 tools/check_folder_guides.py
 ```
 
 For quick feedback, CI runs non-agent tests separately:
@@ -1074,3 +1075,11 @@ One binary, no server jar, ever:
 - Under it all: the **sim/client split** — `server::Server` steps the
   world at a fixed 30 Hz whether one player or eight are in it.
   Singleplayer is just a server with one local player.
+
+Each maintained repository directory includes a local `README.md` and
+`AGENTS.md` describing its purpose, boundaries, and focused checks. The folder
+checker follows Git source inventory, excluding ignored builds and personal
+runtime data. New guides use an explicit HTML marker to avoid changing mod
+content identity; existing unmarked documentation retains its historical hash
+contribution. See [the implementation record](.design/maintainability-progress.md)
+for the architecture migration and outstanding verification.

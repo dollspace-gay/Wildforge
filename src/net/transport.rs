@@ -890,59 +890,6 @@ impl Discovery {
     }
 }
 
-/// Hash of the mods directory contents (scripts excluded — they never
-/// leave the host). Equal hashes mean identical data content.
-pub fn content_hash(dir: &std::path::Path) -> u64 {
-    fn hash_bytes(h: &mut u64, bytes: &[u8]) {
-        for &b in bytes {
-            *h = h.wrapping_mul(0x100000001b3) ^ b as u64;
-        }
-    }
-    let mut files: Vec<std::path::PathBuf> = Vec::new();
-    fn walk(d: &std::path::Path, out: &mut Vec<std::path::PathBuf>) {
-        let Ok(rd) = std::fs::read_dir(d) else { return };
-        for e in rd.flatten() {
-            let p = e.path();
-            if p.is_dir() {
-                walk(&p, out);
-            } else if p.extension().is_none_or(|e| e != "rhai") {
-                out.push(p);
-            }
-        }
-    }
-    walk(dir, &mut files);
-    files.sort();
-    let mut h: u64 = 0xcbf29ce484222325;
-    for f in &files {
-        hash_bytes(&mut h, f.to_string_lossy().as_bytes());
-        if let Ok(bytes) = std::fs::read(f) {
-            hash_bytes(&mut h, &bytes);
-        }
-    }
-    h
-}
-
-/// The host's mods dir as (relative path, bytes), scripts excluded.
-pub fn collect_mod_files(dir: &std::path::Path) -> Vec<(String, Vec<u8>)> {
-    let mut out = Vec::new();
-    fn walk(root: &std::path::Path, d: &std::path::Path, out: &mut Vec<(String, Vec<u8>)>) {
-        let Ok(rd) = std::fs::read_dir(d) else { return };
-        for e in rd.flatten() {
-            let p = e.path();
-            if p.is_dir() {
-                walk(root, &p, out);
-            } else if p.extension().is_none_or(|e| e != "rhai")
-                && let (Ok(rel), Ok(bytes)) = (p.strip_prefix(root), std::fs::read(&p))
-            {
-                out.push((rel.to_string_lossy().replace('\\', "/"), bytes));
-            }
-        }
-    }
-    walk(dir, dir, &mut out);
-    out.sort_by(|a, b| a.0.cmp(&b.0));
-    out
-}
-
 #[cfg(test)]
 mod security_tests {
     use super::*;
