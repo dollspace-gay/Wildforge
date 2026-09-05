@@ -4,6 +4,12 @@
 
 streaming.rs schedules guest interest and snapshot delivery. chunk_jobs.rs owns terrain preparation, wire encoding, revisions, and cache state behind bounded methods.
 
+`streaming_errors.rs` translates retained read/worker failures into existing
+server-error refusals. Terrain keeps its entry-priority queue; encoding uses
+the shared FIFO snapshot owner with at most 32 queued/running/ready jobs.
+Both queues stop before host shutdown joins either set of workers. Cancelled
+encoding requests release their keys so later interest can retry them.
+
 Start with `streaming.rs`. See the [repository overview](../../../README.md) for
 build prerequisites and complete checks. Commands below run from the repository root.
 

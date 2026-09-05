@@ -26,6 +26,9 @@ impl HostSession {
     /// Stream the nearest missing chunks for each guest, paced per pump.
     pub(super) fn stream_chunks(&mut self, server: &mut Server) {
         self.ensure_chunk_jobs(server);
+        if self.refuse_failed_workers() {
+            return;
+        }
         let entry_required: HashSet<ChunkPos> = self
             .pending_guests
             .values()
@@ -316,50 +319,26 @@ impl HostSession {
         }
     }
 
-    fn refuse_failed_terrain(&mut self) {
-        let failures: Vec<_> = self
-            .chunk_jobs
-            .as_ref()
-            .map(|jobs| jobs.failures().cloned().collect())
-            .unwrap_or_default();
-        for failure in failures {
-            let mut affected: HashSet<_> = self
-                .pending_guests
-                .iter()
-                .filter(|(_, pending)| pending.required.contains(&failure.position))
-                .map(|(id, _)| *id)
-                .collect();
-            affected.extend(
-                self.guests
-                    .iter()
-                    .filter(|(_, guest)| {
-                        (!guest.entry_ready && guest.entry_required.contains(&failure.position))
-                            || (guest.entry_ready
-                                && guest.pos.chunk().is_some_and(|center| {
-                                    failure.position.distance(center)
-                                        <= f64::from(guest.view_dist * 16) + 1.0
-                                }))
-                    })
-                    .map(|(id, _)| *id),
-            );
-            for id in affected {
-                self.refuse_server_error(
-                    id,
-                    &format!("terrain {:?}", failure.position),
-                    &failure.source,
-                );
-            }
-        }
+    #[cfg(test)]
+    pub(crate) fn panic_terrain_worker_for_test(&mut self, server: &Server) {
+        self.ensure_chunk_jobs(server);
+        self.chunk_jobs.as_mut().unwrap().panic_worker_for_test();
     }
 
     fn ensure_chunk_jobs(&mut self, server: &Server) {
-        if self.chunk_jobs.is_none() {
-            self.chunk_jobs = Some(HostChunkJobs::new(
+        if self.chunk_jobs.is_none() && self.chunk_jobs_error.is_none() {
+            match HostChunkJobs::new(
                 server.world.seed,
                 Arc::clone(&server.world.reg),
                 server.world.planet_atlas(),
                 server.world.chunk_loader(),
-            ));
+            ) {
+                Ok(jobs) => self.chunk_jobs = Some(jobs),
+                Err(error) => {
+                    eprintln!("host: terrain workers could not start: {error}");
+                    self.chunk_jobs_error = Some(Arc::new(error));
+                }
+            }
         }
     }
 

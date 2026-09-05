@@ -305,3 +305,53 @@ native runtime travel/entry qualification. Inspection of `game/content.rs`
 also confirms hot reload remaps World/generator but retains old terrain-job
 context; rebuild/invalidate that context with a regression before acceptance.
 Phases 3–8 and the five stale visual-qualification manifests remain outstanding.
+
+## Observable failures and owned snapshot workers (in verification)
+
+The previous goal turn was progress: `f033c97` committed coordinated region I/O
+and saved-revision validation with focused and broad-gate evidence. This turn
+extends the Phase 2/13 lifetime boundary rather than declaring the phase done.
+
+Category A root-cause correction: native terrain startup returns `io::Result`
+and joins already-started workers on partial failure. A supervised panic or
+poisoned queue stops work and retains its cause. The graphical client receives
+one notification; the host retains fatal state and refuses affected current or
+future arrivals through the existing server-error protocol.
+
+`background/` now owns reusable native spawn/panic boundaries and bounded FIFO
+snapshot processing. Terrain retains its entry-priority queue. CPU mesh jobs
+and wire encoding use the shared snapshot owner: stop, cancel queued inputs,
+join active work, discard output. Host shutdown stops both preparation and
+encoding before joining either. The new mesh adapter owns deduplication and
+uses explicit requests/results; live streaming keeps GPU upload and acceptance.
+Startup errors reach local/guest entry handling instead of detaching threads.
+
+Intentional behavior change: wire encoding now permits at most 32 total queued,
+running, and ready jobs. Rejected requests retain ordinary interest retry;
+cancelled queued snapshots release their deduplication keys. The mesh limit
+remains two. Terrain policy, adoption budgets, codec bytes, and GPU dispatch are
+unchanged. `streaming_errors.rs` owns failure-to-refusal mapping and brings the
+host streaming adapter back below 400 lines. Every new code file is below 400;
+55 maintained directories have both local guides.
+
+Focused evidence: 16 terrain tests, six snapshot lifecycle scenarios, one real
+mesh buffer/emitter parity scenario, four worker/save/QUIC scenarios (including
+an actual worker panic before admission), and 25 multiplayer scenarios pass.
+Strict all-target/all-feature Clippy, format, folder coverage, and advisory
+analysis pass. Logs are under `target/maintainability/worker-*`,
+`snapshot-owner-*`, and `mesh-owner-*`. Full gates and a fresh native hardware
+capture follow the clean source checkpoint; this is not runtime acceptance.
+
+Hardware execution map: immutable meshing still runs through
+`mesher::mesh_chunk_input` on CPU; `renderer/resources.rs::upload_chunk` creates
+wgpu buffers and the existing indexed draws in `renderer/frame.rs` run on GPU.
+No shader/kernel or device fallback was added. The available native adapter is
+an NVIDIA RTX 5070 Ti Laptop GPU, driver 610.57.04, with 12,227 MiB. Actual
+capture evidence is still required; CPU worker tests alone cannot establish it.
+
+Remaining Phase 2/13 work includes hot-reload context invalidation, caller-level
+world-switch/disconnect/save-failure proof, entry/creation task ownership, and
+dedicated/graphical graceful shutdown. The auto-capture path still calls
+`process::exit`, so a capture can prove drawing but not owner Drop execution.
+Controlled cold/warm entry and travel performance, the five visual evidence
+requalifications, and all remaining Phase 3–8 ownership work stay in scope.

@@ -139,10 +139,9 @@ impl Game {
         spawn: crate::planet::EntityPos,
         material_policy_notices: Vec<String>,
     ) {
-        self.renderer.clear_chunks();
         // Background generators for this world's seed (heavy terrain
         // math off the main thread; guests never generate).
-        self.gen_pool = Some(crate::terrain_jobs::TerrainJobs::new(
+        let jobs = match crate::terrain_jobs::TerrainJobs::new(
             crate::terrain_jobs::TerrainContext::new(
                 world.seed,
                 Arc::clone(&self.content.reg),
@@ -150,8 +149,27 @@ impl Game {
                 world.chunk_loader(),
             ),
             crate::terrain_jobs::WorkerPolicy::Interactive,
-        ));
-        self.mesh_pool = Some(crate::game::streaming::MeshPool::new());
+        ) {
+            Ok(jobs) => jobs,
+            Err(error) => {
+                eprintln!("world: terrain workers could not start: {error}");
+                self.set_screen(Screen::Title);
+                self.toast(format!("Could not enter world: {error}"));
+                return;
+            }
+        };
+        let meshes = match crate::game::mesh_jobs::MeshPool::new() {
+            Ok(meshes) => meshes,
+            Err(error) => {
+                eprintln!("world: mesh workers could not start: {error}");
+                self.set_screen(Screen::Title);
+                self.toast(format!("Could not enter world: {error}"));
+                return;
+            }
+        };
+        self.renderer.clear_chunks();
+        self.gen_pool = Some(jobs);
+        self.mesh_pool = Some(meshes);
         self.server = server::Server::new(world, 0.3, self.rng ^ 0x5ee1);
         self.player = Player::new_at(spawn);
         self.survival.spawn_point = self.player.pos;

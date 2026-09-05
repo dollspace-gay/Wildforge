@@ -21,6 +21,7 @@ fn pool(world: &World, policy: WorkerPolicy) -> TerrainJobs {
         ),
         policy,
     )
+    .unwrap()
 }
 
 fn failure(pool: &mut TerrainJobs) -> (ChunkPos, ErrorKind) {
@@ -124,7 +125,16 @@ fn failed_region_write_retains_dirty_edits_for_a_successful_retry() {
 
 #[test]
 fn host_refuses_entry_with_a_read_error_instead_of_waiting_for_missing_terrain() {
-    let root = tmp_dir("terrain-error-admission");
+    refused_terrain("terrain-error-admission", false);
+}
+
+#[test]
+fn host_refuses_entry_when_a_terrain_worker_panics() {
+    refused_terrain("terrain-panic-admission", true);
+}
+
+fn refused_terrain(label: &str, worker_panic: bool) {
+    let root = tmp_dir(label);
     let world = World::new(42, root.clone(), base_reg());
     let spawn = ep(glam::Vec3::new(
         8.5,
@@ -132,13 +142,22 @@ fn host_refuses_entry_with_a_read_error_instead_of_waiting_for_missing_terrain()
         8.5,
     ));
     let position = spawn.chunk().unwrap();
-    let path = corrupt_header(&root, position);
-    let original = std::fs::read(&path).unwrap();
+    let damaged = if worker_panic {
+        None
+    } else {
+        let path = corrupt_header(&root, position);
+        let original = std::fs::read(&path).unwrap();
+        Some((path, original))
+    };
     let mut sim = crate::server::Server::new(world, 0.3, 7);
     let mut session = crate::mp::HostSession::start_on("terrain-error".into(), 0).unwrap();
     session.fresh_spawn = Some(spawn);
+    if worker_panic {
+        session.panic_terrain_worker_for_test(&sim);
+    }
     let identity =
-        crate::identity::LocalIdentity::load_or_create(&tmp_dir("terrain-error-client")).unwrap();
+        crate::identity::LocalIdentity::load_or_create(&tmp_dir(&format!("{label}-client")))
+            .unwrap();
     let address = format!("127.0.0.1:{}", session.net.port).parse().unwrap();
     let mut client = Client::connect(address, "Fern".into(), 0, 0, &identity, None).unwrap();
     let deadline = Instant::now() + Duration::from_secs(10);
@@ -165,5 +184,7 @@ fn host_refuses_entry_with_a_read_error_instead_of_waiting_for_missing_terrain()
     assert_eq!(refusal.code, RefusalCode::Server);
     assert!(refusal.detail.contains("terrain"));
     assert!(!sim.world.has_chunk(position));
-    assert_eq!(std::fs::read(&path).unwrap(), original);
+    if let Some((path, original)) = damaged {
+        assert_eq!(std::fs::read(&path).unwrap(), original);
+    }
 }

@@ -15,6 +15,8 @@ mod roster;
 mod settings;
 #[path = "host/streaming.rs"]
 mod streaming;
+#[path = "host/streaming_errors.rs"]
+mod streaming_errors;
 
 use std::collections::{HashMap, HashSet};
 use std::time::{Duration, Instant};
@@ -235,6 +237,7 @@ pub struct HostSession {
     /// Pure terrain work for cold guest horizons. Created lazily from the
     /// authoritative world's seed/content; the host pump only adopts results.
     chunk_jobs: Option<chunk_jobs::HostChunkJobs>,
+    chunk_jobs_error: Option<std::sync::Arc<std::io::Error>>,
     /// Horizon assigned before a client negotiates one. Tests may shrink this
     /// for compact protocol fixtures; production retains the legacy five.
     initial_view_dist: i32,
@@ -385,6 +388,7 @@ impl HostSession {
             banned: HashSet::new(),
             fresh_spawn: None,
             chunk_jobs: None,
+            chunk_jobs_error: None,
             initial_view_dist: 5,
             snapshot_timer: 0.0,
             snapshot_seq: 0,

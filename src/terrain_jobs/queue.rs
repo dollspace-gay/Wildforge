@@ -1,6 +1,8 @@
 //! Bounded FIFO queues with host-entry promotion and preemption.
 
 use std::collections::{HashSet, VecDeque};
+use std::io;
+use std::sync::Arc;
 
 use crate::chunk::ChunkPos;
 
@@ -16,6 +18,7 @@ pub(super) struct WorkQueue {
     ordinary: VecDeque<ChunkPos>,
     pending: HashSet<ChunkPos>,
     stopped: bool,
+    failure: Option<Arc<io::Error>>,
 }
 
 impl WorkQueue {
@@ -88,6 +91,15 @@ impl WorkQueue {
 
     pub(super) fn is_stopped(&self) -> bool {
         self.stopped
+    }
+
+    pub(super) fn fail(&mut self, error: io::Error) {
+        self.stop();
+        self.failure.get_or_insert_with(|| Arc::new(error));
+    }
+
+    pub(super) fn failure(&self) -> Option<Arc<io::Error>> {
+        self.failure.clone()
     }
 }
 
