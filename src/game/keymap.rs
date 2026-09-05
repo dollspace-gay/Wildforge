@@ -5,7 +5,10 @@ use super::*;
 impl Game {
     pub(super) fn key(&mut self, code: KeyCode, pressed: bool, _event_loop: &ActiveEventLoop) {
         if std::env::var_os("WILDFORGE_INPUT_TRACE").is_some()
-            && matches!(code, KeyCode::KeyA | KeyCode::KeyD)
+            && matches!(
+                code,
+                KeyCode::KeyW | KeyCode::KeyA | KeyCode::KeyS | KeyCode::KeyD | KeyCode::F2
+            )
         {
             eprintln!(
                 "input: {code:?} {}",

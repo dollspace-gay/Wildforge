@@ -6,6 +6,7 @@ import subprocess
 import time
 
 from .capture import configure, copy_world, environment
+from .display import isolated_display, request_close
 from .provenance import sha256, write_json
 
 
@@ -21,13 +22,18 @@ def wait_for(test, process, timeout=180):
     raise TimeoutError("native motion condition was not reached")
 
 
-def window_for(pid):
-    result = subprocess.run(["xdotool", "search", "--onlyvisible", "--pid", str(pid)], capture_output=True, text=True)
+def window_for(pid, env=None):
+    result = subprocess.run(["xdotool", "search", "--onlyvisible", "--pid", str(pid)], env=env, capture_output=True, text=True)
     windows = result.stdout.split()
     return windows[0] if result.returncode == 0 and len(windows) == 1 else None
 
 
 def record(root: Path, work: Path, config: dict, rows: list[dict]) -> None:
+    with isolated_display(work) as display:
+        record_walks(root, work, config, rows, display)
+
+
+def record_walks(root: Path, work: Path, config: dict, rows: list[dict], display: str) -> None:
     plan = {"commit": config["revision"], "reviewed_by": "", "review_method": "", "walks": []}
     cases = (("strata-site", "closeout-motion-strata", "strata-closeout-sandstone-v4-near-noon-base"),
              ("geode-approach", "closeout-motion-geode", "closeout-geode-aperture-proof"))
@@ -49,18 +55,20 @@ def record(root: Path, work: Path, config: dict, rows: list[dict]) -> None:
         configure(directory, row["template"]["render"])
         env = environment(row, "unreached-auto-shot.ppm")
         # The existing capture flyover keeps height and time fixed. F2 records
-        # actual camera travel; this is not a sequence of separately placed cameras.
+        # actual incremental camera travel; no frame teleports the camera.
         env["WILDFORGE_SHOT_MIN_FRAME"] = "1000000000"
+        env["WILDFORGE_INPUT_TRACE"] = "1"
+        env["DISPLAY"] = display
         binary = config["binaries"]["candidate"]
         if sha256(Path(binary["path"])) != binary["sha256"]:
             raise ValueError("motion executable changed")
         result = {"id": walk_id, "world": world_name, "binary": binary, "frames": [],
-                  "movement": "native WASD capture flyover at fixed height", "ui_commands": [],
+                  "movement": "native WASD steps at fixed height, 25 ms key holds", "ui_commands": [], "display": display,
                   "environment": {key: value for key, value in env.items() if key.startswith("WILDFORGE_")}}
 
         def action(*arguments):
             argv = ["xdotool", *arguments]
-            completed = subprocess.run(argv, capture_output=True, text=True, timeout=10, check=True)
+            completed = subprocess.run(argv, env=env, capture_output=True, text=True, timeout=10, check=True)
             result["ui_commands"].append({"argv": argv, "stdout": completed.stdout,
                                           "seconds": round(time.monotonic() - started, 3)})
             return completed.stdout.strip()
@@ -72,8 +80,12 @@ def record(root: Path, work: Path, config: dict, rows: list[dict]) -> None:
             process = subprocess.Popen([binary["path"]], cwd=directory, env=env, stdout=log, stderr=subprocess.STDOUT)
             result["pid"] = process.pid
             try:
-                window = wait_for(lambda: window_for(process.pid), process)
-                wait_for(lambda: "dirty 0" in log_path.read_text(), process)
+                window = wait_for(lambda: window_for(process.pid, env), process)
+                wait_for(lambda: "visual evidence: initial chunk uploads settled" in log_path.read_text(), process)
+                adapter = next(line for line in log_path.read_text().splitlines() if line.startswith("renderer: using "))
+                if "Vulkan, DiscreteGpu" not in adapter:
+                    raise RuntimeError("motion capture did not use the native discrete GPU")
+                result["adapter"] = adapter
                 time.sleep(3)
                 action("windowfocus", "--sync", window)
                 if action("getwindowfocus") != window:
@@ -82,11 +94,15 @@ def record(root: Path, work: Path, config: dict, rows: list[dict]) -> None:
                 for phase, count, key in (("static-start", 4, None), ("forward", 8, "w"),
                                           ("static-near", 4, None), ("backward", 8, "s"),
                                           ("static-end", 4, None)):
-                    if key:
-                        action("keydown", key)
                     for _ in range(count):
                         time.sleep(1.1)
-                        action("key", "F2")
+                        # Small steps traverse the aperture without spending
+                        # the walkthrough pushing against its far wall.
+                        if key:
+                            action("keydown", "--window", window, key)
+                            time.sleep(0.025)
+                            action("keyup", "--window", window, key)
+                        action("key", "--window", window, "F2")
                         paths = wait_for(lambda: set(directory.glob("screenshot-*.ppm")) - known, process, 10)
                         path = next(iter(paths))
                         render = row["template"]["render"]
@@ -95,9 +111,13 @@ def record(root: Path, work: Path, config: dict, rows: list[dict]) -> None:
                         time.sleep(0.1)
                         known.add(path)
                         result["frames"].append({"file": str(path), "phase": phase, "sha256": sha256(path)})
-                    if key:
-                        action("keyup", key)
-                action("windowquit", window)
+                trace = log_path.read_text()
+                for code in ("KeyW", "KeyS", "F2"):
+                    for edge in ("pressed", "released"):
+                        if f"input: {code} {edge}" not in trace:
+                            raise RuntimeError(f"native input trace is missing {code} {edge}")
+                request_close(display, window)
+                result["close_method"] = "ICCCM WM_DELETE_WINDOW"
                 result["exit_code"] = process.wait(timeout=60)
                 if result["exit_code"]:
                     raise RuntimeError("motion process failed during normal close")

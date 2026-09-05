@@ -13,6 +13,8 @@ from visual_campaign.capture import configure, environment, validate_sidecar
 from visual_campaign.manifest import render
 from visual_campaign.matrix import plan
 from visual_campaign.provenance import SOURCE_DIRECTORIES, source_sha256
+from visual_campaign.qualify import working_directory
+import verify_cracked_geode as geode
 
 
 class CampaignTests(unittest.TestCase):
@@ -44,6 +46,15 @@ class CampaignTests(unittest.TestCase):
         env = environment(row, "screenshots/test.ppm")
         self.assertEqual(env["WILDFORGE_SHOT_ALTITUDE"], "0")
         self.assertEqual(env["WILDFORGE_CAPTURE_SCENE"], row["scene"])
+
+    def test_geode_verifier_reads_the_manifest_report_locations(self):
+        _, rows = plan(self.root, "2026-09-05")
+        with working_directory(self.root):
+            for row in rows:
+                if "geode" in row["id"]:
+                    capture = geode.require_capture(row["id"])
+                    self.assertEqual(capture[0], Path(row["sidecar"]))
+                    self.assertEqual(capture[3], Path(row["report"]))
 
     def test_sidecar_rejects_wrong_build_software_gpu_and_unsettled_frames(self):
         _, rows = plan(self.root, "2026-09-05")

@@ -2557,6 +2557,9 @@ impl Game {
             } else {
                 self.settled_frames = 0;
             }
+            if self.settled_frames == SHOT_SETTLE_FRAMES && visual_capture::evidence_enabled() {
+                eprintln!("visual evidence: initial chunk uploads settled");
+            }
             // A minimum frame keeps the ordinary settled-world requirement.
             // It is useful when the visual under test needs simulation warmup;
             // unlike SHOT_FRAME, it never captures half-meshed terrain.

@@ -634,3 +634,12 @@ Python fingerprint agreement; all 32 Python tests pass. Format, strict Clippy,
 Rust 1.95 checking, folder guidance (57 directories), and advisory analysis pass.
 The complete subsystem, agent, doctest, and release checks follow the accepted
 capture campaign. Work is isolated from the unfinished client-session slice.
+
+Campaign harness corrections (Category B): use the declared geode report
+directory, observe the native initial-upload settlement event, and isolate X11
+input from desktop shortcuts. Diagnostic motion probes confirmed discrete
+NVIDIA Vulkan rendering, actual F2/WASD delivery, and successful normal shutdown
+for both scenes. Failed and superseded probes remain in ignored working storage;
+they are not accepted qualification. Input tracing remains opt-in, and numeric
+gates and ordinary gameplay behavior are unchanged. The final full campaign must
+use the clean revision containing these corrections.

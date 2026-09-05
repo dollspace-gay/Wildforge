@@ -95,7 +95,7 @@ def write_atomic(path: Path, data: bytes) -> None:
 
 def require_capture(stem: str) -> tuple[Path, bytes, dict[str, Any], Path, bytes, dict[str, Any]]:
     sidecar_path = Path("screenshots") / f"{stem}.capture.toml"
-    report_path = Path("screenshots") / f"{stem}.report.toml"
+    report_path = Path("screenshots/visual-polish") / f"{stem}.report.toml"
     sidecar_bytes, sidecar = read_toml(sidecar_path)
     report_bytes, report = read_toml(report_path)
     if sidecar.get("capture_id") != stem or report.get("capture_id") != stem:
