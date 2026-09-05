@@ -72,3 +72,8 @@ and NPC association use named operations. `ecology/` contains the explicit
 cross-domain physics/admission/death coordinators with focused habitat, wildlife,
 hostile, projectile, and loose-item responsibilities. Save adapters still encode
 the same entity fields and establish loaded NPC companion identity immediately.
+
+`calendar_state.rs` owns the authoritative day, absolute clock, Long Winter state,
+and separate reciprocity rollover fraction. Server advancement and save loading
+use explicit transitions; pure CalendarView remains shared with replicas. Weather
+and conservation coordinators sample that state without mutating clock fields.

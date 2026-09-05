@@ -202,7 +202,7 @@ impl World {
         // A chunk seen for the first time is up to date; one loaded
         // from disk keeps its old stamp (the gap below reads it).
         let stamp = self.last_random.get(&pos).copied();
-        self.last_random.entry(pos).or_insert(self.clock);
+        self.last_random.entry(pos).or_insert(self.calendar_state.clock());
         self.wake_seams(pos);
         // A chunk back from disk may hold water saved mid-flow (or
         // stranded by older, unsealed worldgen): set it settling again.
@@ -212,10 +212,10 @@ impl World {
         self.relight_and_cascade(pos);
         // The world lived while this chunk was away: catch it up.
         if let Some(stamp) = stamp {
-            let gap = self.clock - stamp;
+            let gap = self.calendar_state.clock() - stamp;
             if gap > 60.0 {
                 self.reconcile_chunk(pos, gap);
-                self.last_random.insert(pos, self.clock);
+                self.last_random.insert(pos, self.calendar_state.clock());
             }
         }
     }

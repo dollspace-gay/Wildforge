@@ -24,7 +24,7 @@ impl World {
         let mut order: Vec<(f64, ChunkPos)> = self
             .chunks
             .keys()
-            .map(|p| (self.last_random.get(p).copied().unwrap_or(self.clock), *p))
+            .map(|p| (self.last_random.get(p).copied().unwrap_or(self.calendar_state.clock()), *p))
             .collect();
         order.sort_unstable_by(|a, b| a.0.total_cmp(&b.0).then(a.1.cmp(&b.1)));
         order.truncate(K);
@@ -43,10 +43,10 @@ impl World {
         let mut drops: Vec<(BlockPos, ItemId)> = Vec::new();
         let mut saplings: Vec<(BlockPos, String, u32)> = Vec::new();
         for (stamp, pos) in order {
-            let elapsed = (self.clock - stamp).max(0.0);
+            let elapsed = (self.calendar_state.clock() - stamp).max(0.0);
             // Samples proportional to the wait, floor 8, cap 256.
             let n = ((elapsed * RANDOM_TICKS_PER_CHUNK_SEC) as usize).clamp(8, 256);
-            self.last_random.insert(pos, self.clock);
+            self.last_random.insert(pos, self.calendar_state.clock());
             samples += n;
             for _ in 0..n {
                 *rng = rng.wrapping_mul(1664525).wrapping_add(1013904223);
@@ -630,11 +630,11 @@ impl World {
             .wrapping_add(pos.v() as u32)
             .wrapping_add((pos.face() as u32).wrapping_mul(0x9e37_79b9))
             .wrapping_mul(31)
-            .wrapping_add(self.day);
+            .wrapping_add(self.calendar_state.day());
         // Seasons of the missed days, capped at two years back —
         // beyond that the expectations saturate anyway.
-        let end_day = (self.clock / day_len) as i64;
-        let start_day = ((self.clock - elapsed) / day_len) as i64;
+        let end_day = (self.calendar_state.clock() / day_len) as i64;
+        let start_day = ((self.calendar_state.clock() - elapsed) / day_len) as i64;
         let chunk_center = crate::planet::SurfacePos::new(
             pos.face(),
             pos.u() * CHUNK_X as u16 + CHUNK_X as u16 / 2,
@@ -650,7 +650,7 @@ impl World {
         let days: Vec<usize> = missed_days
             .iter()
             .map(|&d| {
-                if self.long_winter {
+                if self.calendar_state.long_winter() {
                     3
                 } else {
                     crate::planet_atlas::local_season(d, latitude)

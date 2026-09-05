@@ -212,7 +212,7 @@ impl World {
                     stack.arcane_id = state.create_object(
                         content_id,
                         KnowledgeKind::FieldLedger,
-                        self.day,
+                        self.calendar_state.day(),
                         Some(at),
                     )?;
                 } else {
@@ -220,7 +220,7 @@ impl World {
                         stack.arcane_id,
                         content_id,
                         KnowledgeKind::FieldLedger,
-                        self.day,
+                        self.calendar_state.day(),
                         Some(at),
                     )?;
                 }
@@ -230,7 +230,7 @@ impl World {
                     stack.arcane_id = state.create_object(
                         content_id,
                         KnowledgeKind::SurveyFolio,
-                        self.day,
+                        self.calendar_state.day(),
                         Some(at),
                     )?;
                 } else {
@@ -238,7 +238,7 @@ impl World {
                         stack.arcane_id,
                         content_id,
                         KnowledgeKind::SurveyFolio,
-                        self.day,
+                        self.calendar_state.day(),
                         Some(at),
                     )?;
                 }
@@ -252,7 +252,7 @@ impl World {
                         content_id,
                         evidence,
                         &definition.authored_text,
-                        self.day,
+                        self.calendar_state.day(),
                         Some(at),
                     )?;
                 } else {
@@ -268,7 +268,7 @@ impl World {
                             evidence_class: evidence,
                             text,
                         },
-                        self.day,
+                        self.calendar_state.day(),
                         Some(at),
                     )?;
                 }
@@ -282,7 +282,7 @@ impl World {
                         grade,
                         evidence_class,
                         &definition.authored_text,
-                        self.day,
+                        self.calendar_state.day(),
                         Some(at),
                     )?;
                 } else {
@@ -301,7 +301,7 @@ impl World {
                             evidence_class,
                             text,
                         },
-                        self.day,
+                        self.calendar_state.day(),
                         Some(at),
                     )?;
                 }
@@ -314,7 +314,7 @@ impl World {
                     stack.arcane_id = state.create_object(
                         content_id,
                         KnowledgeKind::ReferenceObject { experiment: kind },
-                        self.day,
+                        self.calendar_state.day(),
                         Some(at),
                     )?;
                 } else {
@@ -322,7 +322,7 @@ impl World {
                         stack.arcane_id,
                         content_id,
                         KnowledgeKind::ReferenceObject { experiment: kind },
-                        self.day,
+                        self.calendar_state.day(),
                         Some(at),
                     )?;
                 }
@@ -812,8 +812,8 @@ impl World {
                 biome,
                 place,
             },
-            day: self.day,
-            time_permille: ((self.clock / f64::from(crate::server::DAY_LENGTH)).fract() * 1_000.0)
+            day: self.calendar_state.day(),
+            time_permille: ((self.calendar_state.clock() / f64::from(crate::server::DAY_LENGTH)).fract() * 1_000.0)
                 as u16,
             season: crate::world::SEASONS[self.season_at_surface(at.surface())].to_lowercase(),
             calibration,

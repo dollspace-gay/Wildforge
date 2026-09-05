@@ -466,7 +466,7 @@ impl World {
     }
 
     fn alchemy_tick(&self) -> u64 {
-        (self.clock.max(0.0) * 20.0).round() as u64
+        (self.calendar_state.clock().max(0.0) * 20.0).round() as u64
     }
 
     fn alchemy_kind_at(&self, pos: BlockPos) -> Result<ApparatusKind, String> {

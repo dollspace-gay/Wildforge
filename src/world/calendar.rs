@@ -4,11 +4,11 @@ use super::*;
 
 impl World {
     pub(super) fn calendar_view(&self) -> super::calendar_view::CalendarView {
-        super::calendar_view::CalendarView::new(self.day, self.clock, self.long_winter)
+        self.calendar_state.view()
     }
 
     fn orbital_day(&self) -> f64 {
-        self.clock / f64::from(crate::server::DAY_LENGTH)
+        self.calendar_state.clock() / f64::from(crate::server::DAY_LENGTH)
     }
 
     pub fn sun_direction(&self) -> glam::DVec3 {
@@ -29,7 +29,7 @@ impl World {
     ) -> f32 {
         if let (Some(atlas), Some(weather)) = (&self.planet_atlas, &self.planetary_weather) {
             return weather
-                .sample(atlas, pos, day, self.long_winter)
+                .sample(atlas, pos, day, self.calendar_state.long_winter())
                 .temperature_c;
         }
         crate::climate::seasonal_temperature(self.generator.climate_at(pos).t, pos, day)
@@ -50,7 +50,7 @@ impl World {
         pos: crate::planet::SurfacePos,
     ) -> crate::planet_atlas::LocalWeatherSample {
         if let (Some(atlas), Some(weather)) = (&self.planet_atlas, &self.planetary_weather) {
-            return weather.sample(atlas, pos, self.orbital_day(), self.long_winter);
+            return weather.sample(atlas, pos, self.orbital_day(), self.calendar_state.long_winter());
         }
         // Atlas-free fixtures and development worlds still need a physically
         // sane local temperature. The old fixed +14 C spring/summer offset
@@ -59,7 +59,7 @@ impl World {
         // latitude field as the annual mean, then scale the orbital anomaly
         // by signed latitude: no equatorial season spike, opposite
         // hemispheres, strongest variation toward the poles.
-        let temperature_c = self.temperature_at_surface_on_day(pos, f64::from(self.day));
+        let temperature_c = self.temperature_at_surface_on_day(pos, f64::from(self.calendar_state.day()));
         super::calendar_view::fallback_weather(temperature_c, self.weather_override)
     }
 
@@ -155,7 +155,7 @@ impl World {
         let Some(weather) = self.planetary_weather.as_mut() else {
             return Ok(None);
         };
-        let day = self.clock / f64::from(crate::server::DAY_LENGTH);
+        let day = self.calendar_state.clock() / f64::from(crate::server::DAY_LENGTH);
         let target_hour = (day * 24.0).floor().max(0.0) as u64;
         let dross_needs_previous_routes = dross_completed
             .is_some_and(|completed| weather.completed_hours > completed.saturating_add(1));
@@ -427,10 +427,10 @@ impl World {
         // no breeding, halved repopulation, water freezing — arrives
         // for free, because it IS winter, world-wide, until enough
         // hearts are relit.
-        if self.long_winter {
+        if self.calendar_state.long_winter() {
             return 3;
         }
-        ((self.day / SEASON_DAYS) % 4) as usize
+        ((self.calendar_state.day() / SEASON_DAYS) % 4) as usize
     }
 
     /// How many known countries have lost their spirit, and how many
@@ -466,11 +466,7 @@ impl World {
         let falls = dead >= LONG_WINTER_MIN_DEAD
             && known > 0
             && dead as f32 >= known as f32 * LONG_WINTER_FRAC;
-        if falls == self.long_winter {
-            return None;
-        }
-        self.long_winter = falls;
-        Some(falls)
+        self.calendar_state.set_long_winter(falls)
     }
 
     /// 0..1 through the current season.
@@ -884,9 +880,7 @@ impl World {
             *v -= day_frac;
             *v > 0.0
         });
-        self.day_progress += day_frac;
-        if self.day_progress >= 1.0 {
-            self.day_progress -= 1.0;
+        if self.calendar_state.advance_reciprocity(day_frac) {
             self.plant_ire_today = 0.0;
             // The wild forgives, slowly: a cell held deeply blessed
             // for a full season earns ONE wildlife reseed — its
@@ -1022,10 +1016,10 @@ impl World {
                 pos.surface().center(),
             ))
             .0;
-            let season = if self.long_winter {
+            let season = if self.calendar_state.long_winter() {
                 3
             } else {
-                crate::planet_atlas::local_season(self.day, latitude)
+                crate::planet_atlas::local_season(self.calendar_state.day(), latitude)
             };
             let (want, _) = Self::want_for_season(season);
             for slot in o.slots.iter_mut() {
@@ -1197,4 +1191,16 @@ impl World {
             0.0
         }
     }
+}
+
+impl World {
+    pub fn day(&self) -> u32 { self.calendar_state.day() }
+    pub fn clock(&self) -> f64 { self.calendar_state.clock() }
+    pub fn long_winter(&self) -> bool { self.calendar_state.long_winter() }
+    pub(crate) fn set_calendar_day(&mut self, day: u32) { self.calendar_state.set_day(day); }
+    pub(crate) fn set_simulation_clock(&mut self, clock: f64) { self.calendar_state.set_clock(clock); }
+    pub(crate) fn advance_calendar_day(&mut self) { self.calendar_state.advance_day(); }
+
+    #[cfg(test)]
+    pub(crate) fn set_long_winter_for_test(&mut self, falls: bool) { self.calendar_state.set_long_winter(falls); }
 }

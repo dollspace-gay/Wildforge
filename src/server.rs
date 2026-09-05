@@ -104,7 +104,7 @@ impl Server {
     pub fn new(world: World, time_of_day: f32, rng: u32) -> Server {
         let prev_tier = world.ire_tier();
         let mut world = world;
-        world.clock = Server::clock_of(world.day, time_of_day);
+        world.set_simulation_clock(Server::clock_of(world.day(), time_of_day));
         Server {
             world,
             time_of_day,
@@ -132,7 +132,7 @@ impl Server {
     /// Current daylight factor (0.12 night floor .. 1.0 noon).
     pub fn daylight(&self) -> f32 {
         let sun = crate::planet_atlas::solar_direction(
-            f64::from(self.world.day) + f64::from(self.time_of_day),
+            f64::from(self.world.day()) + f64::from(self.time_of_day),
             f64::from(self.time_of_day),
         );
         (sun.y as f32 * 2.5 + 0.5).clamp(0.12, 1.0)
@@ -163,9 +163,9 @@ impl Server {
             let before = self.time_of_day;
             self.time_of_day = (self.time_of_day + dt / DAY_LENGTH) % 1.0;
             if self.time_of_day < before {
-                self.world.day = self.world.day.wrapping_add(1);
+                self.world.advance_calendar_day();
             }
-            self.world.clock = Server::clock_of(self.world.day, self.time_of_day);
+            self.world.set_simulation_clock(Server::clock_of(self.world.day(), self.time_of_day));
         }
         if !all_deep {
             self.tick_overworld_nature(dt, events);
@@ -492,15 +492,15 @@ impl Server {
         if let Err(error) = self.world.tick_arcane_ecology(512) {
             eprintln!("planetary magical ecology update failed: {error}");
         }
-        let winter_before = self.world.long_winter;
+        let winter_before = self.world.long_winter();
         if self.world.tick_ire(dt / DAY_LENGTH) {
             let refund = self.world.accept_offerings();
             events.push(SimEvent::Dawn {
                 offering_refund: refund,
             });
         }
-        if self.world.long_winter != winter_before {
-            events.push(SimEvent::LongWinter(self.world.long_winter));
+        if self.world.long_winter() != winter_before {
+            events.push(SimEvent::LongWinter(self.world.long_winter()));
         }
         let tier = self.world.ire_tier();
         if tier != self.prev_tier {
@@ -536,8 +536,8 @@ impl Server {
     /// its own hourly clock rather than being re-rolled globally.
     pub fn sleep_to_dawn(&mut self) {
         self.time_of_day = 0.3;
-        self.world.day = self.world.day.wrapping_add(1);
-        self.world.clock = Server::clock_of(self.world.day, self.time_of_day);
+        self.world.advance_calendar_day();
+        self.world.set_simulation_clock(Server::clock_of(self.world.day(), self.time_of_day));
     }
 
     /// Sync the tier tracker (world load / forced ire) so the next tick

@@ -17,7 +17,7 @@ impl<'a> WorldView<'a> {
     }
     pub(crate) fn clock(&self) -> f64 {
         match self.source {
-            Source::Authority(world) => world.clock,
+            Source::Authority(world) => world.clock(),
             Source::Replica(world) => world.clock(),
         }
     }
@@ -30,7 +30,7 @@ impl<'a> WorldView<'a> {
     }
     pub(crate) fn day(&self) -> u32 {
         match self.source {
-            Source::Authority(world) => world.day,
+            Source::Authority(world) => world.day(),
             Source::Replica(world) => world.day(),
         }
     }

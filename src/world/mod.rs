@@ -50,6 +50,7 @@ mod power;
 mod query;
 mod standing;
 mod country_view;
+mod calendar_state;
 mod population;
 mod view;
 pub(crate) use view::WorldView;
@@ -1014,6 +1015,7 @@ pub struct RevealKey {
 }
 
 pub struct World {
+    calendar_state: calendar_state::CalendarState,
     population: population::Population,
     chunks: terrain::TerrainStore,
     pub generator: Generator,
@@ -1133,12 +1135,6 @@ pub struct World {
     /// How much bloom a cell has already been given without being
     /// tended back — the ground's willingness, spent.
     pub(crate) bloom_spent: HashMap<RegionCell, f32>,
-    /// The year has stopped: too many countries have no spirit left.
-    pub long_winter: bool,
-    /// Absolute sim-time in seconds (day * DAY_LENGTH + time-of-day),
-    /// mirrored from the Server every tick so chunk load and random
-    /// ticks share one clock.
-    pub clock: f64,
     /// When each chunk last took its random ticks (persisted, so the
     /// world can live on while a chunk is away).
     last_random: HashMap<ChunkPos, f64>,
@@ -1177,10 +1173,6 @@ pub struct World {
     pub ire: f32,
     /// How much ire planting has already refunded today (daily cap).
     plant_ire_today: f32,
-    /// Fraction of the current day elapsed (for decay + cap reset).
-    day_progress: f32,
-    /// Calendar day (increments at dawn, natural or slept-through).
-    pub day: u32,
     /// Host mode: record block edits for broadcasting.
     log_edits: bool,
     edit_log: Vec<(crate::planet::BlockPos, BlockId, u8, u16, u8)>,
@@ -1353,7 +1345,7 @@ impl World {
     /// systems should gate on. See [`MoonPhase`]. (Hook API; unused in-engine.)
     #[allow(dead_code)]
     pub fn moon_phase(&self) -> MoonPhase {
-        MoonPhase::ORDER[(self.day % LUNAR_DAYS) as usize]
+        MoonPhase::ORDER[(self.calendar_state.day() % LUNAR_DAYS) as usize]
     }
 
     pub fn new(seed: u32, save_dir: PathBuf, reg: Arc<Registry>) -> World {
@@ -1489,6 +1481,7 @@ impl World {
                 .ok()
         });
         World {
+            calendar_state: calendar_state::CalendarState::default(),
             population: population::Population::default(),
             chunks: terrain::TerrainStore::default(),
             generator,
@@ -1519,7 +1512,6 @@ impl World {
             fluid_batch: false,
             pending_relight: HashSet::new(),
             edit_relight_batch: false,
-            clock: 0.0,
             last_random: HashMap::new(),
             block_entities: HashMap::new(),
             templates: Vec::new(),
@@ -1543,7 +1535,6 @@ impl World {
             bloom: HashMap::new(),
             hearts: HashMap::new(),
             bloom_spent: HashMap::new(),
-            long_winter: false,
             last_entry_anchor: None,
             dungeon_runs: Vec::new(),
             run_seed: 0x5EED_0000,
@@ -1551,8 +1542,6 @@ impl World {
             camera: "first".into(),
             ire: 0.0,
             plant_ire_today: 0.0,
-            day_progress: 0.0,
-            day: 0,
             log_edits: false,
             edit_log: Vec::new(),
             falling: Vec::new(),
@@ -1616,7 +1605,7 @@ impl World {
             self.seed,
             &self.mode,
             self.ire,
-            self.day,
+            self.calendar_state.day(),
             camera,
         )
     }
@@ -1664,7 +1653,7 @@ impl World {
         };
         let before = geography.dynamic.completed_steps;
         let processed = geography
-            .advance_toward(self.clock.max(0.0) as u64, budget)
+            .advance_toward(self.calendar_state.clock().max(0.0) as u64, budget)
             .map_err(std::io::Error::other)?;
         let advanced = geography.dynamic.completed_steps != before;
         if advanced {
@@ -1859,7 +1848,7 @@ impl World {
             geography,
             &atlas,
             &self.reg,
-            u64::from(self.day),
+            u64::from(self.calendar_state.day()),
             budget,
             crate::arcane_ecology::EcologyConditions::new(
                 &mut water_available,
@@ -2842,7 +2831,7 @@ impl World {
                     geography,
                     &self.reg,
                     plan,
-                    u64::from(self.day),
+                    u64::from(self.calendar_state.day()),
                 ) {
                     eprintln!("arcane ecology: site changed during harvest at {pos:?}: {error}");
                     cancel_unapplied_material_operation(

@@ -1065,7 +1065,7 @@ impl HostSession {
             self.broadcast_ready(&S2C::TimeIre {
                 time: server.time_of_day,
                 ire: server.world.ire,
-                day: server.world.day,
+                day: server.world.day(),
             });
             // Active effects are durable host state, not one-shot animation
             // packets. Refreshing these small qualitative cues lets late
@@ -1210,7 +1210,7 @@ impl HostSession {
                 self.broadcast_ready(&S2C::TimeIre {
                     time: server.time_of_day,
                     ire: server.world.ire,
-                    day: server.world.day,
+                    day: server.world.day(),
                 });
                 self.broadcast_ready(&S2C::Toast("Dawn. The camp wakes.".into()));
                 fx.push(HostFx::AllSlept);

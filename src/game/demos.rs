@@ -238,7 +238,7 @@ impl Game {
         if let Ok(d) = std::env::var("WILDFORGE_DAY")
             && let Ok(d) = d.parse::<u32>()
         {
-            self.runtime.local_mut().world.day = d;
+            self.runtime.local_mut().world.set_calendar_day(d);
         }
         // Planetary visual qualification needs to show a whole valley,
         // shoreline, or treeline rather than whatever happens to occupy the
@@ -2035,19 +2035,20 @@ impl Game {
         if let Ok(v) = std::env::var("WILDFORGE_DAY")
             && let Ok(v) = v.parse::<u32>()
         {
-            self.runtime.local_mut().world.day = v;
+            self.runtime.local_mut().world.set_calendar_day(v);
         }
         if let Ok(v) = std::env::var("WILDFORGE_SEASON")
             && let Ok(v) = v.parse::<u32>()
         {
-            self.runtime.local_mut().world.day = (v % 4) * world::SEASON_DAYS;
+            self.runtime.local_mut().world.set_calendar_day((v % 4) * world::SEASON_DAYS);
         }
         // Calendar overrides must move the authoritative simulation clock too.
         // Local astronomy and climate sample `World::clock`; leaving it at the
         // pre-override value makes a capture's sky disagree with its weather.
-        self.runtime.local_mut().world.clock = (f64::from(self.runtime.view().day())
+        let clock = (f64::from(self.runtime.view().day())
             + f64::from(self.runtime.time_of_day().rem_euclid(1.0)))
             * f64::from(crate::server::DAY_LENGTH);
+        self.runtime.local_mut().world.set_simulation_clock(clock);
         if let Ok(v) = std::env::var("WILDFORGE_WEATHER") {
             self.runtime.local_mut().world.force_local_weather(&v);
             self.presentation.weather_vis = match v.as_str() {
@@ -2681,7 +2682,8 @@ impl Game {
                 Some(&self.inventory),
                 false,
             )?;
-            self.runtime.local_mut().world.clock += f64::from(crate::workings::MIN_WAND_SETTLE_SECONDS) + 0.01;
+            let clock = self.runtime.view().clock() + f64::from(crate::workings::MIN_WAND_SETTLE_SECONDS) + 0.01;
+            self.runtime.local_mut().world.set_simulation_clock(clock);
             self.runtime.local_mut().world.activate_working(result.stable_id)?;
             if let Some(cue) = self.runtime.local().world.working_cues()
                 .into_iter()

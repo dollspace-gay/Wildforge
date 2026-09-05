@@ -5007,7 +5007,7 @@ impl World {
     }
 
     fn working_tick(&self) -> u64 {
-        (self.clock.max(0.0) * 20.0).round() as u64
+        (self.calendar_state.clock().max(0.0) * 20.0).round() as u64
     }
 
     fn local_capacity_permille(&self, region: crate::planet_atlas::AtlasPos) -> u16 {

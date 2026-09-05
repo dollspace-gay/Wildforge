@@ -269,7 +269,7 @@ impl World {
                 wear: 0,
                 strain: 0,
                 provenance: format!("legacy_or_generated:{pos:?}"),
-                created_day: self.day,
+                created_day: self.calendar_state.day(),
                 format_version: crate::implements::IMPLEMENT_RESOLVER_VERSION,
                 creative: self.mode == "creative",
             })
@@ -1288,7 +1288,7 @@ impl World {
                 wear: 0,
                 strain: 0,
                 provenance: format!("binding_frame:{pos:?}"),
-                created_day: self.day,
+                created_day: self.calendar_state.day(),
                 format_version: crate::implements::IMPLEMENT_RESOLVER_VERSION,
                 creative: self.mode == "creative",
             })
@@ -1442,7 +1442,7 @@ impl World {
                 wear: 0,
                 strain: u32::from(damage) * 5,
                 provenance: format!("calibrated_vessel:{vessel_pos:?}"),
-                created_day: self.day,
+                created_day: self.calendar_state.day(),
                 format_version: crate::implements::IMPLEMENT_RESOLVER_VERSION,
                 creative: self.mode == "creative",
             })
@@ -1725,7 +1725,7 @@ impl World {
                 wear: 0,
                 strain: 0,
                 provenance: format!("charm_binding:{pos:?}"),
-                created_day: self.day,
+                created_day: self.calendar_state.day(),
                 format_version: crate::implements::IMPLEMENT_RESOLVER_VERSION,
                 creative: self.mode == "creative",
             })

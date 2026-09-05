@@ -349,7 +349,7 @@ impl World {
         let conditions = DrossConditions {
             runoff_routes: &runoff_routes,
             living_hearts: &living_hearts,
-            long_winter: self.long_winter,
+            long_winter: self.calendar_state.long_winter(),
         };
         let report =
             self.arcane_geography

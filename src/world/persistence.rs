@@ -166,8 +166,8 @@ impl World {
         w.mode = mode;
         w.camera = camera;
         w.ire = ire;
-        w.day = day;
-        w.clock = day as f64 * crate::server::DAY_LENGTH as f64;
+        w.set_calendar_day(day);
+        w.set_simulation_clock(day as f64 * crate::server::DAY_LENGTH as f64);
         w.palette.snapshot(&w.reg).validate()?;
         // The arcane journal commits before sparse item-owner files. If a
         // process stopped between those two durable writes, roll an

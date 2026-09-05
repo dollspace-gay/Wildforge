@@ -229,7 +229,7 @@ impl World {
         report.record(
             "long winter",
             path.clone(),
-            super::persistence::atomic_replace(&path, if self.long_winter { b"1" } else { b"0" }),
+            super::persistence::atomic_replace(&path, if self.calendar_state.long_winter() { b"1" } else { b"0" }),
         );
         // The ground's spent willingness to bloom.
         let mut sb = Vec::with_capacity(4 + self.bloom_spent.len() * 8);
@@ -511,7 +511,7 @@ impl World {
                 }
             }
         }
-        self.long_winter = fs::read(self.save_dir.join("longwinter"))
+        self.calendar_state.long_winter() = fs::read(self.save_dir.join("longwinter"))
             .map(|d| d.first() == Some(&b'1'))
             .unwrap_or(false);
         if let Ok(data) = fs::read(self.save_dir.join("bspent"))
@@ -780,7 +780,7 @@ impl World {
                 self.seed,
                 &self.mode,
                 self.ire,
-                self.day,
+                self.calendar_state.day(),
                 &self.camera,
             ),
         );

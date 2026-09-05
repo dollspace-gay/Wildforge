@@ -1778,3 +1778,20 @@ order; distinct cadence operations preserve their thresholds, reset policy, and
 seasonal multipliers. Persistence still writes/reads the WFA1 sidecar with the
 same layout and iteration policy. Final seed-once, save restoration, rejected
 spawn budget, and seasonal cadence checks remain pending. No tests ran.
+
+
+## Authoritative calendar state (coding checkpoint; unverified)
+
+CalendarState owns the persisted day, absolute simulation clock, Long Winter
+transition, and independent reciprocity rollover fraction. Server natural dawn,
+sleep, save restoration, and development overrides use named transitions; the
+existing tick order and wrapping day policy are retained. Reciprocity still
+subtracts one day per call, preserving accumulated remainder semantics. World
+readers and host snapshots query the owner, while ReplicaWorld retains received
+calendar observations and pure CalendarView supplies common astronomy.
+
+The old direct-field test fixtures must move to explicit calendar setters during
+final test work. Final checks include dawn/sleep and overflow behavior, calendar
+save/load, opposite hemispheres, moon/season timing, Long Winter transitions,
+offering/reseed order, and actual capture sky/weather consistency. No tests or
+validation commands ran in this implementation checkpoint.

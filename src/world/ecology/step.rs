@@ -26,7 +26,7 @@ impl World {
         let mut events = Vec::new();
         let fallback_season = fallback_player
             .map(|player| self.season_at_surface(player.surface()))
-            .unwrap_or_else(|| crate::planet_atlas::local_season(self.day, 0.0));
+            .unwrap_or_else(|| crate::planet_atlas::local_season(self.calendar_state.day(), 0.0));
         // Stamp stable ids on anything new (spawns, births, loaded saves).
         self.population.stamp_unassigned_mobs();
         // Herd pulls are averaged in each animal's local tangent frame.
