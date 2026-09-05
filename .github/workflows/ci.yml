@@ -12,6 +12,16 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
+  maintainability:
+    name: Maintainability report
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Test maintainability analyzer
+        run: python3 -m unittest discover -s tools/tests -v
+      - name: Advisory source size and duplication report
+        run: python3 tools/check_maintainability.py
+
   quality:
     name: Format and Clippy
     runs-on: ubuntu-24.04

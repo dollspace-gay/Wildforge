@@ -1,0 +1,2289 @@
+{
+  "schema_version": 1,
+  "analyzer": {
+    "version": 1,
+    "python": "3.12.13",
+    "clone_mode": "exact-token"
+  },
+  "mode": "advisory",
+  "thresholds": {
+    "warning_lines": 400,
+    "review_lines": 500,
+    "clone_tokens": 100,
+    "clone_code_lines": 12
+  },
+  "summary": {
+    "files": 201,
+    "lines": 211201,
+    "over_warning": 120,
+    "over_review": 103,
+    "clone_groups": 71,
+    "clone_files_scanned": 200,
+    "saturated_fingerprints_skipped": 0
+  },
+  "files": [
+    {
+      "path": "src/registry.rs",
+      "lines": 7455,
+      "level": "review"
+    },
+    {
+      "path": "src/world/workings.rs",
+      "lines": 5419,
+      "level": "review"
+    },
+    {
+      "path": "src/world/alchemy.rs",
+      "lines": 5221,
+      "level": "review"
+    },
+    {
+      "path": "src/arcane.rs",
+      "lines": 5127,
+      "level": "review"
+    },
+    {
+      "path": "src/multiplayer/host.rs",
+      "lines": 5087,
+      "level": "review"
+    },
+    {
+      "path": "src/arcane_geography.rs",
+      "lines": 4950,
+      "level": "review"
+    },
+    {
+      "path": "src/world/implements.rs",
+      "lines": 4604,
+      "level": "review"
+    },
+    {
+      "path": "src/tests/world.rs",
+      "lines": 4571,
+      "level": "review"
+    },
+    {
+      "path": "src/world/mod.rs",
+      "lines": 4262,
+      "level": "review"
+    },
+    {
+      "path": "src/dross.rs",
+      "lines": 3782,
+      "level": "review"
+    },
+    {
+      "path": "src/materials.rs",
+      "lines": 3746,
+      "level": "review"
+    },
+    {
+      "path": "src/planet_atlas.rs",
+      "lines": 3505,
+      "level": "review"
+    },
+    {
+      "path": "src/game/actions.rs",
+      "lines": 3337,
+      "level": "review"
+    },
+    {
+      "path": "src/worldgen.rs",
+      "lines": 3159,
+      "level": "review"
+    },
+    {
+      "path": "src/game/ui.rs",
+      "lines": 3025,
+      "level": "review"
+    },
+    {
+      "path": "src/game/demos.rs",
+      "lines": 2948,
+      "level": "review"
+    },
+    {
+      "path": "src/tests/workings.rs",
+      "lines": 2933,
+      "level": "review"
+    },
+    {
+      "path": "src/tests/worldgen.rs",
+      "lines": 2913,
+      "level": "review"
+    },
+    {
+      "path": "src/planet_atlas/diagnostics.rs",
+      "lines": 2865,
+      "level": "review"
+    },
+    {
+      "path": "src/game/frame.rs",
+      "lines": 2829,
+      "level": "review"
+    },
+    {
+      "path": "src/tests/implements.rs",
+      "lines": 2722,
+      "level": "review"
+    },
+    {
+      "path": "src/tests/alchemy.rs",
+      "lines": 2708,
+      "level": "review"
+    },
+    {
+      "path": "src/arcane_ecology.rs",
+      "lines": 2627,
+      "level": "review"
+    },
+    {
+      "path": "src/planet_atlas/geology.rs",
+      "lines": 2526,
+      "level": "review"
+    },
+    {
+      "path": "src/tests/registry.rs",
+      "lines": 2451,
+      "level": "review"
+    },
+    {
+      "path": "src/planet_atlas/climate.rs",
+      "lines": 2443,
+      "level": "review"
+    },
+    {
+      "path": "src/atlas/procedural.rs",
+      "lines": 2432,
+      "level": "review"
+    },
+    {
+      "path": "src/tests/multiplayer.rs",
+      "lines": 2415,
+      "level": "review"
+    },
+    {
+      "path": "src/planet_atlas/hydrology.rs",
+      "lines": 2391,
+      "level": "review"
+    },
+    {
+      "path": "src/alchemy.rs",
+      "lines": 2332,
+      "level": "review"
+    },
+    {
+      "path": "src/workings.rs",
+      "lines": 2297,
+      "level": "review"
+    },
+    {
+      "path": "src/mobs.rs",
+      "lines": 2289,
+      "level": "review"
+    },
+    {
+      "path": "src/visual_capture.rs",
+      "lines": 2083,
+      "level": "review"
+    },
+    {
+      "path": "src/geode_capture.rs",
+      "lines": 2053,
+      "level": "review"
+    },
+    {
+      "path": "src/tests/machines.rs",
+      "lines": 2024,
+      "level": "review"
+    },
+    {
+      "path": "src/world/ecology.rs",
+      "lines": 2022,
+      "level": "review"
+    },
+    {
+      "path": "src/planet.rs",
+      "lines": 1970,
+      "level": "review"
+    },
+    {
+      "path": "src/tests/rendering.rs",
+      "lines": 1957,
+      "level": "review"
+    },
+    {
+      "path": "src/world/spawn.rs",
+      "lines": 1628,
+      "level": "review"
+    },
+    {
+      "path": "src/tests/ecology.rs",
+      "lines": 1448,
+      "level": "review"
+    },
+    {
+      "path": "src/tests/atlas.rs",
+      "lines": 1437,
+      "level": "review"
+    },
+    {
+      "path": "src/game/interaction.rs",
+      "lines": 1432,
+      "level": "review"
+    },
+    {
+      "path": "src/planet_atlas/biomes.rs",
+      "lines": 1408,
+      "level": "review"
+    },
+    {
+      "path": "src/world/storage.rs",
+      "lines": 1375,
+      "level": "review"
+    },
+    {
+      "path": "src/implements.rs",
+      "lines": 1365,
+      "level": "review"
+    },
+    {
+      "path": "src/tests/mobs.rs",
+      "lines": 1365,
+      "level": "review"
+    },
+    {
+      "path": "src/world/machine_tick.rs",
+      "lines": 1352,
+      "level": "review"
+    },
+    {
+      "path": "src/tests/agent.rs",
+      "lines": 1345,
+      "level": "review"
+    },
+    {
+      "path": "src/discovery.rs",
+      "lines": 1305,
+      "level": "review"
+    },
+    {
+      "path": "src/world/calendar.rs",
+      "lines": 1285,
+      "level": "review"
+    },
+    {
+      "path": "src/renderer/setup.rs",
+      "lines": 1274,
+      "level": "review"
+    },
+    {
+      "path": "src/tests/hydrology.rs",
+      "lines": 1259,
+      "level": "review"
+    },
+    {
+      "path": "src/tests/geology.rs",
+      "lines": 1222,
+      "level": "review"
+    },
+    {
+      "path": "tools/gen_base_tiles.py",
+      "lines": 1168,
+      "level": "review"
+    },
+    {
+      "path": "src/game/remote.rs",
+      "lines": 1161,
+      "level": "review"
+    },
+    {
+      "path": "src/world/chunks.rs",
+      "lines": 1160,
+      "level": "review"
+    },
+    {
+      "path": "src/identity/atproto.rs",
+      "lines": 1138,
+      "level": "review"
+    },
+    {
+      "path": "src/mod_lint.rs",
+      "lines": 1129,
+      "level": "review"
+    },
+    {
+      "path": "src/atlas/packs.rs",
+      "lines": 1128,
+      "level": "review"
+    },
+    {
+      "path": "src/renderer/frame.rs",
+      "lines": 1113,
+      "level": "review"
+    },
+    {
+      "path": "src/game/mod.rs",
+      "lines": 1112,
+      "level": "review"
+    },
+    {
+      "path": "tools/verify_visual_polish.py",
+      "lines": 1107,
+      "level": "review"
+    },
+    {
+      "path": "src/planet_atlas/water_cycle.rs",
+      "lines": 1103,
+      "level": "review"
+    },
+    {
+      "path": "src/world/ticks.rs",
+      "lines": 1098,
+      "level": "review"
+    },
+    {
+      "path": "src/shader.wgsl",
+      "lines": 1091,
+      "level": "review"
+    },
+    {
+      "path": "src/net/transport.rs",
+      "lines": 1059,
+      "level": "review"
+    },
+    {
+      "path": "src/game/session.rs",
+      "lines": 1056,
+      "level": "review"
+    },
+    {
+      "path": "src/world/machines.rs",
+      "lines": 1051,
+      "level": "review"
+    },
+    {
+      "path": "src/world/discovery.rs",
+      "lines": 1028,
+      "level": "review"
+    },
+    {
+      "path": "src/agent/work.rs",
+      "lines": 1016,
+      "level": "review"
+    },
+    {
+      "path": "src/tests/dross.rs",
+      "lines": 1007,
+      "level": "review"
+    },
+    {
+      "path": "src/game/menus.rs",
+      "lines": 1006,
+      "level": "review"
+    },
+    {
+      "path": "src/game/containers.rs",
+      "lines": 1004,
+      "level": "review"
+    },
+    {
+      "path": "src/world/dross.rs",
+      "lines": 1001,
+      "level": "review"
+    },
+    {
+      "path": "src/agent/mcp.rs",
+      "lines": 967,
+      "level": "review"
+    },
+    {
+      "path": "src/net/protocol.rs",
+      "lines": 940,
+      "level": "review"
+    },
+    {
+      "path": "src/world/entities.rs",
+      "lines": 919,
+      "level": "review"
+    },
+    {
+      "path": "src/tests/water_cycle.rs",
+      "lines": 914,
+      "level": "review"
+    },
+    {
+      "path": "src/mesher.rs",
+      "lines": 899,
+      "level": "review"
+    },
+    {
+      "path": "src/world/hearts.rs",
+      "lines": 829,
+      "level": "review"
+    },
+    {
+      "path": "src/world/fluids.rs",
+      "lines": 818,
+      "level": "review"
+    },
+    {
+      "path": "src/agent/mod.rs",
+      "lines": 795,
+      "level": "review"
+    },
+    {
+      "path": "src/tests/archetypes.rs",
+      "lines": 794,
+      "level": "review"
+    },
+    {
+      "path": "src/tests/climate.rs",
+      "lines": 794,
+      "level": "review"
+    },
+    {
+      "path": "src/tests/player.rs",
+      "lines": 789,
+      "level": "review"
+    },
+    {
+      "path": "src/multiplayer/profiles.rs",
+      "lines": 788,
+      "level": "review"
+    },
+    {
+      "path": "src/game/inventory_ui.rs",
+      "lines": 763,
+      "level": "review"
+    },
+    {
+      "path": "src/skills.rs",
+      "lines": 694,
+      "level": "review"
+    },
+    {
+      "path": "src/lib.rs",
+      "lines": 673,
+      "level": "review"
+    },
+    {
+      "path": "src/world/local_structure.rs",
+      "lines": 660,
+      "level": "review"
+    },
+    {
+      "path": "tools/gen_texture_pack.py",
+      "lines": 658,
+      "level": "review"
+    },
+    {
+      "path": "src/game/tooltip.rs",
+      "lines": 630,
+      "level": "review"
+    },
+    {
+      "path": "src/world/template.rs",
+      "lines": 621,
+      "level": "review"
+    },
+    {
+      "path": "tools/verify_visual_closeout.py",
+      "lines": 597,
+      "level": "review"
+    },
+    {
+      "path": "src/tests/interiors.rs",
+      "lines": 591,
+      "level": "review"
+    },
+    {
+      "path": "src/multiplayer/host/streaming.rs",
+      "lines": 569,
+      "level": "review"
+    },
+    {
+      "path": "src/tests/belt.rs",
+      "lines": 558,
+      "level": "review"
+    },
+    {
+      "path": "src/server.rs",
+      "lines": 548,
+      "level": "review"
+    },
+    {
+      "path": "src/multiplayer/moderation.rs",
+      "lines": 538,
+      "level": "review"
+    },
+    {
+      "path": "src/game/status.rs",
+      "lines": 529,
+      "level": "review"
+    },
+    {
+      "path": "src/game/app.rs",
+      "lines": 526,
+      "level": "review"
+    },
+    {
+      "path": "src/world/pieces.rs",
+      "lines": 520,
+      "level": "review"
+    },
+    {
+      "path": "src/tests/mod.rs",
+      "lines": 517,
+      "level": "review"
+    },
+    {
+      "path": "src/script.rs",
+      "lines": 496,
+      "level": "warning"
+    },
+    {
+      "path": "src/world/multiblock.rs",
+      "lines": 496,
+      "level": "warning"
+    },
+    {
+      "path": "src/world/belt.rs",
+      "lines": 474,
+      "level": "warning"
+    },
+    {
+      "path": "src/bounce.rs",
+      "lines": 469,
+      "level": "warning"
+    },
+    {
+      "path": "src/renderer/mod.rs",
+      "lines": 454,
+      "level": "warning"
+    },
+    {
+      "path": "src/tests/hearts.rs",
+      "lines": 450,
+      "level": "warning"
+    },
+    {
+      "path": "src/camera.rs",
+      "lines": 447,
+      "level": "warning"
+    },
+    {
+      "path": "src/tests/rail.rs",
+      "lines": 447,
+      "level": "warning"
+    },
+    {
+      "path": "src/identity/oauth_conformance.rs",
+      "lines": 446,
+      "level": "warning"
+    },
+    {
+      "path": "src/ruleset.rs",
+      "lines": 429,
+      "level": "warning"
+    },
+    {
+      "path": "src/tests/soil.rs",
+      "lines": 425,
+      "level": "warning"
+    },
+    {
+      "path": "src/world/persistence.rs",
+      "lines": 413,
+      "level": "warning"
+    },
+    {
+      "path": "src/audio.rs",
+      "lines": 411,
+      "level": "warning"
+    },
+    {
+      "path": "tools/verify_cracked_geode.py",
+      "lines": 411,
+      "level": "warning"
+    },
+    {
+      "path": "src/agent/motion.rs",
+      "lines": 408,
+      "level": "warning"
+    },
+    {
+      "path": "src/agent/perception.rs",
+      "lines": 408,
+      "level": "warning"
+    },
+    {
+      "path": "src/chunk.rs",
+      "lines": 407,
+      "level": "warning"
+    },
+    {
+      "path": "src/tests/playtest.rs",
+      "lines": 393,
+      "level": "ok"
+    },
+    {
+      "path": "src/physics.rs",
+      "lines": 391,
+      "level": "ok"
+    },
+    {
+      "path": "src/raycast.rs",
+      "lines": 386,
+      "level": "ok"
+    },
+    {
+      "path": "src/world/rail.rs",
+      "lines": 382,
+      "level": "ok"
+    },
+    {
+      "path": "src/game/streaming.rs",
+      "lines": 370,
+      "level": "ok"
+    },
+    {
+      "path": "tools/audit_tiles.py",
+      "lines": 358,
+      "level": "ok"
+    },
+    {
+      "path": "src/machines.rs",
+      "lines": 355,
+      "level": "ok"
+    },
+    {
+      "path": "src/lights.rs",
+      "lines": 337,
+      "level": "ok"
+    },
+    {
+      "path": "src/tests/local_structure.rs",
+      "lines": 337,
+      "level": "ok"
+    },
+    {
+      "path": "src/game/equipment.rs",
+      "lines": 335,
+      "level": "ok"
+    },
+    {
+      "path": "src/game/combat.rs",
+      "lines": 334,
+      "level": "ok"
+    },
+    {
+      "path": "src/identity.rs",
+      "lines": 325,
+      "level": "ok"
+    },
+    {
+      "path": "src/world/soil.rs",
+      "lines": 323,
+      "level": "ok"
+    },
+    {
+      "path": "src/equipment.rs",
+      "lines": 321,
+      "level": "ok"
+    },
+    {
+      "path": "src/registry/runtime.rs",
+      "lines": 319,
+      "level": "ok"
+    },
+    {
+      "path": "src/game/browser.rs",
+      "lines": 311,
+      "level": "ok"
+    },
+    {
+      "path": "src/screens.rs",
+      "lines": 311,
+      "level": "ok"
+    },
+    {
+      "path": "src/game/dialogue.rs",
+      "lines": 309,
+      "level": "ok"
+    },
+    {
+      "path": "src/world/lighting.rs",
+      "lines": 305,
+      "level": "ok"
+    },
+    {
+      "path": "src/ui.rs",
+      "lines": 304,
+      "level": "ok"
+    },
+    {
+      "path": "src/tests/template.rs",
+      "lines": 303,
+      "level": "ok"
+    },
+    {
+      "path": "tools/split_material_sheet.py",
+      "lines": 297,
+      "level": "ok"
+    },
+    {
+      "path": "src/tests/power_draw.rs",
+      "lines": 293,
+      "level": "ok"
+    },
+    {
+      "path": "src/game/survival.rs",
+      "lines": 289,
+      "level": "ok"
+    },
+    {
+      "path": "src/entity.rs",
+      "lines": 287,
+      "level": "ok"
+    },
+    {
+      "path": "src/atlas/mod.rs",
+      "lines": 281,
+      "level": "ok"
+    },
+    {
+      "path": "src/world/region.rs",
+      "lines": 281,
+      "level": "ok"
+    },
+    {
+      "path": "src/dedicated.rs",
+      "lines": 269,
+      "level": "ok"
+    },
+    {
+      "path": "src/inventory.rs",
+      "lines": 267,
+      "level": "ok"
+    },
+    {
+      "path": "src/world/fire.rs",
+      "lines": 247,
+      "level": "ok"
+    },
+    {
+      "path": "tools/magic_qualification_matrix.py",
+      "lines": 247,
+      "level": "ok"
+    },
+    {
+      "path": "src/world/power.rs",
+      "lines": 244,
+      "level": "ok"
+    },
+    {
+      "path": "src/game/content.rs",
+      "lines": 240,
+      "level": "ok"
+    },
+    {
+      "path": "src/identity/local.rs",
+      "lines": 236,
+      "level": "ok"
+    },
+    {
+      "path": "src/config.rs",
+      "lines": 235,
+      "level": "ok"
+    },
+    {
+      "path": "src/tests/multiblock.rs",
+      "lines": 235,
+      "level": "ok"
+    },
+    {
+      "path": "src/edifice.rs",
+      "lines": 222,
+      "level": "ok"
+    },
+    {
+      "path": "src/world/dungeon.rs",
+      "lines": 222,
+      "level": "ok"
+    },
+    {
+      "path": "src/world/power_draw.rs",
+      "lines": 219,
+      "level": "ok"
+    },
+    {
+      "path": "src/game/keymap.rs",
+      "lines": 215,
+      "level": "ok"
+    },
+    {
+      "path": "src/stats.rs",
+      "lines": 206,
+      "level": "ok"
+    },
+    {
+      "path": "src/renderer/resources.rs",
+      "lines": 204,
+      "level": "ok"
+    },
+    {
+      "path": "src/npc/mod.rs",
+      "lines": 199,
+      "level": "ok"
+    },
+    {
+      "path": "src/style.rs",
+      "lines": 199,
+      "level": "ok"
+    },
+    {
+      "path": "src/tests/qualification.rs",
+      "lines": 184,
+      "level": "ok"
+    },
+    {
+      "path": "tools/tests/test_maintainability.py",
+      "lines": 174,
+      "level": "ok"
+    },
+    {
+      "path": "src/sky.rs",
+      "lines": 166,
+      "level": "ok"
+    },
+    {
+      "path": "src/game/capture.rs",
+      "lines": 161,
+      "level": "ok"
+    },
+    {
+      "path": "src/persist.rs",
+      "lines": 161,
+      "level": "ok"
+    },
+    {
+      "path": "src/net/handshake.rs",
+      "lines": 157,
+      "level": "ok"
+    },
+    {
+      "path": "src/game/gameplay_proofs.rs",
+      "lines": 156,
+      "level": "ok"
+    },
+    {
+      "path": "src/crafting.rs",
+      "lines": 150,
+      "level": "ok"
+    },
+    {
+      "path": "src/tests/dungeon.rs",
+      "lines": 150,
+      "level": "ok"
+    },
+    {
+      "path": "src/game/input.rs",
+      "lines": 147,
+      "level": "ok"
+    },
+    {
+      "path": "src/particles.rs",
+      "lines": 147,
+      "level": "ok"
+    },
+    {
+      "path": "src/tests/nests.rs",
+      "lines": 143,
+      "level": "ok"
+    },
+    {
+      "path": "src/tests/gameplay.rs",
+      "lines": 141,
+      "level": "ok"
+    },
+    {
+      "path": "src/renderer/post.rs",
+      "lines": 138,
+      "level": "ok"
+    },
+    {
+      "path": "src/magic_qualification.rs",
+      "lines": 135,
+      "level": "ok"
+    },
+    {
+      "path": "tools/heart_table.py",
+      "lines": 128,
+      "level": "ok"
+    },
+    {
+      "path": "src/post.wgsl",
+      "lines": 126,
+      "level": "ok"
+    },
+    {
+      "path": "tools/maintainability/clones.py",
+      "lines": 126,
+      "level": "ok"
+    },
+    {
+      "path": "src/game/skills.rs",
+      "lines": 119,
+      "level": "ok"
+    },
+    {
+      "path": "src/tests/identity.rs",
+      "lines": 111,
+      "level": "ok"
+    },
+    {
+      "path": "src/multiplayer/settings.rs",
+      "lines": 106,
+      "level": "ok"
+    },
+    {
+      "path": "src/game/stats.rs",
+      "lines": 98,
+      "level": "ok"
+    },
+    {
+      "path": "build.rs",
+      "lines": 89,
+      "level": "ok"
+    },
+    {
+      "path": "tools/maintainability/report.py",
+      "lines": 89,
+      "level": "ok"
+    },
+    {
+      "path": "tools/maintainability/lex.py",
+      "lines": 80,
+      "level": "ok"
+    },
+    {
+      "path": "tools/gen_player_face.py",
+      "lines": 66,
+      "level": "ok"
+    },
+    {
+      "path": "src/game/roster_ui.rs",
+      "lines": 65,
+      "level": "ok"
+    },
+    {
+      "path": "src/multiplayer/roster.rs",
+      "lines": 61,
+      "level": "ok"
+    },
+    {
+      "path": "tools/run_gameplay_proofs.py",
+      "lines": 49,
+      "level": "ok"
+    },
+    {
+      "path": "tools/check_maintainability.py",
+      "lines": 48,
+      "level": "ok"
+    },
+    {
+      "path": "src/atlas/season.rs",
+      "lines": 43,
+      "level": "ok"
+    },
+    {
+      "path": "tools/install_test_mods.py",
+      "lines": 43,
+      "level": "ok"
+    },
+    {
+      "path": "src/net.rs",
+      "lines": 25,
+      "level": "ok"
+    },
+    {
+      "path": "mods/gems/main.rhai",
+      "lines": 16,
+      "level": "ok"
+    },
+    {
+      "path": "src/mp.rs",
+      "lines": 9,
+      "level": "ok"
+    },
+    {
+      "path": "src/main.rs",
+      "lines": 5,
+      "level": "ok"
+    },
+    {
+      "path": "tools/maintainability/__init__.py",
+      "lines": 1,
+      "level": "ok"
+    }
+  ],
+  "clones": [
+    {
+      "id": "3e32269d72370ec59644487591afd4ddf24a9df4de6dd9ea96e043a6c6eb1d9f",
+      "tokens": 243,
+      "locations": [
+        {
+          "path": "src/game/ui.rs",
+          "line": 1908,
+          "end_line": 1938
+        },
+        {
+          "path": "src/game/ui.rs",
+          "line": 1989,
+          "end_line": 2019
+        }
+      ]
+    },
+    {
+      "id": "5e814ecfd8e4e9b86966ba9c48ff815f17dfd4c67cd5d1e6c48fdbf409d90c0f",
+      "tokens": 226,
+      "locations": [
+        {
+          "path": "src/game/ui.rs",
+          "line": 2429,
+          "end_line": 2455
+        },
+        {
+          "path": "src/game/ui.rs",
+          "line": 2488,
+          "end_line": 2514
+        }
+      ]
+    },
+    {
+      "id": "c3486f8f9b7e96f0583b0a408a4841393eabd0896eb5e7dc896c378c7015ce96",
+      "tokens": 216,
+      "locations": [
+        {
+          "path": "src/shader.wgsl",
+          "line": 959,
+          "end_line": 976
+        },
+        {
+          "path": "src/shader.wgsl",
+          "line": 980,
+          "end_line": 997
+        }
+      ]
+    },
+    {
+      "id": "a5c757d3779cc377b498eeb62f39e4dbe4422119768be6b83708f7dbfef41f41",
+      "tokens": 205,
+      "locations": [
+        {
+          "path": "src/game/containers.rs",
+          "line": 343,
+          "end_line": 370
+        },
+        {
+          "path": "src/multiplayer/host.rs",
+          "line": 2548,
+          "end_line": 2578
+        }
+      ]
+    },
+    {
+      "id": "5673b7409c806f34fdcb8961f84d97a3dabf81b8d4af8f1ee0baa1d01f088249",
+      "tokens": 195,
+      "locations": [
+        {
+          "path": "src/game/ui.rs",
+          "line": 1913,
+          "end_line": 1938
+        },
+        {
+          "path": "src/game/ui.rs",
+          "line": 1994,
+          "end_line": 2019
+        },
+        {
+          "path": "src/game/ui.rs",
+          "line": 2430,
+          "end_line": 2455
+        },
+        {
+          "path": "src/game/ui.rs",
+          "line": 2489,
+          "end_line": 2514
+        }
+      ]
+    },
+    {
+      "id": "c46c5f064e787baac98f8474a9538b903810b7f7fdc6983e11ddfdfb29966367",
+      "tokens": 191,
+      "locations": [
+        {
+          "path": "src/game/ui.rs",
+          "line": 1818,
+          "end_line": 1841
+        },
+        {
+          "path": "src/game/ui.rs",
+          "line": 1915,
+          "end_line": 1938
+        },
+        {
+          "path": "src/game/ui.rs",
+          "line": 1996,
+          "end_line": 2019
+        },
+        {
+          "path": "src/game/ui.rs",
+          "line": 2432,
+          "end_line": 2455
+        },
+        {
+          "path": "src/game/ui.rs",
+          "line": 2491,
+          "end_line": 2514
+        }
+      ]
+    },
+    {
+      "id": "0f9215cd6b71549c19631188ee1589a8b7839b8e1cc4578ef8af4d3a99e19735",
+      "tokens": 190,
+      "locations": [
+        {
+          "path": "tools/verify_visual_closeout.py",
+          "line": 226,
+          "end_line": 258
+        },
+        {
+          "path": "tools/verify_visual_polish.py",
+          "line": 881,
+          "end_line": 911
+        }
+      ]
+    },
+    {
+      "id": "b71f287dca9260a5aa84bc032266ea6f39d716978127fb239c4d201d3715af86",
+      "tokens": 189,
+      "locations": [
+        {
+          "path": "src/tests/world.rs",
+          "line": 3275,
+          "end_line": 3305
+        },
+        {
+          "path": "src/tests/world.rs",
+          "line": 3360,
+          "end_line": 3386
+        }
+      ]
+    },
+    {
+      "id": "272177f5cfe5cc7573ed7029bd2e5ae26ec32437ee054ce3d7caf5d195edcbc0",
+      "tokens": 188,
+      "locations": [
+        {
+          "path": "src/game/ui.rs",
+          "line": 2135,
+          "end_line": 2160
+        },
+        {
+          "path": "src/game/ui.rs",
+          "line": 2255,
+          "end_line": 2280
+        }
+      ]
+    },
+    {
+      "id": "15ed85c98c63f7c3792ca46c0ac7289d90b6dccb459c04917318379cd52096ab",
+      "tokens": 186,
+      "locations": [
+        {
+          "path": "src/game/ui.rs",
+          "line": 2358,
+          "end_line": 2382
+        },
+        {
+          "path": "src/game/ui.rs",
+          "line": 2395,
+          "end_line": 2419
+        }
+      ]
+    },
+    {
+      "id": "028ba425edafb5f0561ff81a7e8321b46870606d42c3cb3d9de6096e4a01f4da",
+      "tokens": 184,
+      "locations": [
+        {
+          "path": "src/game/demos.rs",
+          "line": 1565,
+          "end_line": 1583
+        },
+        {
+          "path": "src/game/demos.rs",
+          "line": 1647,
+          "end_line": 1665
+        }
+      ]
+    },
+    {
+      "id": "39ceb3d640480386954c330657cb01581ecf4b06b89f83c1e1807191c10681ce",
+      "tokens": 182,
+      "locations": [
+        {
+          "path": "src/tests/power_draw.rs",
+          "line": 171,
+          "end_line": 197
+        },
+        {
+          "path": "src/tests/rail.rs",
+          "line": 18,
+          "end_line": 44
+        }
+      ]
+    },
+    {
+      "id": "129487fdf59032dead28e28309ce4a532c15a49471ebe90eef3ea496e78d1f2d",
+      "tokens": 181,
+      "locations": [
+        {
+          "path": "src/world/implements.rs",
+          "line": 3792,
+          "end_line": 3814
+        },
+        {
+          "path": "src/world/implements.rs",
+          "line": 4389,
+          "end_line": 4411
+        }
+      ]
+    },
+    {
+      "id": "5c651c327661dccce4d27d2c5331121e6988f0c2f7816b61b6384e387b2b82b1",
+      "tokens": 167,
+      "locations": [
+        {
+          "path": "src/registry.rs",
+          "line": 3303,
+          "end_line": 3326
+        },
+        {
+          "path": "src/registry.rs",
+          "line": 3370,
+          "end_line": 3393
+        }
+      ]
+    },
+    {
+      "id": "ae138d92dddc083d919c4e4442e6de834349051c2e6f379a5009b04622c39d55",
+      "tokens": 165,
+      "locations": [
+        {
+          "path": "src/game/ui.rs",
+          "line": 1821,
+          "end_line": 1841
+        },
+        {
+          "path": "src/game/ui.rs",
+          "line": 1918,
+          "end_line": 1938
+        },
+        {
+          "path": "src/game/ui.rs",
+          "line": 1999,
+          "end_line": 2019
+        },
+        {
+          "path": "src/game/ui.rs",
+          "line": 2140,
+          "end_line": 2160
+        },
+        {
+          "path": "src/game/ui.rs",
+          "line": 2260,
+          "end_line": 2280
+        },
+        {
+          "path": "src/game/ui.rs",
+          "line": 2435,
+          "end_line": 2455
+        },
+        {
+          "path": "src/game/ui.rs",
+          "line": 2494,
+          "end_line": 2514
+        }
+      ]
+    },
+    {
+      "id": "606bdcbe841c744d16b9d09535994ea27e6039b26c9308a0b77632c7f09287ce",
+      "tokens": 164,
+      "locations": [
+        {
+          "path": "src/tests/world.rs",
+          "line": 1541,
+          "end_line": 1563
+        },
+        {
+          "path": "src/tests/world.rs",
+          "line": 1600,
+          "end_line": 1622
+        }
+      ]
+    },
+    {
+      "id": "837b35b5c38f1d736c2b4f16f41ffa4edba49b069013cb70a8b64ebc6975ddd8",
+      "tokens": 159,
+      "locations": [
+        {
+          "path": "src/arcane.rs",
+          "line": 3994,
+          "end_line": 4015
+        },
+        {
+          "path": "src/arcane.rs",
+          "line": 4106,
+          "end_line": 4127
+        }
+      ]
+    },
+    {
+      "id": "ceb6d146ed10cc1af8c6c73431100f82b1faa1bac573fa0e5c12abd0f36cfc3e",
+      "tokens": 159,
+      "locations": [
+        {
+          "path": "src/tests/player.rs",
+          "line": 244,
+          "end_line": 266
+        },
+        {
+          "path": "src/tests/player.rs",
+          "line": 374,
+          "end_line": 396
+        }
+      ]
+    },
+    {
+      "id": "71643947660d07b278d9d1840a3c5184dd23f133d810cb5a82a9ca8c17ea8a54",
+      "tokens": 157,
+      "locations": [
+        {
+          "path": "src/tests/alchemy.rs",
+          "line": 789,
+          "end_line": 818
+        },
+        {
+          "path": "src/tests/alchemy.rs",
+          "line": 1736,
+          "end_line": 1765
+        }
+      ]
+    },
+    {
+      "id": "9afd7a186fb2c1253e23a4d8101daf2eb6872ab1296d2aa480910f2b1ce4be68",
+      "tokens": 157,
+      "locations": [
+        {
+          "path": "src/planet_atlas.rs",
+          "line": 2286,
+          "end_line": 2300
+        },
+        {
+          "path": "src/planet_atlas.rs",
+          "line": 2307,
+          "end_line": 2321
+        }
+      ]
+    },
+    {
+      "id": "22a7e1f2c06a640036a0a92182654562e77ca5e95fc0ab5307ac25724d26f7ba",
+      "tokens": 152,
+      "locations": [
+        {
+          "path": "src/geode_capture.rs",
+          "line": 435,
+          "end_line": 452
+        },
+        {
+          "path": "src/geode_capture.rs",
+          "line": 1996,
+          "end_line": 2013
+        }
+      ]
+    },
+    {
+      "id": "0c6cb1e60277280010c66364b69dc125beb9e7b26b2754a14789cf0b6d273a20",
+      "tokens": 150,
+      "locations": [
+        {
+          "path": "src/world/spawn.rs",
+          "line": 1457,
+          "end_line": 1474
+        },
+        {
+          "path": "src/world/spawn.rs",
+          "line": 1517,
+          "end_line": 1534
+        }
+      ]
+    },
+    {
+      "id": "ebeb9cadeb83be496ae58214a3fcf0ae7998c4ab63288dadcd9526787fb75cf9",
+      "tokens": 150,
+      "locations": [
+        {
+          "path": "src/tests/workings.rs",
+          "line": 2175,
+          "end_line": 2188
+        },
+        {
+          "path": "src/tests/workings.rs",
+          "line": 2239,
+          "end_line": 2252
+        }
+      ]
+    },
+    {
+      "id": "83de0d3b2a08032ee75e02f4fd7eb7a224b4ad017aab46b417da1bf7e4bb24f8",
+      "tokens": 149,
+      "locations": [
+        {
+          "path": "src/tests/world.rs",
+          "line": 16,
+          "end_line": 28
+        },
+        {
+          "path": "src/tests/world.rs",
+          "line": 169,
+          "end_line": 181
+        }
+      ]
+    },
+    {
+      "id": "09f73da0ae4de39406876282d86e5682ae07576090137fe59a300d2d3d72309c",
+      "tokens": 144,
+      "locations": [
+        {
+          "path": "src/arcane.rs",
+          "line": 723,
+          "end_line": 751
+        },
+        {
+          "path": "src/arcane.rs",
+          "line": 769,
+          "end_line": 797
+        }
+      ]
+    },
+    {
+      "id": "75abd245f658810e29608b72e5d3ca1e17a32777cb985ce195ef41b3e6ec0d60",
+      "tokens": 141,
+      "locations": [
+        {
+          "path": "src/world/implements.rs",
+          "line": 2057,
+          "end_line": 2076
+        },
+        {
+          "path": "src/world/implements.rs",
+          "line": 2352,
+          "end_line": 2371
+        }
+      ]
+    },
+    {
+      "id": "36adad3824a64d787aec038f7ad4ad828254d47d4b36fd4b14d041f158b3f6d5",
+      "tokens": 139,
+      "locations": [
+        {
+          "path": "src/arcane.rs",
+          "line": 3107,
+          "end_line": 3121
+        },
+        {
+          "path": "src/materials.rs",
+          "line": 1821,
+          "end_line": 1835
+        }
+      ]
+    },
+    {
+      "id": "a5f95fe6583394bdddecb06fd04e28385be9f6ee6a5f4fa397b94b59ca981ab4",
+      "tokens": 136,
+      "locations": [
+        {
+          "path": "tools/verify_visual_closeout.py",
+          "line": 212,
+          "end_line": 226
+        },
+        {
+          "path": "tools/verify_visual_polish.py",
+          "line": 864,
+          "end_line": 877
+        }
+      ]
+    },
+    {
+      "id": "52cc9d8e4474d71883874e999b55f4a7e197d099b106ae5fc77f84a35c54b0d9",
+      "tokens": 133,
+      "locations": [
+        {
+          "path": "src/tests/mod.rs",
+          "line": 277,
+          "end_line": 290
+        },
+        {
+          "path": "src/tests/mod.rs",
+          "line": 321,
+          "end_line": 334
+        }
+      ]
+    },
+    {
+      "id": "786f656f7ec03407bcc18e30524715bb052505f23da20cf0da497beb16926b7a",
+      "tokens": 133,
+      "locations": [
+        {
+          "path": "src/world/alchemy.rs",
+          "line": 873,
+          "end_line": 889
+        },
+        {
+          "path": "src/world/alchemy.rs",
+          "line": 4649,
+          "end_line": 4666
+        }
+      ]
+    },
+    {
+      "id": "505e67171180ef426a3489873422690be31da6f7a87ad91db182444af06f05c7",
+      "tokens": 131,
+      "locations": [
+        {
+          "path": "src/renderer/frame.rs",
+          "line": 190,
+          "end_line": 208
+        },
+        {
+          "path": "src/renderer/frame.rs",
+          "line": 260,
+          "end_line": 278
+        }
+      ]
+    },
+    {
+      "id": "445b62aa5abb4a3a10c5c118be8ba8b536b129cf0824e66712407f91ec80fbe4",
+      "tokens": 128,
+      "locations": [
+        {
+          "path": "src/tests/world.rs",
+          "line": 971,
+          "end_line": 985
+        },
+        {
+          "path": "src/tests/world.rs",
+          "line": 1012,
+          "end_line": 1026
+        }
+      ]
+    },
+    {
+      "id": "5a07f65e623e794914f94f53bb1b8d3bea04a20f40fa7581b201eed35f3e0694",
+      "tokens": 128,
+      "locations": [
+        {
+          "path": "src/tests/interiors.rs",
+          "line": 105,
+          "end_line": 120
+        },
+        {
+          "path": "src/tests/interiors.rs",
+          "line": 309,
+          "end_line": 321
+        }
+      ]
+    },
+    {
+      "id": "b9f1b269310ea3e77c1ca5d93fca8343171aee74e56233e2d4866da3dbb91166",
+      "tokens": 127,
+      "locations": [
+        {
+          "path": "src/workings.rs",
+          "line": 1198,
+          "end_line": 1212
+        },
+        {
+          "path": "src/world/workings.rs",
+          "line": 5315,
+          "end_line": 5329
+        }
+      ]
+    },
+    {
+      "id": "881e943fe0493edf80d64a74809746f5548fbc09aae67ecb318c4d523032cb7f",
+      "tokens": 126,
+      "locations": [
+        {
+          "path": "src/renderer/frame.rs",
+          "line": 819,
+          "end_line": 837
+        },
+        {
+          "path": "src/renderer/frame.rs",
+          "line": 902,
+          "end_line": 921
+        }
+      ]
+    },
+    {
+      "id": "42b3866b07c4b358ae62c7d60eee7a5604bd00ef1fe9d02e0e64d9d5f427f32e",
+      "tokens": 125,
+      "locations": [
+        {
+          "path": "src/tests/rail.rs",
+          "line": 72,
+          "end_line": 83
+        },
+        {
+          "path": "src/tests/rail.rs",
+          "line": 278,
+          "end_line": 289
+        }
+      ]
+    },
+    {
+      "id": "e0fdb0e506550d9549249419c4273d207d7866c88e27f6720c40c2137ba71a7b",
+      "tokens": 125,
+      "locations": [
+        {
+          "path": "src/tests/worldgen.rs",
+          "line": 1338,
+          "end_line": 1353
+        },
+        {
+          "path": "src/tests/worldgen.rs",
+          "line": 1384,
+          "end_line": 1398
+        }
+      ]
+    },
+    {
+      "id": "f94464a0080971f5eb62845a2b51ba3e35cd70cbf908c10500975ca54a2dba00",
+      "tokens": 123,
+      "locations": [
+        {
+          "path": "src/geode_capture.rs",
+          "line": 491,
+          "end_line": 505
+        },
+        {
+          "path": "src/geode_capture.rs",
+          "line": 654,
+          "end_line": 668
+        }
+      ]
+    },
+    {
+      "id": "056e86468cc96b4d039bed841181b2bc6849cbedba501383cddd9c1302096321",
+      "tokens": 122,
+      "locations": [
+        {
+          "path": "src/tests/rail.rs",
+          "line": 72,
+          "end_line": 83
+        },
+        {
+          "path": "src/tests/rail.rs",
+          "line": 100,
+          "end_line": 111
+        },
+        {
+          "path": "src/tests/rail.rs",
+          "line": 278,
+          "end_line": 289
+        }
+      ]
+    },
+    {
+      "id": "e0ffb51914a4b5d47c33cfb119e5d3b37aaede5cd078cc6edd767e7daca4acf4",
+      "tokens": 122,
+      "locations": [
+        {
+          "path": "src/registry.rs",
+          "line": 6965,
+          "end_line": 6993
+        },
+        {
+          "path": "src/registry.rs",
+          "line": 7063,
+          "end_line": 7091
+        }
+      ]
+    },
+    {
+      "id": "dcd02f335da5afdd458822c59d8843a5bff51b074f0ed44fb803c80d8a169a4e",
+      "tokens": 121,
+      "locations": [
+        {
+          "path": "src/game/ui.rs",
+          "line": 1830,
+          "end_line": 1841
+        },
+        {
+          "path": "src/game/ui.rs",
+          "line": 1927,
+          "end_line": 1938
+        },
+        {
+          "path": "src/game/ui.rs",
+          "line": 2008,
+          "end_line": 2019
+        },
+        {
+          "path": "src/game/ui.rs",
+          "line": 2149,
+          "end_line": 2160
+        },
+        {
+          "path": "src/game/ui.rs",
+          "line": 2269,
+          "end_line": 2280
+        },
+        {
+          "path": "src/game/ui.rs",
+          "line": 2371,
+          "end_line": 2382
+        },
+        {
+          "path": "src/game/ui.rs",
+          "line": 2408,
+          "end_line": 2419
+        },
+        {
+          "path": "src/game/ui.rs",
+          "line": 2444,
+          "end_line": 2455
+        },
+        {
+          "path": "src/game/ui.rs",
+          "line": 2503,
+          "end_line": 2514
+        }
+      ]
+    },
+    {
+      "id": "c433794dbc4be594a37a8fd779a338fa8224483fd0db2a2e923932e7fd9ddb38",
+      "tokens": 120,
+      "locations": [
+        {
+          "path": "src/tests/archetypes.rs",
+          "line": 8,
+          "end_line": 22
+        },
+        {
+          "path": "src/tests/nests.rs",
+          "line": 5,
+          "end_line": 19
+        }
+      ]
+    },
+    {
+      "id": "c56a0c164796278c04529de7884786cbfb2f0f50198d55b40f62ab9bad07e96e",
+      "tokens": 118,
+      "locations": [
+        {
+          "path": "src/game/session.rs",
+          "line": 998,
+          "end_line": 1012
+        },
+        {
+          "path": "src/game/session.rs",
+          "line": 1022,
+          "end_line": 1036
+        }
+      ]
+    },
+    {
+      "id": "7d6849066a11272abd5fa5f532eb8c45027daa04e322f148f5d1254e822f0b50",
+      "tokens": 117,
+      "locations": [
+        {
+          "path": "src/tests/archetypes.rs",
+          "line": 8,
+          "end_line": 24
+        },
+        {
+          "path": "src/tests/ecology.rs",
+          "line": 4,
+          "end_line": 21
+        }
+      ]
+    },
+    {
+      "id": "eae0a6f12008dea70917da0efaf3292f84fa6f28ed71e753b85c94fd8c649104",
+      "tokens": 117,
+      "locations": [
+        {
+          "path": "src/world/implements.rs",
+          "line": 1418,
+          "end_line": 1431
+        },
+        {
+          "path": "src/world/implements.rs",
+          "line": 1851,
+          "end_line": 1864
+        },
+        {
+          "path": "src/world/implements.rs",
+          "line": 3309,
+          "end_line": 3322
+        },
+        {
+          "path": "src/world/implements.rs",
+          "line": 3555,
+          "end_line": 3568
+        }
+      ]
+    },
+    {
+      "id": "f805df17ea1249baff79ee473606013518c5267649ce094942834c82f40fbc85",
+      "tokens": 117,
+      "locations": [
+        {
+          "path": "src/world/implements.rs",
+          "line": 2237,
+          "end_line": 2254
+        },
+        {
+          "path": "src/world/implements.rs",
+          "line": 2469,
+          "end_line": 2486
+        }
+      ]
+    },
+    {
+      "id": "96c0ed2d37c632c56dbe15c8e3fc40290d094f990f2f6f277d07962de8d68c27",
+      "tokens": 116,
+      "locations": [
+        {
+          "path": "src/tests/ecology.rs",
+          "line": 4,
+          "end_line": 19
+        },
+        {
+          "path": "src/tests/nests.rs",
+          "line": 5,
+          "end_line": 19
+        }
+      ]
+    },
+    {
+      "id": "8bf3a522134c0da54b9d5eae9f7a0c94f7af84ec26867dba009b0ea4c351b040",
+      "tokens": 115,
+      "locations": [
+        {
+          "path": "src/tests/interiors.rs",
+          "line": 202,
+          "end_line": 221
+        },
+        {
+          "path": "src/tests/interiors.rs",
+          "line": 313,
+          "end_line": 333
+        }
+      ]
+    },
+    {
+      "id": "f4b2c28ee239041dd3911fc289f382194abd6b53d5bf2c483bb288df79582183",
+      "tokens": 114,
+      "locations": [
+        {
+          "path": "src/script.rs",
+          "line": 289,
+          "end_line": 301
+        },
+        {
+          "path": "src/script.rs",
+          "line": 307,
+          "end_line": 319
+        }
+      ]
+    },
+    {
+      "id": "b8aaf265d2f44503d7c72fb1bb6acf92087c08511032c794c0d3b78e90861111",
+      "tokens": 113,
+      "locations": [
+        {
+          "path": "src/atlas/procedural.rs",
+          "line": 1849,
+          "end_line": 1864
+        },
+        {
+          "path": "src/atlas/procedural.rs",
+          "line": 2008,
+          "end_line": 2023
+        }
+      ]
+    },
+    {
+      "id": "d4787b5f9d1e080e0167d14ec58ad2d69e6e4124298207e101705094df42fc7d",
+      "tokens": 113,
+      "locations": [
+        {
+          "path": "src/planet_atlas.rs",
+          "line": 2513,
+          "end_line": 2527
+        },
+        {
+          "path": "src/planet_atlas.rs",
+          "line": 2559,
+          "end_line": 2573
+        }
+      ]
+    },
+    {
+      "id": "8b2390b2e7559d01709a62cc1ab12a536ce7e60b043432780945d90841afee94",
+      "tokens": 112,
+      "locations": [
+        {
+          "path": "src/planet_atlas.rs",
+          "line": 2383,
+          "end_line": 2401
+        },
+        {
+          "path": "src/planet_atlas.rs",
+          "line": 2423,
+          "end_line": 2441
+        }
+      ]
+    },
+    {
+      "id": "c1a4407a0f9975856b1d997e28ab5c3c8245eb2ec7e0ecf5f8c2a7c63be01e4f",
+      "tokens": 112,
+      "locations": [
+        {
+          "path": "src/game/demos.rs",
+          "line": 1792,
+          "end_line": 1812
+        },
+        {
+          "path": "src/game/demos.rs",
+          "line": 1926,
+          "end_line": 1945
+        }
+      ]
+    },
+    {
+      "id": "db022bb99d142aa765f8a62c6c80cac4e3cbed808c1437a17cbbe276a7320188",
+      "tokens": 110,
+      "locations": [
+        {
+          "path": "src/planet_atlas.rs",
+          "line": 1795,
+          "end_line": 1808
+        },
+        {
+          "path": "src/planet_atlas.rs",
+          "line": 1846,
+          "end_line": 1859
+        }
+      ]
+    },
+    {
+      "id": "ec89bf3579331768532588c1b4ea29a9712f35fc655b517c0537b6a8a815856e",
+      "tokens": 109,
+      "locations": [
+        {
+          "path": "src/tests/climate.rs",
+          "line": 298,
+          "end_line": 309
+        },
+        {
+          "path": "src/tests/hydrology.rs",
+          "line": 258,
+          "end_line": 269
+        }
+      ]
+    },
+    {
+      "id": "7cf46da7a70ee6e0f1213a591a037fedd37870b93e2dcc0a44f8b0b6bb6dc703",
+      "tokens": 108,
+      "locations": [
+        {
+          "path": "src/world/storage.rs",
+          "line": 617,
+          "end_line": 629
+        },
+        {
+          "path": "src/world/storage.rs",
+          "line": 643,
+          "end_line": 655
+        }
+      ]
+    },
+    {
+      "id": "5451eea50427264fbf6653a7dd5cb50d7d3cc906f900056871ce79122d6fad9e",
+      "tokens": 107,
+      "locations": [
+        {
+          "path": "src/registry.rs",
+          "line": 3731,
+          "end_line": 3755
+        },
+        {
+          "path": "src/registry.rs",
+          "line": 4574,
+          "end_line": 4598
+        }
+      ]
+    },
+    {
+      "id": "8f422c547325440285c2db62d8cc13530aeb19d70f73e2c4c7d16a974549fbe1",
+      "tokens": 106,
+      "locations": [
+        {
+          "path": "src/world/workings.rs",
+          "line": 539,
+          "end_line": 551
+        },
+        {
+          "path": "src/world/workings.rs",
+          "line": 603,
+          "end_line": 618
+        }
+      ]
+    },
+    {
+      "id": "14dbc076153737f4cc9a22d06ea3a0804b48a0a9e76364e9df20bd6af1c2b01e",
+      "tokens": 105,
+      "locations": [
+        {
+          "path": "src/visual_capture.rs",
+          "line": 1121,
+          "end_line": 1135
+        },
+        {
+          "path": "src/visual_capture.rs",
+          "line": 1741,
+          "end_line": 1755
+        }
+      ]
+    },
+    {
+      "id": "38da9d011f2ae32fba43ebcbf1e05886f607717edfd9b85da7ead62aa10bc506",
+      "tokens": 105,
+      "locations": [
+        {
+          "path": "src/world/fluids.rs",
+          "line": 567,
+          "end_line": 591
+        },
+        {
+          "path": "src/world/fluids.rs",
+          "line": 757,
+          "end_line": 782
+        }
+      ]
+    },
+    {
+      "id": "3ec82cf4fbcd85a113ee1dd875a8ff762b9d20e9199f0ede46ddc8225b7d2fa5",
+      "tokens": 105,
+      "locations": [
+        {
+          "path": "src/renderer/frame.rs",
+          "line": 111,
+          "end_line": 126
+        },
+        {
+          "path": "src/renderer/frame.rs",
+          "line": 300,
+          "end_line": 314
+        }
+      ]
+    },
+    {
+      "id": "dc0a250d41601fb8fbe794a9c66a21bf1af322378ea1c15c32328e63f44163ab",
+      "tokens": 105,
+      "locations": [
+        {
+          "path": "src/renderer/setup.rs",
+          "line": 638,
+          "end_line": 653
+        },
+        {
+          "path": "src/renderer/setup.rs",
+          "line": 794,
+          "end_line": 809
+        }
+      ]
+    },
+    {
+      "id": "5b6e5398c85fb3f4b095e78518f6e12e8180dba4d3b960f75a495b857b636f82",
+      "tokens": 104,
+      "locations": [
+        {
+          "path": "src/registry.rs",
+          "line": 4151,
+          "end_line": 4176
+        },
+        {
+          "path": "src/registry.rs",
+          "line": 6968,
+          "end_line": 6993
+        },
+        {
+          "path": "src/registry.rs",
+          "line": 7066,
+          "end_line": 7091
+        }
+      ]
+    },
+    {
+      "id": "eddb0279cee06b2ddfcb9f0763fc6837aab8cc6be0137126079ecc5fad7ccfbc",
+      "tokens": 104,
+      "locations": [
+        {
+          "path": "src/world/entities.rs",
+          "line": 693,
+          "end_line": 708
+        },
+        {
+          "path": "src/world/local_structure.rs",
+          "line": 548,
+          "end_line": 563
+        }
+      ]
+    },
+    {
+      "id": "41525507b1fa446bca1143881f69c538103029cf4178a84fbc87ef44d8f7ac8b",
+      "tokens": 103,
+      "locations": [
+        {
+          "path": "src/renderer/frame.rs",
+          "line": 195,
+          "end_line": 208
+        },
+        {
+          "path": "src/renderer/frame.rs",
+          "line": 265,
+          "end_line": 278
+        },
+        {
+          "path": "src/renderer/frame.rs",
+          "line": 824,
+          "end_line": 840
+        }
+      ]
+    },
+    {
+      "id": "53db435270ba7c3c5301d03daef435768e9b9675316833fda838e2ee84c12d1a",
+      "tokens": 103,
+      "locations": [
+        {
+          "path": "src/game/remote.rs",
+          "line": 847,
+          "end_line": 862
+        },
+        {
+          "path": "src/game/remote.rs",
+          "line": 920,
+          "end_line": 937
+        }
+      ]
+    },
+    {
+      "id": "927542c3235f682e144f6a460d1767cb32c33209861c00f097fed2e71b4bdc3b",
+      "tokens": 102,
+      "locations": [
+        {
+          "path": "src/registry.rs",
+          "line": 4151,
+          "end_line": 4176
+        },
+        {
+          "path": "src/registry.rs",
+          "line": 6423,
+          "end_line": 6448
+        },
+        {
+          "path": "src/registry.rs",
+          "line": 6968,
+          "end_line": 6993
+        },
+        {
+          "path": "src/registry.rs",
+          "line": 7066,
+          "end_line": 7091
+        }
+      ]
+    },
+    {
+      "id": "0a2dca1fee9d4149212e5369a396b3c8771e599b0ed16ba86f7d5739420ddbf3",
+      "tokens": 101,
+      "locations": [
+        {
+          "path": "src/world/chunks.rs",
+          "line": 723,
+          "end_line": 740
+        },
+        {
+          "path": "src/world/fluids.rs",
+          "line": 15,
+          "end_line": 32
+        }
+      ]
+    },
+    {
+      "id": "41daefee8ac002960fe9e48fca65625a33ef8bc866742d7982e86481b24c2923",
+      "tokens": 100,
+      "locations": [
+        {
+          "path": "src/world/implements.rs",
+          "line": 3977,
+          "end_line": 3991
+        },
+        {
+          "path": "src/world/implements.rs",
+          "line": 4145,
+          "end_line": 4159
+        }
+      ]
+    },
+    {
+      "id": "60287760f9fc32dddb0b8f98e117fd8c0a65c3d6179a972cb34527729d9c1f0e",
+      "tokens": 100,
+      "locations": [
+        {
+          "path": "src/game/session.rs",
+          "line": 684,
+          "end_line": 703
+        },
+        {
+          "path": "src/world/storage.rs",
+          "line": 62,
+          "end_line": 81
+        }
+      ]
+    },
+    {
+      "id": "f5c9e3d9bda0905ba18941ad7734d4151c1a4ac6a1328cdfd9027a9b80d87e66",
+      "tokens": 100,
+      "locations": [
+        {
+          "path": "src/planet_atlas/climate.rs",
+          "line": 408,
+          "end_line": 420
+        },
+        {
+          "path": "src/planet_atlas/climate.rs",
+          "line": 475,
+          "end_line": 487
+        }
+      ]
+    }
+  ]
+}
