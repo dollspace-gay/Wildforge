@@ -4,6 +4,11 @@
 
 Climate, geology, hydrology, biomes, water cycles, and diagnostics operate on the immutable atlas and its explicit dynamic state.
 
+`climate/` separates astronomy, circulation, moisture relaxation, and immutable
+normals from weather cell preparation, completed-hour publication, and external
+water exchanges. The climate parent owns the weather grids and rollback state;
+water/salt accounting stays in the existing water-cycle ledger.
+
 Start with `biomes.rs`, `climate.rs`, `diagnostics.rs`, `geology.rs`, `hydrology.rs`, `water_cycle.rs`. See the [repository overview](../../README.md) for
 build prerequisites and complete checks. Commands below run from the repository root.
 

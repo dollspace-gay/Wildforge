@@ -36,15 +36,15 @@ runtime comparisons. Cold/warm runtime measurements remain outstanding.
 | AC-4 common client | Shared admission, mappings, entity reconstruction, terrain ordering, roster, content publication, and domain updates implemented; earlier source has focused/QUIC evidence | Finish request and replica ownership; final transfer/reconnect/native qualification |
 | AC-5 player operations | Shared stall, craft/repair, conservation effects, and armor exchange implemented | Remaining action domains; final rejection/conservation/adapter parity tests |
 | AC-6 world domains | Domain fields/methods inventoried | Encapsulation, explicit transaction coordination |
-| AC-7 generation stages | Explicit chunk stages, intermediate maps, and independent generation query modules implemented | Atlas decomposition; final pinned output and worker-order checks |
-| AC-8 app/content/render/tools | Registry definitions, schemas, loading, and graph validation owners extracted | Registry linker/publication, app/UI/render/tool owners, final runtime/codec checks |
+| AC-7 generation stages | Explicit chunk stages, intermediate maps, independent queries, and atlas climate/weather modules implemented | Remaining atlas decomposition; final pinned output and worker-order checks |
+| AC-8 app/content/render/tools | Registry definitions, schemas, linker, graph validation, runtime publication gate, and script preparation implemented | App/UI/render/tool owners; final publication/runtime/codec checks |
 | AC-9 source size | Advisory 400/500 report and baseline | Reduce migrated debt; explain any real exceptions |
 | AC-10 clone analyzer | 18 tests passed in planning; complete JSON snapshot | Maintain analyzer coverage as tooling evolves |
 | AC-11 dependency boundaries | Direction specified in plan | Dependency checker with violating fixtures |
 | AC-12 tests/performance | Baseline suite passed; extraction focused gates passed | Full slice gates and reproducible measurements for affected paths |
 | AC-13 shutdown | Terrain, mesh, encoding, creation, entry, and homeland work have joined owners and failure tests | Dedicated shutdown; graphical close/capture and save-failure runtime proof |
 | AC-14 migration record | This file and separate baseline commits | Add implementation/result entries after each slice |
-| Folder guidance | 64 directories previously verified; new player_ops, worldgen, registry/schema, and registry/linking directories include guides | Final coverage and content identity checks after coding |
+| Folder guidance | 64 directories previously verified; new player_ops, worldgen, registry/schema, registry/linking, script, and planet_atlas/climate directories include guides | Final coverage and content identity checks after coding |
 
 ## Compatibility observations requiring explicit treatment
 
@@ -1197,3 +1197,24 @@ must cover every error family, failed optional-file/directory reads, no save or
 atlas generation on rejected startup, invalid reload preserving all live state,
 script compilation/missing-file failure, retained KV/command order, successful
 remap, and both guest entry paths. Implementation does not establish acceptance.
+
+
+## Atlas climate and weather ownership (implementation, unverified)
+
+The climate facade now retains constants, public exports, and PlanetaryWeather's
+private grids/cursor/checkpoint/lifecycle. Astronomy, circulation, conservative
+transport, seasonal moisture relaxation, and immutable normals have separate
+modules. Weather cell preparation moved into a method that reads the prior grid;
+the explicit slice coordinator preserves cell order and publishes through one
+completed-hour operation. Inbound/surface transfers, grid swaps, salt settlement,
+daily groundwater, basin levels, and the final conservation gate keep their
+original sequence. Ecology, detailed/portable custody, industry, basins, and
+sampling moved with their existing operations and explicit imports.
+
+No new tests or other validation gates run. The extraction retains arithmetic,
+seed salts, physical constants, solver tolerance, and failed-hour latching by
+construction, but byte/hash and behavioral equivalence remain unverified. Final
+cases must compare pinned atlas output, varied slice budgets, failed-hour rollback,
+external transfers during a partial hour, water/salt conservation, and seam-aware
+weather observations. Geology, hydrology, and remaining atlas infrastructure are
+still outstanding. The new climate directory has local guides.
