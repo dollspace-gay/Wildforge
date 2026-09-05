@@ -13,6 +13,7 @@ use crate::mesher::{ChunkMesh, Vertex};
 use crate::ui::UiVertex;
 
 mod frame;
+mod device;
 mod post;
 mod resources;
 mod setup;

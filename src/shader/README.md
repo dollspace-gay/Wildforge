@@ -21,3 +21,7 @@ Keep the binding layout aligned with `renderer::Uniforms` and resource setup.
 Keep sky/fog formulas aligned with their documented CPU reference in `sky.rs`.
 Final validation compares aggregate bytes, runs Naga and rendering contracts,
 and captures/times the native GPU paths. Read [AGENTS.md](AGENTS.md).
+
+`point_shadow.wgsl` and `cascade_shadow.wgsl` remain separate shader modules with
+their own uniform ABIs. Their constants sit beside the world aggregate so GPU
+setup does not embed authored WGSL inside Rust constructors.

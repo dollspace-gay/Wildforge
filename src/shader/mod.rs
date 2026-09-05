@@ -15,3 +15,8 @@ pub(crate) const WORLD: &str = concat!(
     include_str!("lines.wgsl"),
     include_str!("ui.wgsl"),
 );
+
+/// Point-light distance and glass-transmission passes use their own uniform ABI.
+pub(crate) const POINT_SHADOW: &str = include_str!("point_shadow.wgsl");
+/// Cascaded sun depth pass uses one dynamically selected matrix.
+pub(crate) const CASCADE_SHADOW: &str = include_str!("cascade_shadow.wgsl");

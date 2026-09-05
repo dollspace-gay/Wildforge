@@ -2,24 +2,6 @@
 
 use super::*;
 
-fn adapter_priority(info: &wgpu::AdapterInfo) -> u8 {
-    let device = match info.device_type {
-        wgpu::DeviceType::DiscreteGpu => 4,
-        wgpu::DeviceType::IntegratedGpu => 3,
-        wgpu::DeviceType::VirtualGpu => 2,
-        wgpu::DeviceType::Other => 1,
-        wgpu::DeviceType::Cpu => 0,
-    };
-    let backend = match info.backend {
-        wgpu::Backend::Dx12 | wgpu::Backend::Metal => 4,
-        wgpu::Backend::Vulkan => 3,
-        wgpu::Backend::Gl => 2,
-        wgpu::Backend::BrowserWebGpu => 1,
-        wgpu::Backend::Noop => 0,
-    };
-    device * 8 + backend
-}
-
 impl Renderer {
     pub async fn new(
         window: Arc<Window>,
@@ -28,73 +10,9 @@ impl Renderer {
         atlas_normal: Vec<u8>,
         atlas_px: u32,
     ) -> Renderer {
-        let size = window.inner_size();
-        let instance_descriptor = wgpu::InstanceDescriptor::from_env_or_default();
-        let enabled_backends = instance_descriptor.backends;
-        let instance = wgpu::Instance::new(&instance_descriptor);
-        let surface = instance.create_surface(window).expect("create surface");
-        let mut available = Vec::new();
-        let adapter = instance
-            .enumerate_adapters(enabled_backends)
-            .into_iter()
-            .filter(|adapter| adapter.is_surface_supported(&surface))
-            .inspect(|adapter| available.push(adapter.get_info()))
-            .filter(|adapter| adapter.get_info().device_type != wgpu::DeviceType::Cpu)
-            .max_by_key(|adapter| adapter_priority(&adapter.get_info()))
-            .unwrap_or_else(|| {
-                let listed = available
-                    .iter()
-                    .map(|info| {
-                        format!(
-                            "{} [{:?}, {:?}]",
-                            info.name, info.backend, info.device_type
-                        )
-                    })
-                    .collect::<Vec<_>>()
-                    .join(", ");
-                panic!(
-                    "no surface-compatible GPU adapter found; refusing CPU software rendering (available: {listed})"
-                )
-            });
-        let info = adapter.get_info();
-        let adapter_name = format!("{} [{:?}, {:?}]", info.name, info.backend, info.device_type);
-        let adapter_backend = format!("{:?}", info.backend);
-        let adapter_hardware = info.device_type != wgpu::DeviceType::Cpu;
-        eprintln!("renderer: using {adapter_name}");
-        let (device, queue) = adapter
-            .request_device(&wgpu::DeviceDescriptor {
-                label: None,
-                required_features: wgpu::Features::empty(),
-                required_limits: wgpu::Limits::downlevel_defaults()
-                    .using_resolution(adapter.limits()),
-                memory_hints: wgpu::MemoryHints::default(),
-                trace: wgpu::Trace::Off,
-            })
-            .await
-            .expect("request device");
-
-        let caps = surface.get_capabilities(&adapter);
-        let format = caps
-            .formats
-            .iter()
-            .copied()
-            .find(|f| f.is_srgb())
-            .unwrap_or(caps.formats[0]);
-        let config = wgpu::SurfaceConfiguration {
-            // Some accelerated presentation paths (notably Mesa's D3D12
-            // driver under WSLg) expose swapchain images only as render
-            // targets. Screenshots use their own copyable render target, so
-            // presentation never needs COPY_SRC support.
-            usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
-            format,
-            width: size.width.max(1),
-            height: size.height.max(1),
-            present_mode: wgpu::PresentMode::AutoVsync,
-            alpha_mode: caps.alpha_modes[0],
-            view_formats: vec![],
-            desired_maximum_frame_latency: 2,
-        };
-        surface.configure(&device, &config);
+        let super::device::DeviceState {
+            surface, device, queue, config, adapter_name, adapter_backend, adapter_hardware,
+        } = super::device::DeviceState::new(window).await;
         let depth = create_depth(&device, &config);
 
         // Uniforms
@@ -209,65 +127,7 @@ impl Renderer {
         let pt_shadow_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("pt-shadow-shader"),
             source: wgpu::ShaderSource::Wgsl(
-                r#"
-struct PtFace {
-    view_proj: mat4x4<f32>,
-    light_pos: vec4<f32>,
-};
-@group(0) @binding(0) var<uniform> f: PtFace;
-
-struct VOut {
-    @builtin(position) clip: vec4<f32>,
-    @location(0) world: vec3<f32>,
-};
-
-@vertex
-fn vs_pt_shadow(@location(0) pos: vec3<f32>) -> VOut {
-    var o: VOut;
-    o.clip = f.view_proj * vec4<f32>(pos, 1.0);
-    o.world = pos;
-    return o;
-}
-
-@fragment
-fn fs_pt_shadow(in: VOut) -> @location(0) vec4<f32> {
-    return vec4<f32>(length(in.world - f.light_pos.xyz), 0.0, 0.0, 0.0);
-}
-
-// Transmission pass: glass surfaces multiply their filter color into the
-// light's tint cube (order-independent), alpha Min-keeps the nearest
-// glass distance so tint applies only between light and fragment.
-@group(1) @binding(0) var atlas_tex: texture_2d<f32>;
-@group(1) @binding(1) var atlas_smp: sampler;
-
-struct TrOut {
-    @builtin(position) clip: vec4<f32>,
-    @location(0) world: vec3<f32>,
-    @location(1) uv: vec2<f32>,
-};
-
-@vertex
-fn vs_pt_tr(@location(0) pos: vec3<f32>, @location(1) uv: vec2<f32>) -> TrOut {
-    var o: TrOut;
-    o.clip = f.view_proj * vec4<f32>(pos, 1.0);
-    o.world = pos;
-    o.uv = uv;
-    return o;
-}
-
-@fragment
-fn fs_pt_tr(in: TrOut) -> @location(0) vec4<f32> {
-    let tex = textureSample(atlas_tex, atlas_smp, in.uv);
-    // Panes are mostly-transparent texels, so raw alpha would wash the
-    // tint to white. Take the tile's hue at full saturation and let
-    // alpha set how strongly the pane stains the beam.
-    let m = max(tex.r, max(tex.g, tex.b));
-    let hue = tex.rgb / max(m, 1e-3);
-    let strength = clamp(tex.a * 2.2, 0.0, 0.92);
-    let tint = mix(vec3<f32>(1.0), hue, strength);
-    return vec4<f32>(tint, length(in.world - f.light_pos.xyz));
-}
-"#
+                crate::shader::POINT_SHADOW
                 .into(),
             ),
         });
@@ -553,14 +413,7 @@ fn fs_pt_tr(in: TrOut) -> @location(0) vec4<f32> {
         let csm_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("csm-shader"),
             source: wgpu::ShaderSource::Wgsl(
-                r#"
-struct Casc { view_proj: mat4x4<f32> };
-@group(0) @binding(0) var<uniform> c: Casc;
-@vertex
-fn vs_shadow(@location(0) pos: vec3<f32>) -> @builtin(position) vec4<f32> {
-    return c.view_proj * vec4<f32>(pos, 1.0);
-}
-"#
+                crate::shader::CASCADE_SHADOW
                 .into(),
             ),
         });

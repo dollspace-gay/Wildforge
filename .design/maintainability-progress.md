@@ -1446,3 +1446,17 @@ Only existing test source references changed; no tests or validation commands
 ran. Byte equivalence, Naga validation, uniform/binding contracts, and fresh
 hardware captures/timings remain required in the final phase. Other renderer
 setup/frame/post ownership and remaining client domains are still open.
+
+
+## Device setup and dedicated shadow sources (coding checkpoint; unverified)
+
+Surface-compatible adapter ranking, hardware-only selection, device limits,
+backend diagnostics, and surface configuration now have an explicit constructor.
+Renderer setup receives its configured GPU context. Dedicated point-light and
+cascade shader sources moved out of Rust literals into authored WGSL files;
+their separate module/uniform ABIs and exact source strings are retained.
+
+No build, test, or GPU command ran. Final verification must compare shader
+sources, validate all shader modules, check the hardware admission policy, and
+produce fresh native frame/capture/timing evidence. Resource/pipeline ownership
+continues as implementation work.
