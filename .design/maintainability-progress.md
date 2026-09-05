@@ -934,3 +934,11 @@ and 64-directory guidance coverage. Logs use
 `target/maintainability/client-session-native-*`. The native scenario has not
 yet run at this checkpoint; it follows from a clean committed source. This
 functional stage proof does not replace production GPU/performance qualification.
+
+Native attempt 1 at `d794ba7` used the NVIDIA RTX 5070 Ti / Vulkan adapter and
+passed all four depot cases plus graphical entry/mesh checks. It then failed
+because the fixture's synthetic agent name contained an underscore, rejected by
+the existing display-name validator. The fixture name is corrected to letters
+only; production admission rules are unchanged. The failed attempt, exit status,
+and binary hash remain in `target/maintainability/client-session-native/attempt-1`
+and `client-session-native-attempt-1.log`.

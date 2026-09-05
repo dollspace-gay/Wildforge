@@ -34,7 +34,7 @@ pub(super) fn run(game: &mut Game) {
     );
     assert!(host.with(|session, _| session.guests[&viewer_id].is_active()));
     let mut agent =
-        Agent::connect_for_test(host.addr, "PROOF_AGENT").expect("agent joins the same host");
+        Agent::connect_for_test(host.addr, "PROOFAGENT").expect("agent joins the same host");
     let agent_id = agent.my_id;
     agent.send(&C2S::Chat("native guest proof".into()));
     let deadline = Instant::now() + Duration::from_secs(5);
