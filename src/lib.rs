@@ -54,6 +54,7 @@ mod skills;
 mod sky;
 mod stats;
 mod style;
+mod terrain_jobs;
 #[cfg(test)]
 mod tests;
 mod ui;
