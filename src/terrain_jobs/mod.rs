@@ -1,7 +1,7 @@
 //! Shared cold-terrain preparation, independent of GPU and wire delivery.
 //!
 //! Workers only load or generate chunks. Callers commit prepared results on
-//! the authoritative thread through `World::adopt_prepared`.
+//! the authoritative thread through `World::adopt_prepared_at_revision`.
 
 mod policy;
 mod queue;

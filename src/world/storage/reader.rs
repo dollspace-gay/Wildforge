@@ -1,10 +1,10 @@
 //! Immutable saved-chunk decoding, independent of the live World owner.
 
 use std::io;
-use std::path::PathBuf;
 use std::sync::Arc;
 
 use super::decoder::{Decoder, invalid};
+use super::region_store::{ChunkRevision, RegionStore};
 use crate::chunk::{CHUNK_X, CHUNK_Y, CHUNK_Z, Chunk, ChunkPos, HydrologyVolumeRecord};
 use crate::registry::{BlockId, Registry};
 
@@ -18,18 +18,29 @@ pub(crate) enum ChunkRead {
 /// Immutable save decoder that can be cloned into cold-terrain workers.
 #[derive(Clone)]
 pub(crate) struct ChunkLoader {
-    pub(super) save_dir: PathBuf,
+    pub(super) store: RegionStore,
     pub(super) load_remap: Vec<BlockId>,
     pub(super) reg: Arc<Registry>,
     pub(super) palette_stale: bool,
 }
 
+pub(crate) struct ChunkLoad {
+    pub(crate) content: ChunkRead,
+    pub(crate) revision: ChunkRevision,
+}
+
 impl ChunkLoader {
     pub(crate) fn load(&self, pos: ChunkPos) -> io::Result<ChunkRead> {
-        let Some(data) = crate::world::region::read_chunk(&self.save_dir, pos)? else {
-            return Ok(ChunkRead::Missing);
+        self.load_versioned(pos).map(|loaded| loaded.content)
+    }
+
+    pub(crate) fn load_versioned(&self, pos: ChunkPos) -> io::Result<ChunkLoad> {
+        let (data, revision) = self.store.read(pos)?;
+        let content = match data {
+            Some(data) => self.decode(&data)?,
+            None => ChunkRead::Missing,
         };
-        self.decode(&data)
+        Ok(ChunkLoad { content, revision })
     }
 
     fn decode(&self, data: &[u8]) -> io::Result<ChunkRead> {
@@ -112,7 +123,7 @@ impl ChunkLoader {
 
 #[cfg(test)]
 mod tests {
-    use super::{ChunkLoader, ChunkRead};
+    use super::{ChunkLoader, ChunkRead, RegionStore};
     use crate::chunk::{CHUNK_X, CHUNK_Y, CHUNK_Z};
     use crate::registry::{self, AIR};
     use std::io::ErrorKind;
@@ -122,7 +133,7 @@ mod tests {
     fn loader() -> ChunkLoader {
         let reg = Arc::new(registry::load(Path::new("/nonexistent-mods-dir")));
         ChunkLoader {
-            save_dir: PathBuf::new(),
+            store: RegionStore::new(PathBuf::new()),
             load_remap: vec![AIR, reg.block_id("base:water").unwrap(), reg.unknown_block],
             reg,
             palette_stale: false,

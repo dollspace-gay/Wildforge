@@ -11,7 +11,7 @@ session. `TerrainContext` supplies immutable generation and save-reader inputs.
 
 Callers retain their existing adoption time/count budgets. Workers do not
 mutate `World`; the caller adopts `PreparedChunk` through the authoritative
-`World::adopt_prepared` operation. Wire encoding and GPU meshing are separate
+`World::adopt_prepared_at_revision` operation. Wire encoding and GPU meshing are separate
 consumers. Loaded/generated provenance must travel with the prepared result.
 
 Run `cargo test --locked terrain_jobs::` for queue/policy tests, then the
@@ -21,5 +21,8 @@ migration record tracks pending lifetime/error improvements and runtime proof.
 Shutdown stops new requests, cancels queued work, joins running workers, and
 discards completions. Drop follows the same path and reports worker failure.
 Running preparation finishes before shutdown returns; it cannot mutate a world.
-Old-session results never release current queue capacity. Save-read failure
-classification and live startup/panic propagation remain tracked migration work.
+Old-session results never release current queue capacity. Prepared results carry
+a storage revision invalidated by any attempted authoritative write to that
+chunk, so saved-and-unloaded edits also win over late preparation. Read failures
+retain their cause and are suppressed while interest remains; live
+startup/panic propagation remains tracked migration work.

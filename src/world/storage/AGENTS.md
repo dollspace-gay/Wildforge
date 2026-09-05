@@ -10,3 +10,8 @@ Preserve byte formats and palette conversions during extraction. A failed read
 must not become permission to replace persisted data. Test missing, malformed,
 and unreadable inputs alongside old-format round trips. Keep new files near
 400 lines and add both guides for any new maintained subdirectory.
+
+Route live region reads and writes through RegionStore. Preserve per-region
+parallelism, invalidate watched chunk revisions before writes, and never give
+workers authoritative write access. Revision tokens and weak region/watch maps
+must stay bounded by active work. Test edits saved and unloaded before adoption.

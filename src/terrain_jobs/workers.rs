@@ -50,9 +50,9 @@ pub(super) fn start(
                 };
                 let prepared = context
                     .loader
-                    .load(position)
+                    .load_versioned(position)
                     .map(|source| {
-                        let (chunk, origin) = match source {
+                        let (chunk, origin) = match source.content {
                             ChunkRead::Present(chunk) => (chunk, ChunkOrigin::Saved),
                             ChunkRead::Missing => (
                                 generator.generate(position, &context.registry),
@@ -72,6 +72,7 @@ pub(super) fn start(
                             position,
                             chunk,
                             origin,
+                            revision: source.revision,
                             generation: generation.clone(),
                         }
                     })
