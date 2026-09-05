@@ -564,3 +564,48 @@ maintained directories retain their README and AGENTS guidance. This addresses
 the palette-publication defect recorded above; guest content negotiation,
 independent authority/replica owners, the remaining Phase 3–8 migrations,
 controlled performance work, and full visual qualification remain open.
+
+
+## Clean palette-owner gates and native reload/save proof
+
+The clean `b43f4af` checkpoint passes format, strict all-target/all-feature Clippy,
+Rust 1.95 MSRV, all 15 serial agent scenarios, doctests (zero defined), release
+build, 28 Python scenarios, folder coverage, advisory analysis, and whitespace.
+The subsystem run has **1,087 passes, 24 ignored, and five failures**. Those five
+remain the historical visual-qualification source-fingerprint checks. Exact
+commands, revision, durations, and logs are in
+`target/maintainability/palette-owner-gates/results.json`.
+
+Native verification used the release executable from this clean checkpoint and
+an isolated copy of the existing playtest world. Three successful scenarios are
+recorded under `target/maintainability/palette-owner-native/attempt-2/` and
+`target/maintainability/palette-owner-native/reopen/`, with scripts, explicit
+environment, executable SHA-256, process IDs, UI commands, logs, and results:
+
+- Focused X11 F5 input reloaded content and replaced all eight terrain thread IDs
+  while retaining both mesh worker IDs. The settled 1280x720 capture records
+  NVIDIA RTX 5070 Ti Laptop GPU hardware using Vulkan, 65 resident chunks,
+  63 opaque GPU meshes, 30 water meshes, and 534 settled frames. Capture
+  conversion and deterministic report checking pass, and the PNG was inspected.
+- A separate run disabled automatic capture, reloaded content, and exited zero
+  through the normal window-quit path. Its durable palette appended 26 names to
+  the existing 287 bindings; a full ID/name comparison found zero changed old
+  bindings and confirmed that every new numeric ID follows the old range.
+- Reopening that saved world, reloading content again, and capturing another
+  settled hardware-rendered frame passed. Its palette stayed byte-identical.
+  Conversion/report checks pass and the reopened-world PNG was inspected.
+
+Observed F5-to-replacement intervals were 0.102, 0.082, and 0.080 seconds. These
+are individual lifecycle observations, not controlled latency or travel
+benchmarks. The screenshot path still exits with `process::exit`; only the
+separate normal-quit scenario supports the shutdown assertion. Two initial
+harness attempts sent unfocused synthetic F5 events without observing a reload;
+they remain recorded as failures, including the second attempt's explicit
+SIGTERM cleanup. The successful harness focuses the exact game window and uses
+normal key injection. No game code or assertion was weakened to pass input.
+
+All launched game processes have exited. The original world's 59 files have
+identical before/after SHA-256 inventories. No full migration acceptance is
+claimed: guest renegotiation, shared client and authority owners, remaining
+world/app/content/generation decomposition, dependency/complexity tools,
+controlled performance comparisons, and complete visual requalification remain.
