@@ -18,3 +18,7 @@ retrogen save sequence has begun, finish that sequence before cancelling entry.
 Propagate the caller's token into missing-world creation. Use fallible residency
 when entry depends on a chunk; a corrupt save must not become regenerated terrain
 or a supposedly ready doorway. Trial workers must be joined on every exit path.
+
+Do not reintroduce a remote flag or host snapshot setters on World. Incoming
+observations belong to ReplicaWorld through ReplicationTarget. Physical world
+operations must not gain optional guest-mode behavior to satisfy a caller.

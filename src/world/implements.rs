@@ -487,7 +487,6 @@ impl World {
             .arcane_ledger
             .as_ref()
             .and_then(|ledger| ledger.item_clean_total(stack.arcane_id))
-            .or_else(|| self.replica_observations.charge(stack.arcane_id))
             .unwrap_or(0);
         if let Some(instance) = self
             .implements_state
@@ -500,20 +499,12 @@ impl World {
                 .map_or(0, |ledger| ledger.item_dross_total(stack.arcane_id));
             crate::implements::tooltip(instance, clean, dross, exact)
         } else {
-            self.replica_observations.implement(stack.arcane_id)
-                .map_or_else(Vec::new, |state| state.tooltip(clean, exact))
+            Vec::new()
         }
     }
 
-    #[cfg(test)]
-    pub fn set_remote_implements(&mut self, states: Vec<crate::implements::ImplementPublicState>) {
-        self.replica_observations.replace_implements(states);
-    }
 
-    #[cfg(test)]
-    pub fn set_remote_apparatus(&mut self, cues: Vec<crate::implements::ApparatusCue>) {
-        self.replica_observations.replace_apparatus(cues);
-    }
+
 
     /// Bounded qualitative apparatus state for local presentation or nearby
     /// guest interest management. Exact amounts remain in item custody and
@@ -524,9 +515,6 @@ impl World {
         radius: f32,
     ) -> Vec<crate::implements::ApparatusCue> {
         let radius = radius.clamp(1.0, 96.0);
-        if self.remote {
-            return self.replica_observations.apparatus_near(observer, radius);
-        }
         let Some(state) = self.implements_state.as_ref() else {
             return Vec::new();
         };
@@ -566,11 +554,7 @@ impl World {
             .implements_state
             .as_ref()
             .and_then(|state| state.instance(stack.arcane_id))
-            .map(|instance| &instance.kind)
-            .or_else(|| {
-                self.replica_observations.implement(stack.arcane_id)
-                    .map(|state| &state.kind)
-            })?;
+            .map(|instance| &instance.kind)?;
         super::item_presentation::implement_visual(
             &self.reg, kind, self.inspectable_item_current(stack.arcane_id),
         )

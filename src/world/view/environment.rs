@@ -118,13 +118,13 @@ impl<'a> WorldView<'a> {
     }
     pub(crate) fn remote_arcane_cue(&self) -> [u8; 2] {
         match self.source {
-            Source::Authority(world) => world.remote_arcane_cue(),
+            Source::Authority(_) => [0; 2],
             Source::Replica(world) => world.remote_arcane_cue(),
         }
     }
     pub(crate) fn remote_arcane_dominant(&self) -> u8 {
         match self.source {
-            Source::Authority(world) => world.remote_arcane_dominant(),
+            Source::Authority(_) => 0,
             Source::Replica(world) => world.remote_arcane_dominant(),
         }
     }

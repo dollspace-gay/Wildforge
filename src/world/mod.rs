@@ -1052,7 +1052,6 @@ pub struct World {
     /// Atlas-free unit fixtures can request a local condition explicitly.
     /// Production worlds never consult this: their weather is atlas state.
     weather_override: Option<crate::planet_atlas::LocalWeatherSample>,
-    replica_observations: ReplicaObservations,
     pub reg: Arc<Registry>,
     #[allow(dead_code)]
     pub seed: u32,
@@ -1193,8 +1192,6 @@ pub struct World {
     plant_ire_today: f32,
     /// Fraction of the current day elapsed (for decay + cap reset).
     day_progress: f32,
-    /// Guest mode: chunks come only from the network, never generated.
-    remote: bool,
     /// Calendar day (increments at dawn, natural or slept-through).
     pub day: u32,
     /// Host mode: record block edits for broadcasting.
@@ -1525,7 +1522,6 @@ impl World {
             water_carriers,
             dross_exposure_tick: HashMap::new(),
             weather_override: None,
-            replica_observations: ReplicaObservations::default(),
             palette: storage::PaletteStore::new(&save_dir, &reg),
             reg,
             seed,
@@ -1582,7 +1578,6 @@ impl World {
             ire: 0.0,
             plant_ire_today: 0.0,
             day_progress: 0.0,
-            remote: false,
             day: 0,
             log_edits: false,
             edit_log: Vec::new(),
@@ -1641,12 +1636,8 @@ impl World {
         self.reg.ruleset_for(&self.mode)
     }
 
-    /// Persist the client's chosen camera mode for this world. The host (or a
-    /// single-player client) owns `world.toml`; remote clients skip it.
+    /// Persist the camera mode in the authoritative world's metadata.
     pub fn set_camera(&mut self, camera: &str) -> std::io::Result<()> {
-        if self.remote {
-            return Ok(());
-        }
         self.camera = camera.to_string();
         write_world_meta_full(
             &self.save_dir,
@@ -1658,35 +1649,8 @@ impl World {
         )
     }
 
-    #[cfg(test)]
-    pub fn set_remote_weather(
-        &mut self,
-        side: u16,
-        cells: Vec<(
-            crate::planet_atlas::AtlasPos,
-            crate::planet_atlas::LocalWeatherSample,
-        )>,
-    ) {
-        self.replica_observations.set_weather(side, cells);
-    }
 
-    #[cfg(test)]
-    pub fn set_remote_arcane_cue(
-        &mut self,
-        bands: [u8; 2],
-        dominant: u8,
-        ecology: Option<(String, bool)>,
-    ) {
-        self.replica_observations.set_arcane_cue(bands, dominant, ecology);
-    }
 
-    pub fn remote_arcane_cue(&self) -> [u8; 2] {
-        self.replica_observations.arcane_bands()
-    }
-
-    pub fn remote_arcane_dominant(&self) -> u8 {
-        self.replica_observations.arcane_dominant()
-    }
 
     pub fn arcane_cue_at(&self, region: crate::planet_atlas::AtlasPos) -> [u8; 2] {
         let geographic = self
@@ -2042,20 +2006,11 @@ impl World {
         surface: crate::planet::SurfacePos,
         radius: f32,
     ) -> Option<crate::arcane_ecology::EcologyObservation> {
-        if self.remote {
-            return self.replica_observations.ecology();
-        }
         self.arcane_ecology_observation_at(surface, radius)
     }
 
-    #[cfg(test)]
-    pub fn set_remote_arcane_items(&mut self, charges: Vec<(u64, u64)>) {
-        self.replica_observations.replace_charges(charges);
-    }
 
-    pub fn set_remote_arcane_item(&mut self, id: u64, units: u64) {
-        self.replica_observations.set_charge(id, units);
-    }
+
 
     pub fn inspectable_item_current(&self, id: u64) -> Option<u64> {
         if id == 0 {
@@ -2064,17 +2019,11 @@ impl World {
         self.arcane_ledger
             .as_ref()
             .and_then(|ledger| ledger.item_clean_total(id))
-            .or_else(|| self.replica_observations.charge(id))
+
     }
 
-    /// Switch between authoritative storage and guest snapshot mode.
-    pub fn set_remote(&mut self, remote: bool) {
-        self.remote = remote;
-    }
 
-    pub fn is_remote(&self) -> bool {
-        self.remote
-    }
+
 
     /// Enable or disable the authoritative block-edit journal.
     pub fn set_edit_logging(&mut self, enabled: bool) {
@@ -2438,9 +2387,7 @@ impl World {
         if candidates.is_empty() {
             return (report, released);
         }
-        if !self.remote {
-            self.settle_falling();
-        }
+        self.settle_falling();
         for pos in candidates {
             match self.save_chunk_if_modified(pos) {
                 Ok(_) => {
@@ -3638,22 +3585,20 @@ impl World {
         // Gravity blocks detach when support vanishes, and a newly placed
         // gravity block over air starts falling. All neighbor addressing goes
         // through BlockPos::offset so this works identically at face seams.
-        if !self.remote {
-            if !self.reg.is_solid(block)
-                && let Some(above) = pos.offset(0, 1, 0)
-            {
-                let above_block = self.get_block_at(above);
-                if self.reg.block(above_block).falls {
-                    self.detach_at(above, above_block);
-                }
+        if !self.reg.is_solid(block)
+            && let Some(above) = pos.offset(0, 1, 0)
+        {
+            let above_block = self.get_block_at(above);
+            if self.reg.block(above_block).falls {
+                self.detach_at(above, above_block);
             }
-            if self.reg.block(block).falls
-                && let Some(below) = pos.offset(0, -1, 0)
-                && !self.reg.is_solid(self.get_block_at(below))
-            {
-                self.detach_at(pos, block);
-                return;
-            }
+        }
+        if self.reg.block(block).falls
+            && let Some(below) = pos.offset(0, -1, 0)
+            && !self.reg.is_solid(self.get_block_at(below))
+        {
+            self.detach_at(pos, block);
+            return;
         }
 
         // Resident support classification is shared with replica application;
@@ -3789,7 +3734,7 @@ impl World {
         // re-folds its stats immediately — no dependence on the machine
         // being lit or ticked. Water and meta-only edits keep `old ==
         // block` and skip this; remote replicas let the host decide.
-        if !self.remote && old != block {
+        if old != block {
             // A ghost overlay (spec Part 1.4) is satisfied cell-by-cell by
             // ordinary placement: this is the only hook, and it clears a
             // pending cell exactly when the voxel holds the required block.
@@ -3842,24 +3787,8 @@ impl World {
         self.relight_chunks_and_cascade(starts);
     }
 
-    /// Apply one network poll's authoritative block states as a single light
-    /// transaction. Hosts often deliver many weather, fluid, or ecology edits
-    /// together; relighting the connected view after every individual message
-    /// can monopolize a guest for minutes even though the final voxel state is
-    /// identical. The ordinary typed mutation path still owns support checks,
-    /// metadata, salinity, dirty meshes, and fluid wakeups.
-    pub(crate) fn apply_remote_block_states(
-        &mut self,
-        updates: impl IntoIterator<Item = (BlockPos, BlockId, u8, u16, u8)>,
-    ) {
-        debug_assert!(self.remote, "only a guest may apply replicated states");
-        self.edit_batch(|world| {
-            for (pos, block, meta, salt_mass, soil_salinity) in updates {
-                world.set_block_state_at(pos, block, meta, salt_mass, soil_salinity);
-            }
-        });
-        self.clear_pending_drops();
-    }
+
+
 
     #[cfg(test)]
     pub(crate) fn edit_fixture_for_test(&mut self, edit: impl FnOnce(&mut Self)) {

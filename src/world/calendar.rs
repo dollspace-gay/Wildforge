@@ -32,9 +32,6 @@ impl World {
                 .sample(atlas, pos, day, self.long_winter)
                 .temperature_c;
         }
-        if let Some(sample) = self.replica_observations.weather_at(pos) {
-            return sample.temperature_c;
-        }
         crate::climate::seasonal_temperature(self.generator.climate_at(pos).t, pos, day)
     }
 
@@ -54,9 +51,6 @@ impl World {
     ) -> crate::planet_atlas::LocalWeatherSample {
         if let (Some(atlas), Some(weather)) = (&self.planet_atlas, &self.planetary_weather) {
             return weather.sample(atlas, pos, self.orbital_day(), self.long_winter);
-        }
-        if let Some(sample) = self.replica_observations.weather_at(pos) {
-            return sample;
         }
         // Atlas-free fixtures and development worlds still need a physically
         // sane local temperature. The old fixed +14 C spring/summer offset

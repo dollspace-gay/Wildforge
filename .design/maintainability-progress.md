@@ -1724,3 +1724,22 @@ Container screens retain their expected entity-type guard before prediction whil
 sending the existing host click first; shared slot rules stay centralized.
 These complete the identified unconditional country/soil reads in the graphical
 action adapter. Full Rust/API/scene parity checks remain deferred to the end.
+
+
+## Authority-only World (coding checkpoint; unverified)
+
+Removed World::remote, mode-switching APIs, incoming replication implementation,
+network chunk insertion wrappers, and ReplicaObservations storage from World.
+Generation, persistence, gravity/support, machine revalidation, footprints, and
+item/atmospheric queries now have one authoritative meaning. ReplicaWorld alone
+implements the shared incoming replication contract. Optional finite ledgers on
+World remain for atlas-free fixtures and existing world initialization, not as a
+guest representation; conserved quantities still belong to their existing books.
+
+This is the planned owner/API transition. Save/wire schemas are unchanged. The
+legacy remote-mode fixtures in world, climate, hydrology, implements, multiplayer,
+and client_session tests still require conversion to ReplicaWorld in the final
+test phase, as does the native guest proof's old field access. Those old fixtures
+will not compile until migrated; no test success is claimed. Final checks must
+prove receiver parity, no replica save/generation APIs, host edit side-effect
+order, and corrected guest eviction without physical landing or persistence.

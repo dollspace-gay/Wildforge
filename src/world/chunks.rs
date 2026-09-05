@@ -1,4 +1,4 @@
-//! Chunk loading/generation, structures, loot, and remote chunk insertion.
+//! Chunk loading/generation, structures, and loot adoption.
 
 use super::*;
 
@@ -20,13 +20,10 @@ impl World {
     }
 
     /// Prepare synchronously when entry requires residency and must retain
-    /// the actual read failure. False means resident already or a guest world.
+    /// the actual read failure. False means the chunk is already resident.
     pub(crate) fn try_ensure_chunk(&mut self, pos: ChunkPos) -> std::io::Result<bool> {
         if self.chunks.contains_key(&pos) {
             return Ok(false);
-        }
-        if self.remote {
-            return Ok(false); // guests receive chunks, they don't make them
         }
         let (chunk, fresh) = self.prepare_chunk(pos, None)?;
         self.adopt_chunk(pos, chunk, fresh);
@@ -38,7 +35,7 @@ impl World {
     /// and an already-present chunk drops the offering — generation is
     /// pure, so a worker chunk equals what ensure_chunk would build.
     pub fn adopt_generated(&mut self, pos: ChunkPos, chunk: Chunk) -> bool {
-        if self.chunks.contains_key(&pos) || self.remote {
+        if self.chunks.contains_key(&pos) {
             return false;
         }
         let (chunk, fresh) = match self.prepare_chunk(pos, Some(chunk)) {
@@ -88,7 +85,7 @@ impl World {
 
     /// Adopt only after the caller has validated the saved-terrain revision.
     fn adopt_prepared(&mut self, pos: ChunkPos, chunk: Chunk, fresh: bool) -> bool {
-        if self.chunks.contains_key(&pos) || self.remote {
+        if self.chunks.contains_key(&pos) {
             return false;
         }
         self.adopt_chunk(pos, chunk, fresh);

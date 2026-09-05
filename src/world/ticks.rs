@@ -938,9 +938,6 @@ impl World {
     /// print — a real edit: logged, broadcast, persisted, and it melts
     /// like any layer. History written in the ground.
     pub fn tread_at(&mut self, pos: BlockPos) {
-        if self.remote {
-            return; // guests' prints are stamped by the host
-        }
         let (Some(layer), Some(trod)) = (
             self.reg.block_id("base:snow_layer"),
             self.reg.block_id("base:snow_layer_trod"),

@@ -59,3 +59,9 @@ authority separately reconciles its gates, ledgers, and generator bindings.
 geography plus an explicit known-dead predicate/visible heart. Soil warning
 priority similarly uses observed salinity and optional habitat/moisture inputs.
 Guests retain their existing absence of private heart and climate-water books.
+
+World now represents authority only. It has no remote flag, incoming snapshot
+adapter, or ReplicaObservations storage. GuestSession applies incoming state only
+to ReplicaWorld; world saving, generation, physical support, and machine
+revalidation are unconditional authority operations. Tests that formerly switched
+World into guest mode must exercise the independent replica instead.

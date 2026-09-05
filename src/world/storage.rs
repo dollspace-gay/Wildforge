@@ -731,22 +731,8 @@ impl World {
         Some(encode_chunk(chunk))
     }
 
-    /// Insert a network-streamed chunk, remapping host block ids to local
-    /// ones. Current hosts include their settled derived light; older payloads
-    /// remain compatible and are relit locally.
-    #[cfg(test)]
-    pub fn insert_remote_chunk(&mut self, pos: ChunkPos, rle: &[u8], remap: &[BlockId]) {
-        self.insert_remote_chunks([(pos, rle)], remap);
-    }
 
-    /// Decode a wire batch through shared resident storage and lighting.
-    pub fn insert_remote_chunks<'a>(
-        &mut self,
-        chunks: impl IntoIterator<Item = (ChunkPos, &'a [u8])>,
-        remap: &[BlockId],
-    ) {
-        self.chunks.insert_remote_chunks(&self.reg, chunks, remap);
-    }
+
 
     pub(super) fn save_chunk(&self, pos: ChunkPos) -> std::io::Result<()> {
         // Deep chunks (capability E10) never persist: dungeon runs are
@@ -777,9 +763,6 @@ impl World {
     /// most of the world reaches disk: a chunk is written once, as it
     /// leaves the view, instead of the whole world on a clock.
     pub fn save_chunk_if_modified(&self, pos: ChunkPos) -> std::io::Result<bool> {
-        if self.remote {
-            return Ok(false);
-        }
         if self.chunks.get(&pos).is_some_and(|chunk| chunk.modified) {
             self.save_chunk(pos)?;
             return Ok(true);
@@ -789,9 +772,6 @@ impl World {
 
     pub fn save_modified(&mut self) -> SaveReport {
         let mut report = SaveReport::default();
-        if self.remote {
-            return report; // the host owns the world
-        }
         report.record(
             "save directory",
             self.save_dir.clone(),
