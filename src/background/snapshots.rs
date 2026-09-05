@@ -67,6 +67,37 @@ impl<I: Send + 'static, O: Send + 'static> SnapshotJobs<I, O> {
         workers: usize,
         limit: usize,
         process: impl Fn(I) -> O + Send + Sync + 'static,
+        spawn: impl FnMut(String, Task) -> io::Result<JoinHandle<()>>,
+    ) -> io::Result<Self> {
+        let process = Arc::new(process);
+        Self::start(
+            name,
+            workers,
+            limit,
+            move || {
+                let process = Arc::clone(&process);
+                move |input| process(input)
+            },
+            spawn,
+        )
+    }
+
+    /// Construct private immutable preparation context once per worker. Its
+    /// initialization is supervised by the same failure boundary as processing.
+    pub(crate) fn with_initializer<P: FnMut(I) -> O + Send + 'static>(
+        name: &'static str,
+        workers: usize,
+        limit: usize,
+        initialize: impl Fn() -> P + Send + Sync + 'static,
+    ) -> io::Result<Self> {
+        Self::start(name, workers, limit, initialize, spawn)
+    }
+
+    fn start<P: FnMut(I) -> O + Send + 'static>(
+        name: &'static str,
+        workers: usize,
+        limit: usize,
+        initialize: impl Fn() -> P + Send + Sync + 'static,
         mut spawn: impl FnMut(String, Task) -> io::Result<JoinHandle<()>>,
     ) -> io::Result<Self> {
         if workers == 0 || limit == 0 {
@@ -92,15 +123,15 @@ impl<I: Send + 'static, O: Send + 'static> SnapshotJobs<I, O> {
             limit,
             closed: false,
         };
-        let process = Arc::new(process);
+        let initialize = Arc::new(initialize);
         for index in 0..workers {
             let queue = Arc::clone(&owner.queue);
             let send = send.clone();
-            let process = Arc::clone(&process);
+            let initialize = Arc::clone(&initialize);
             owner.workers.push(spawn(
                 format!("{name}-{index}"),
                 Box::new(move || {
-                    if let Err(error) = run_guarded(name, || run(&queue, send, &*process)) {
+                    if let Err(error) = run_guarded(name, || run(&queue, send, initialize())) {
                         state(&queue).fail(error);
                         queue.1.notify_all();
                     }
@@ -202,7 +233,11 @@ impl<I, O> Drop for SnapshotJobs<I, O> {
     }
 }
 
-fn run<I, O>(queue: &Shared<I>, ready: Sender<O>, process: &impl Fn(I) -> O) -> io::Result<()> {
+fn run<I, O>(
+    queue: &Shared<I>,
+    ready: Sender<O>,
+    mut process: impl FnMut(I) -> O,
+) -> io::Result<()> {
     loop {
         let input = {
             let mut state = state(queue);

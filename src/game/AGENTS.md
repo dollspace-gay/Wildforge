@@ -12,3 +12,9 @@ Aim for cohesive source modules around 400 lines and review those above 500.
 Add local README/AGENTS guidance when introducing a subdirectory. Run
 `python3 tools/run_gameplay_proofs.py` from the repository root for focused feedback, then the applicable
 full gates before accepting a slice. Record limitations and failures honestly.
+
+World loading may have only one active operation. Keep cancellation responsive,
+join before adoption, preserve a successfully published save if entry is cancelled,
+and reject preparation requested from obsolete content. Read errors and panics
+are failures even if the user also requested cancellation; never classify them
+by searching their message text.

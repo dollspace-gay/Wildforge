@@ -14,3 +14,7 @@ to stop work. Do not hide errors with detached threads or synchronous fallback.
 Test lifecycle transitions with channels/barriers rather than assumptions about
 processor speed. Preserve adapter policies, use focused integration tests, and
 record native GPU/runtime verification separately from CPU worker tests.
+
+One-shot operations have a separate terminal result from their latest progress.
+Do not discard that result when cancellation races with durable publication.
+Supervise context initialization as well as processing, and test both paths.

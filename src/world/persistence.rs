@@ -9,7 +9,20 @@ const STAMPS_MAGIC: &[u8] = b"WFS3-PLANET-1200";
 
 impl World {
     /// Load a world from disk (reads seed + palette) or create a fresh one.
-    pub fn load_or_create(save_dir: PathBuf, mut reg: Arc<Registry>) -> std::io::Result<World> {
+    pub fn load_or_create(save_dir: PathBuf, reg: Arc<Registry>) -> std::io::Result<World> {
+        Self::load_or_create_cancellable(
+            save_dir,
+            reg,
+            &crate::planet_atlas::CancellationToken::default(),
+        )
+    }
+
+    pub(crate) fn load_or_create_cancellable(
+        save_dir: PathBuf,
+        mut reg: Arc<Registry>,
+        cancel: &crate::planet_atlas::CancellationToken,
+    ) -> std::io::Result<World> {
+        super::preparation::check_cancelled(cancel)?;
         if !reg.material_errors.is_empty() {
             return Err(std::io::Error::new(
                 std::io::ErrorKind::InvalidData,
@@ -48,7 +61,7 @@ impl World {
                 "survival",
                 crate::planet_atlas::genesis_content_hash(std::path::Path::new("mods")),
                 Arc::clone(&reg),
-                &crate::planet_atlas::CancellationToken::default(),
+                cancel,
                 |progress| match progress {
                     WorldCreationProgress::Atlas(progress) => {
                         eprintln!("world creation: {}", progress.stage.label())
@@ -64,14 +77,7 @@ impl World {
                 },
             )?;
             #[cfg(test)]
-            create_world_fixture_atomic(
-                &save_dir,
-                seed,
-                "survival",
-                8,
-                &crate::planet_atlas::CancellationToken::default(),
-                |_| {},
-            )?;
+            create_world_fixture_atomic(&save_dir, seed, "survival", 8, cancel, |_| {})?;
             existing = load_world_meta(&save_dir)?;
         }
         let (mode, ire, day, camera) = existing
@@ -97,6 +103,7 @@ impl World {
             }
             Err(error) => return Err(std::io::Error::other(error)),
         };
+        super::preparation::check_cancelled(cancel)?;
         if let Ok(ledger) = crate::materials::MaterialLedger::load(&save_dir) {
             let added = Arc::make_mut(&mut reg).install_saved_placeholders(&save_dir, &ledger)?;
             ledger.validate_saved_definitions(&reg)?;

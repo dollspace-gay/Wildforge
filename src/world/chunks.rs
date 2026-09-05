@@ -10,17 +10,27 @@ const EDIFICE_CLEARANCE: i32 = 48;
 
 impl World {
     pub fn ensure_chunk(&mut self, pos: ChunkPos) -> bool {
+        match self.try_ensure_chunk(pos) {
+            Ok(adopted) => adopted,
+            Err(error) => {
+                eprintln!("world: cannot read chunk {pos:?}; saved data left intact: {error}");
+                false
+            }
+        }
+    }
+
+    /// Prepare synchronously when entry requires residency and must retain
+    /// the actual read failure. False means resident already or a guest world.
+    pub(crate) fn try_ensure_chunk(&mut self, pos: ChunkPos) -> std::io::Result<bool> {
         if self.chunks.contains_key(&pos) {
-            return false;
+            return Ok(false);
         }
         if self.remote {
-            return false; // guests receive chunks, they don't make them
+            return Ok(false); // guests receive chunks, they don't make them
         }
-        let Some((chunk, fresh)) = self.prepare_chunk(pos, None) else {
-            return false;
-        };
+        let (chunk, fresh) = self.prepare_chunk(pos, None)?;
         self.adopt_chunk(pos, chunk, fresh);
-        true
+        Ok(true)
     }
 
     /// Adopt a chunk generated elsewhere (a background worker). A
@@ -31,28 +41,32 @@ impl World {
         if self.chunks.contains_key(&pos) || self.remote {
             return false;
         }
-        let Some((chunk, fresh)) = self.prepare_chunk(pos, Some(chunk)) else {
-            return false;
+        let (chunk, fresh) = match self.prepare_chunk(pos, Some(chunk)) {
+            Ok(prepared) => prepared,
+            Err(error) => {
+                eprintln!("world: cannot read chunk {pos:?}; saved data left intact: {error}");
+                return false;
+            }
         };
         self.adopt_chunk(pos, chunk, fresh);
         true
     }
 
-    fn prepare_chunk(&self, pos: ChunkPos, generated: Option<Chunk>) -> Option<(Chunk, bool)> {
-        match self.try_load_chunk(pos) {
-            Ok(ChunkRead::Present(chunk)) => Some((chunk, false)),
-            Ok(source @ (ChunkRead::Missing | ChunkRead::LegacyPlaceholder)) => {
+    fn prepare_chunk(
+        &self,
+        pos: ChunkPos,
+        generated: Option<Chunk>,
+    ) -> std::io::Result<(Chunk, bool)> {
+        match self.try_load_chunk(pos)? {
+            ChunkRead::Present(chunk) => Ok((chunk, false)),
+            source @ (ChunkRead::Missing | ChunkRead::LegacyPlaceholder) => {
                 if matches!(source, ChunkRead::LegacyPlaceholder) {
                     eprintln!("world: repairing legacy all-placeholder chunk {pos:?}");
                 }
-                Some((
+                Ok((
                     generated.unwrap_or_else(|| self.generator.generate(pos, &self.reg)),
                     true,
                 ))
-            }
-            Err(error) => {
-                eprintln!("world: cannot read chunk {pos:?}; saved data left intact: {error}");
-                None
             }
         }
     }

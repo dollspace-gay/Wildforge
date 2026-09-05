@@ -31,7 +31,7 @@ runtime comparisons. Cold/warm runtime measurements remain outstanding.
 |---|---|---|
 | AC-1 compatibility | Existing repairs and planning separated into commits | Baseline gates; per-slice save/codec/genesis/API checks |
 | AC-2 authority/replica | Existing `World::remote` guard | Distinct owners and bounded read APIs |
-| AC-3 terrain jobs | Shared `TerrainJobs`; both adapters migrated; eight queue/worker tests pass | Owned shutdown, errors, session rejection, runtime qualification |
+| AC-3 terrain jobs | Shared owned `TerrainJobs`, observable errors, saved revision checks, and owned homeland trials | Content/palette context invalidation; caller and runtime qualification |
 | AC-4 common client | Duplicate admission/remapping inspected | Shared session and protocol/runtime proofs |
 | AC-5 player operations | Stall-sale clone inspected | Shared domain operations and adapter parity |
 | AC-6 world domains | Domain fields/methods inventoried | Encapsulation, explicit transaction coordination |
@@ -41,7 +41,7 @@ runtime comparisons. Cold/warm runtime measurements remain outstanding.
 | AC-10 clone analyzer | 18 tests passed in planning; complete JSON snapshot | Maintain analyzer coverage as tooling evolves |
 | AC-11 dependency boundaries | Direction specified in plan | Dependency checker with violating fixtures |
 | AC-12 tests/performance | Baseline suite passed; extraction focused gates passed | Full slice gates and reproducible measurements for affected paths |
-| AC-13 shutdown | Existing detached terrain/mesh workers inspected | Owned shutdown, join/cancel, persistence failure tests |
+| AC-13 shutdown | Terrain, mesh, encoding, creation, entry, and homeland work have joined owners and failure tests | Dedicated shutdown; graphical close/capture and save-failure runtime proof |
 | AC-14 migration record | This file and separate baseline commits | Add implementation/result entries after each slice |
 | Folder guidance | 53 maintained directories documented; coverage CI and hash regressions pass | Recheck when adding directories |
 
@@ -54,7 +54,7 @@ behavior and separate documentation from runtime content without altering
 registry identities or rewriting immutable saved-world manifests. Record the
 compatibility outcome and regression evidence as its own corrective slice.
 
-## Next implementation slice
+## First implementation slice (historical)
 
 Shared terrain jobs: preserve existing client/host worker counts and adoption
 budgets; centralize queue ownership, priority promotion/preemption, completion
@@ -117,16 +117,17 @@ named phase rather than treated as permanent exemptions.
 
 | File | Current lines | Domain and reason | Next review |
 |---|---:|---|---|
-| `src/game/mod.rs` | 1112 | App composition still owns the remaining client fields | Phase 7 session/UI/presentation owners |
-| `src/game/session.rs` | 1059 | Entry adapters still coordinate the old client state | Phases 3 and 7 client session extraction |
+| `src/game/mod.rs` | 1079 | App composition still owns the remaining client fields | Phase 7 session/UI/presentation owners |
+| `src/game/session.rs` | 794 | Entry adapters still coordinate the old client state | Phases 3 and 7 client session extraction |
 | `src/lib.rs` | 674 | Legacy CLI dispatch remains alongside the facade | Phase 7 app command extraction |
 | `src/tests/mod.rs` | 518 | Shared fixtures remain alongside test registration | Phase 7 scenario fixtures and test organization |
 | `src/net/transport.rs` | 1006 | Content inventory is extracted; QUIC lifecycle/discovery remain | Phases 3 and 8 session/transport boundaries |
 | `src/planet_atlas/climate.rs` | 2440 | Live-audit correction reuses the existing total helper; stage ownership remains debt | Phase 6 climate stage extraction |
-| `src/world/mod.rs` | 4265 | Composes the new region owner; remaining world domains still share fields | Phase 5 domain ownership |
-| `src/world/chunks.rs` | 1191 | Revision validation wraps the existing adoption side-effect sequence | Phase 5 chunk/residency domain |
+| `src/world/mod.rs` | 4267 | Composes the new region owner; remaining world domains still share fields | Phase 5 domain ownership |
+| `src/world/chunks.rs` | 1205 | Revision validation wraps the existing adoption side-effect sequence | Phase 5 chunk/residency domain |
+| `src/world/persistence.rs` | 420 | Cancellable open still coordinates legacy domain initialization | Phase 5 persistence/domain ownership |
 | `src/world/storage.rs` | 1224 | Delegates chunk I/O; sidecars, save orchestration, and remapping remain | Phase 5 persistence ownership |
-| `src/world/spawn.rs` | 1631 | Fingerprints use coordinated reads; trial/qualification orchestration remains | Phases 5 and 6 entry/genesis ownership |
+| `src/world/spawn.rs` | 1592 | Fingerprints use coordinated reads; trial/qualification orchestration remains | Phases 5 and 6 entry/genesis ownership |
 
 The host streaming adapter is now 371 lines after extracting its private job
 owner; it no longer needs a size exception. World-domain files above remain
@@ -390,3 +391,48 @@ capture processes are terminal and absent from `/proc`. This proves one native
 mesh-to-GPU path; it is not a paired performance baseline, a travel benchmark,
 graceful Drop-path shutdown proof, or replacement for the five full visual
 requalification suites. Those requirements and the remaining phases stay open.
+
+## Owned world loading and cancellable homeland preparation
+
+`game::WorldLoading` now exclusively owns either creation or entry. UI state
+holds progress text only; request preparation, worker execution, and presentation
+are separate modules. `background::Operation` bounds progress to one latest value,
+retains the native handle, preserves terminal I/O/panic errors, and joins before
+completion or Drop. Cancellation cannot overwrite an active operation or admit
+a world that finished just before cancellation. A successfully published world
+remains listed when its subsequent entry is cancelled.
+
+Prepared entry records the requested registry separately from the loaded World's
+registry, which may contain restored placeholder definitions. If content changes
+before adoption, the completed private world is discarded and entry restarts with
+the current registry. This protects loading only; active terrain/mesh/host context
+invalidation during content or palette replacement remains outstanding.
+
+Cancellation now propagates through missing-world creation and common homeland
+preparation. The old homeland trial threads could detach on early error; trials
+now use `SnapshotJobs` with supervised per-worker context initialization. Existing
+worker counts, private generator caches, and sorted adoption order remain intact.
+Cancellation discards speculative trials and joins their running chunks. Once
+homeland adoption or discovery retrogen persistence starts, it finishes that save
+sequence before entry acknowledges cancellation. Atlas file reads, candidate
+analysis, running chunk generation, and durable writes remain cooperative steps,
+not preemptible operations; shutdown latency is not yet a qualified performance
+claim.
+
+A separate residency correction adds `try_ensure_chunk`: entry preserves the real
+read error and checks residency instead of treating failed preparation as a ready
+doorstep. Existing boolean simulation/adoption callers retain their interface and
+failure reporting. Cancellation classification uses typed errors, so an unrelated
+read failure containing the word "cancel" is not hidden. No codec, generation
+algorithm, dependency, public exported API, or MSRV changes were made.
+
+Focused checks so far: all 11 previously-run background lifecycle scenarios,
+6 loading-owner scenarios, and 4 actual preparation/read-error scenarios pass;
+strict all-feature Clippy passes after the complete source change. The additional
+per-worker initialization scenario and full clean gates will be recorded below.
+New production/test modules are below 400 lines. `game/session.rs` shrank from
+1,078 to 794 lines and remains documented migration debt. Folder coverage finds
+55 maintained directories and zero missing guides. The advisory scanner still
+reports 119 files above 400, 102 above 500, and 71 clone groups; no existing debt
+has been suppressed. Native entry/cancellation and broad qualification remain
+pending, including the five historical visual-source freshness failures.

@@ -33,6 +33,8 @@ mod streaming;
 mod survival;
 mod tooltip;
 mod ui;
+mod world_loading;
+mod world_loading_ui;
 
 use crate::*;
 const GEN_BUDGET: usize = 4; // chunk generations per frame (256-tall gen is pricey)
@@ -304,8 +306,6 @@ struct UiState {
     new_world_seed: String,
     new_world_status: String,
     moderation_confirm: Option<u8>,
-    world_creation: Option<WorldCreationTask>,
-    world_entry: Option<WorldEntryTask>,
     creation_status: String,
     creation_progress: (usize, usize),
     /// Index into `reg.skills.branches` shown on the skill screen.
@@ -319,40 +319,6 @@ struct UiState {
 enum AccountTaskResult {
     Linked(Result<identity::atproto::AtprotoAccount, String>),
     Revoked(Result<(), String>),
-}
-
-enum WorldCreationEvent {
-    Progress(crate::world::WorldCreationProgress),
-    Complete {
-        name: String,
-        result: Result<(), String>,
-    },
-}
-
-struct WorldCreationTask {
-    receiver: std::sync::mpsc::Receiver<WorldCreationEvent>,
-    cancel: crate::planet_atlas::CancellationToken,
-}
-
-type PreparedWorld = (World, crate::planet::EntityPos, Vec<String>);
-type WorldEntryResult = Result<PreparedWorld, String>;
-
-enum WorldEntryEvent {
-    Progress {
-        stage: String,
-        completed: usize,
-        total: usize,
-    },
-    Complete {
-        name: String,
-        result: Box<WorldEntryResult>,
-    },
-}
-
-struct WorldEntryTask {
-    receiver: std::sync::mpsc::Receiver<WorldEntryEvent>,
-    cancel: crate::planet_atlas::CancellationToken,
-    created_here: bool,
 }
 
 impl Default for UiState {
@@ -394,8 +360,6 @@ impl Default for UiState {
             new_world_seed: String::new(),
             new_world_status: String::new(),
             moderation_confirm: None,
-            world_creation: None,
-            world_entry: None,
             creation_status: String::new(),
             creation_progress: (0, crate::planet_atlas::AtlasStage::ALL.len()),
             skills_branch: 0,
@@ -677,6 +641,7 @@ struct Game {
     /// validates the complete atlas off-thread before entry.
     world_details: std::collections::HashMap<String, String>,
     world_problems: Vec<(String, String)>,
+    loading: world_loading::WorldLoading,
     gen_pool: Option<crate::terrain_jobs::TerrainJobs>,
     mesh_pool: Option<mesh_jobs::MeshPool>,
     /// Start of this frame's streaming work (shared adopt+mesh budget).
@@ -931,6 +896,7 @@ impl Game {
             worlds: Vec::new(),
             world_details: Default::default(),
             world_problems: Vec::new(),
+            loading: world_loading::WorldLoading::default(),
             gen_pool: None,
             mesh_pool: None,
             stream_t0: std::time::Instant::now(),
