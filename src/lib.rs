@@ -341,10 +341,8 @@ pub fn run() {
         let result = (|| -> Result<(arcane_ecology::EcologyAudit, bool), String> {
             let atlas =
                 planet_atlas::PlanetAtlas::load(&world).map_err(|error| error.to_string())?;
-            let registry = registry::load(std::path::Path::new("mods"));
-            if !registry.arcane_errors.is_empty() {
-                return Err(registry.arcane_errors.join("\n"));
-            }
+            let registry = registry::load_validated(std::path::Path::new("mods"))
+                .map_err(|error| error.to_string())?;
             let geography = arcane_geography::ArcaneGeography::load(&world, &atlas)
                 .map_err(|error| error.to_string())?;
             let ecology = arcane_ecology::audit(&registry, &geography.dynamic.ecology)?;
@@ -416,10 +414,8 @@ pub fn run() {
         let result = (|| -> Result<usize, String> {
             let atlas =
                 planet_atlas::PlanetAtlas::load(&world).map_err(|error| error.to_string())?;
-            let registry = registry::load(std::path::Path::new("mods"));
-            if !registry.arcane_errors.is_empty() {
-                return Err(registry.arcane_errors.join("\n"));
-            }
+            let registry = registry::load_validated(std::path::Path::new("mods"))
+                .map_err(|error| error.to_string())?;
             let mut geography = arcane_geography::ArcaneGeography::load(&world, &atlas)
                 .map_err(|error| error.to_string())?;
             let added = geography
@@ -473,14 +469,13 @@ pub fn run() {
             eprintln!("usage: wildforge --create-world <seed> --output <directory>");
             std::process::exit(2);
         };
-        let registry = Arc::new(registry::load(std::path::Path::new("mods")));
-        if !registry.arcane_errors.is_empty() {
-            eprintln!(
-                "world creation rejected invalid arcane content:\n{}",
-                registry.arcane_errors.join("\n")
-            );
-            std::process::exit(1);
-        }
+        let registry = match registry::load_validated(std::path::Path::new("mods")) {
+            Ok(registry) => Arc::new(registry),
+            Err(error) => {
+                eprintln!("world creation rejected: {error}");
+                std::process::exit(1);
+            }
+        };
         let content_hash = planet_atlas::genesis_content_hash(std::path::Path::new("mods"));
         let cancel = planet_atlas::CancellationToken::default();
         eprintln!("world: seed {seed}, output {}", output.display());
@@ -574,7 +569,13 @@ pub fn run() {
         } else {
             world_arg
         };
-        let reg = Arc::new(registry::load(std::path::Path::new("mods")));
+        let reg = match registry::load_validated(std::path::Path::new("mods")) {
+            Ok(registry) => Arc::new(registry),
+            Err(error) => {
+                eprintln!("entry validation failed: {error}");
+                std::process::exit(1);
+            }
+        };
         let mut world = match World::load_or_create(world_path.clone(), reg) {
             Ok(world) => world,
             Err(error) => {

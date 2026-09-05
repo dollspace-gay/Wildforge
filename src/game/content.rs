@@ -1,6 +1,28 @@
 //! Texture-pack application and hot-reload orchestration.
 
-use super::*;
+use std::sync::Arc;
+use super::{ContentRuntime, Game, script_mod_dirs};
+use crate::{atlas, registry, visual_capture, worldgen};
+use crate::audio::Sfx;
+use crate::inventory::ItemStack;
+use crate::registry::{Registry, ItemId};
+
+#[derive(Debug, thiserror::Error)]
+pub(super) enum RuntimeContentError {
+    #[error(transparent)]
+    Registry(#[from] registry::ContentErrors),
+    #[error(transparent)]
+    Scripts(#[from] crate::script::ScriptErrors),
+}
+
+impl ContentRuntime {
+    /// The menu may inspect a rejected pack; world entry may not activate it.
+    pub(super) fn validate(&self) -> Result<(), RuntimeContentError> {
+        self.reg.validate()?;
+        self.scripts.validate_loaded()?;
+        Ok(())
+    }
+}
 
 impl Game {
     /// The pack id in effect: the dev env override, else the config choice.
@@ -54,79 +76,41 @@ impl Game {
         self.config.save();
     }
 
+    fn report_reload_errors(&mut self, errors: &[String]) {
+        for error in errors.iter().take(3) {
+            eprintln!("mods: reload refused: {error}");
+            self.toast(format!("reload refused: {error}"));
+        }
+    }
+
     /// Hot reload: rebuild the registry + atlas from disk, remap the live
     /// world and inventories by string id, recompile scripts.
     pub(super) fn reload_mods(&mut self, forced: bool) {
         let old = self.content.reg.clone();
-        let new_reg = Arc::new(registry::load(std::path::Path::new("mods")));
-        let mut migration_errors = new_reg.material_errors.clone();
+        let new_reg = match registry::load_validated(std::path::Path::new("mods")) {
+            Ok(reg) => Arc::new(reg),
+            Err(errors) => {
+                self.report_reload_errors(errors.diagnostics());
+                return;
+            }
+        };
         if self.in_world {
-            for old_item in &old.items {
-                match new_reg.item_id(&old_item.name) {
-                    Some(item) if new_reg.item(item).materials != old_item.materials => {
-                        migration_errors.push(format!(
-                            "{} changes live-stack material identity; a migration is required",
-                            old_item.name
-                        ));
-                    }
-                    None if !old_item.materials.is_empty() => migration_errors.push(format!(
-                        "{} contains finite material and cannot be removed from a live world",
-                        old_item.name
-                    )),
-                    _ => {}
-                }
-            }
-            for old_block in &old.blocks {
-                match new_reg.block_id(&old_block.name) {
-                    Some(block) if new_reg.block(block).materials != old_block.materials => {
-                        migration_errors.push(format!(
-                            "{} changes live-voxel material identity; a migration is required",
-                            old_block.name
-                        ));
-                    }
-                    None if !old_block.materials.is_empty() => migration_errors.push(format!(
-                        "{} contains finite material and requires a persistent placeholder",
-                        old_block.name
-                    )),
-                    _ => {}
-                }
-            }
-        }
-        if !migration_errors.is_empty() {
-            for error in migration_errors.iter().take(3) {
-                eprintln!("mods: reload refused: {error}");
-                self.toast(format!("reload refused: {error}"));
-            }
-            return;
-        }
-        // Quest defs (spec 3.3): an accepted quest may never be removed from
-        // a live world, or its progress is orphaned. State lives in the KV
-        // by quest id; check every `quest_<id>` marker against the new defs.
-        if self.in_world {
-            let accepted: Vec<String> = self
-                .content
-                .scripts
-                .kv
-                .borrow()
-                .values()
-                .flat_map(|m| m.keys())
-                .filter_map(|k| k.strip_prefix("quest_").map(str::to_string))
+            let accepted: Vec<String> = self.content.scripts.kv.borrow().values()
+                .flat_map(|values| values.keys())
+                .filter_map(|key| key.strip_prefix("quest_").map(str::to_string))
                 .collect();
-            for id in accepted {
-                if !new_reg.quests.iter().any(|q| q.id == id) {
-                    migration_errors.push(format!(
-                        "{id} is accepted in this world and its quest def cannot be removed"
-                    ));
-                }
+            if let Err(errors) = new_reg.validate_reload_from(&old, &accepted) {
+                self.report_reload_errors(errors.diagnostics());
+                return;
             }
         }
-        if !migration_errors.is_empty() {
-            for error in migration_errors.iter().take(3) {
-                eprintln!("mods: reload refused: {error}");
-                self.toast(format!("reload refused: {error}"));
+        let prepared_scripts = match self.content.scripts.prepare_mods(&script_mod_dirs(&new_reg)) {
+            Ok(scripts) => scripts,
+            Err(errors) => {
+                self.report_reload_errors(errors.diagnostics());
+                return;
             }
-            return;
-        }
+        };
         let mut atlas = atlas::build_atlas(
             &new_reg.tex_files,
             &atlas::pack_chain(&self.active_pack_id()),
@@ -204,38 +188,16 @@ impl Game {
         {
             eprintln!("materials: could not persist hot-reload manifest: {error}");
         }
-        self.content.scripts.load_mods(&script_mod_dirs(&new_reg));
+        self.content.scripts.install_prepared(prepared_scripts);
 
-        let errors: Vec<String> = new_reg
-            .mods
-            .iter()
-            .filter_map(|m| m.error.clone())
-            .chain(
-                self.content
-                    .scripts
-                    .mods
-                    .iter()
-                    .filter_map(|m| m.error.clone()),
-            )
-            .collect();
-        if errors.is_empty() {
-            eprintln!(
-                "mods: reloaded ({} blocks, {} items, {} recipes)",
-                new_reg.blocks.len(),
-                new_reg.items.len(),
-                new_reg.recipes.len()
-            );
-            self.toast(format!(
-                "mods reloaded ({} blocks, {} items, {} recipes)",
-                new_reg.blocks.len(),
-                new_reg.items.len(),
-                new_reg.recipes.len()
-            ));
-        } else {
-            for e in errors.iter().take(3) {
-                self.toast(format!("mod error: {e}"));
-            }
-        }
+        eprintln!(
+            "mods: reloaded ({} blocks, {} items, {} recipes)",
+            new_reg.blocks.len(), new_reg.items.len(), new_reg.recipes.len()
+        );
+        self.toast(format!(
+            "mods reloaded ({} blocks, {} items, {} recipes)",
+            new_reg.blocks.len(), new_reg.items.len(), new_reg.recipes.len()
+        ));
         if forced {
             self.sfx(Sfx::Click);
         }

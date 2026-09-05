@@ -98,15 +98,8 @@ pub(crate) fn install(
         }
         std::fs::write(path, bytes)?;
     }
-    let mut candidate = registry::load(&staging);
-    let errors: Vec<_> = candidate.mods.iter().filter_map(|info| info.error.as_ref())
-        .chain(candidate.material_errors.iter())
-        .chain(candidate.arcane_errors.iter())
-        .cloned()
-        .collect();
-    if !errors.is_empty() {
-        return Err(TransferError::InvalidRegistry(errors.join("; ")));
-    }
+    let mut candidate = registry::load_validated(&staging)
+        .map_err(|error| TransferError::InvalidRegistry(error.to_string()))?;
 
     let previous = match std::fs::symlink_metadata(cache) {
         Ok(metadata) if metadata.is_dir() => {

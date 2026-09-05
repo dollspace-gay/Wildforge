@@ -690,6 +690,9 @@ pub fn create_world_atomic(
     cancel: &crate::planet_atlas::CancellationToken,
     mut progress: impl FnMut(WorldCreationProgress),
 ) -> std::io::Result<()> {
+    reg.validate().map_err(|error| {
+        std::io::Error::new(std::io::ErrorKind::InvalidData, error)
+    })?;
     if destination.exists() {
         return Err(std::io::Error::new(
             std::io::ErrorKind::AlreadyExists,

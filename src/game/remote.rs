@@ -78,6 +78,11 @@ impl Game {
     }
 
     pub(super) fn join_server(&mut self, addr: std::net::SocketAddr) {
+        if let Err(error) = self.content.reg.validate() {
+            eprintln!("join: {error}");
+            self.multiplayer.join_status = format!("FAILED: {error}").to_uppercase();
+            return;
+        }
         let (name, _) = self.selected_multiplayer_name();
         let hash = net::content_hash(std::path::Path::new("mods"));
         match net::Client::connect(

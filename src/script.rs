@@ -5,6 +5,9 @@
 //! the KV store (`storage_set`/`storage_get`), which is owned by the engine,
 //! survives hot reloads, and is saved with the world.
 
+mod loading;
+pub use loading::{PreparedScripts, ScriptErrors};
+
 use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
 use std::path::Path;
@@ -364,38 +367,6 @@ impl ScriptHost {
             kv,
             current,
         }
-    }
-
-    /// Compile `main.rhai` for each mod dir. On error, keeps the previous
-    /// AST for that mod (if any) so a typo doesn't kill a session.
-    pub fn load_mods(&mut self, mods: &[(String, std::path::PathBuf)]) {
-        let mut next: Vec<ScriptMod> = Vec::new();
-        for (id, dir) in mods {
-            let path = dir.join("main.rhai");
-            if !path.exists() {
-                continue;
-            }
-            let old = self.mods.iter_mut().find(|m| &m.id == id);
-            match std::fs::read_to_string(&path)
-                .map_err(|e| e.to_string())
-                .and_then(|src| self.engine.compile(&src).map_err(|e| e.to_string()))
-            {
-                Ok(ast) => next.push(ScriptMod {
-                    id: id.clone(),
-                    ast: Some(ast),
-                    error: None,
-                }),
-                Err(e) => {
-                    let kept = old.and_then(|m| m.ast.take());
-                    next.push(ScriptMod {
-                        id: id.clone(),
-                        ast: kept,
-                        error: Some(format!("{id}/main.rhai: {e}")),
-                    });
-                }
-            }
-        }
-        self.mods = next;
     }
 
     /// Dispatch an event to every mod that defines it. Returns false if any

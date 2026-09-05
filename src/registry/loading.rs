@@ -3,7 +3,7 @@
 use super::{ModInfo, Registry, RetrogenPolicy, WORLD_API_VERSION};
 use super::linking::build;
 use super::schema::{AliasesFile, AnimalsFile, ArcaneFile, BlocksFile, DialogueFile, FeaturesFile, ItemsFile, ModToml, ModesFile, NestFileToml, NpcsFile, PiecesFile, QuestsFile, RawMod, RecipesFile, StructuresFile, TagsFile};
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 const BASE_BLOCKS: &str = include_str!("../../base/blocks.toml");
 const BASE_ITEMS: &str = include_str!("../../base/items.toml");
@@ -34,38 +34,38 @@ fn parse_mod_dir(dir: &Path) -> Result<RawMod, String> {
              {WORLD_API_VERSION} (planet positions use face/u/y/v)"
         ));
     }
-    let read = |f: &str| std::fs::read_to_string(dir.join(f)).unwrap_or_default();
+    let read = |name: &str| super::reading::optional(dir, name).map(Option::unwrap_or_default);
     let blocks: BlocksFile =
-        toml::from_str(&read("blocks.toml")).map_err(|e| format!("blocks.toml: {e}"))?;
+        toml::from_str(&read("blocks.toml")?).map_err(|e| format!("blocks.toml: {e}"))?;
     let items: ItemsFile =
-        toml::from_str(&read("items.toml")).map_err(|e| format!("items.toml: {e}"))?;
+        toml::from_str(&read("items.toml")?).map_err(|e| format!("items.toml: {e}"))?;
     let recipes: RecipesFile =
-        toml::from_str(&read("recipes.toml")).map_err(|e| format!("recipes.toml: {e}"))?;
+        toml::from_str(&read("recipes.toml")?).map_err(|e| format!("recipes.toml: {e}"))?;
     let features: FeaturesFile =
-        toml::from_str(&read("features.toml")).map_err(|e| format!("features.toml: {e}"))?;
+        toml::from_str(&read("features.toml")?).map_err(|e| format!("features.toml: {e}"))?;
     let tags: TagsFile =
-        toml::from_str(&read("tags.toml")).map_err(|e| format!("tags.toml: {e}"))?;
+        toml::from_str(&read("tags.toml")?).map_err(|e| format!("tags.toml: {e}"))?;
     let aliases: AliasesFile =
-        toml::from_str(&read("aliases.toml")).map_err(|e| format!("aliases.toml: {e}"))?;
+        toml::from_str(&read("aliases.toml")?).map_err(|e| format!("aliases.toml: {e}"))?;
     let animals: AnimalsFile =
-        toml::from_str(&read("animals.toml")).map_err(|e| format!("animals.toml: {e}"))?;
+        toml::from_str(&read("animals.toml")?).map_err(|e| format!("animals.toml: {e}"))?;
     let npcs: NpcsFile =
-        toml::from_str(&read("npcs.toml")).map_err(|e| format!("npcs.toml: {e}"))?;
+        toml::from_str(&read("npcs.toml")?).map_err(|e| format!("npcs.toml: {e}"))?;
     let dialogue: DialogueFile =
-        toml::from_str(&read("dialogue.toml")).map_err(|e| format!("dialogue.toml: {e}"))?;
+        toml::from_str(&read("dialogue.toml")?).map_err(|e| format!("dialogue.toml: {e}"))?;
     let quests: QuestsFile =
-        toml::from_str(&read("quests.toml")).map_err(|e| format!("quests.toml: {e}"))?;
+        toml::from_str(&read("quests.toml")?).map_err(|e| format!("quests.toml: {e}"))?;
     let structures: StructuresFile =
-        toml::from_str(&read("structures.toml")).map_err(|e| format!("structures.toml: {e}"))?;
+        toml::from_str(&read("structures.toml")?).map_err(|e| format!("structures.toml: {e}"))?;
     let pieces: PiecesFile =
-        toml::from_str(&read("pieces.toml")).map_err(|e| format!("pieces.toml: {e}"))?;
+        toml::from_str(&read("pieces.toml")?).map_err(|e| format!("pieces.toml: {e}"))?;
     let arcane: ArcaneFile =
-        toml::from_str(&read("arcane.toml")).map_err(|e| format!("arcane.toml: {e}"))?;
+        toml::from_str(&read("arcane.toml")?).map_err(|e| format!("arcane.toml: {e}"))?;
     if arcane.schema_version.is_some_and(|version| version != 1) {
         return Err("arcane.toml: schema_version must be 1".into());
     }
     let workings: crate::workings::WorkingsFile =
-        toml::from_str(&read("workings.toml")).map_err(|e| format!("workings.toml: {e}"))?;
+        toml::from_str(&read("workings.toml")?).map_err(|e| format!("workings.toml: {e}"))?;
     if workings
         .schema_version
         .is_some_and(|version| version != crate::workings::WORKINGS_SCHEMA_VERSION)
@@ -75,7 +75,7 @@ fn parse_mod_dir(dir: &Path) -> Result<RawMod, String> {
             crate::workings::WORKINGS_SCHEMA_VERSION
         ));
     }
-    let preparations: crate::alchemy::PreparationsFile = toml::from_str(&read("preparations.toml"))
+    let preparations: crate::alchemy::PreparationsFile = toml::from_str(&read("preparations.toml")?)
         .map_err(|e| format!("preparations.toml: {e}"))?;
     if preparations
         .schema_version
@@ -87,14 +87,14 @@ fn parse_mod_dir(dir: &Path) -> Result<RawMod, String> {
         ));
     }
     let modes: ModesFile =
-        toml::from_str(&read("modes.toml")).map_err(|e| format!("modes.toml: {e}"))?;
-    let skills = if dir.join("skills.toml").exists() {
-        Some(crate::skills::parse_skills(&read("skills.toml"), &m.id)?)
+        toml::from_str(&read("modes.toml")?).map_err(|e| format!("modes.toml: {e}"))?;
+    let skills = if let Some(text) = super::reading::optional(dir, "skills.toml")? {
+        Some(crate::skills::parse_skills(&text, &m.id)?)
     } else {
         None
     };
-    let machines = if dir.join("machines.toml").exists() {
-        let parsed: crate::machines::RawMachineToml = toml::from_str(&read("machines.toml"))
+    let machines = if let Some(text) = super::reading::optional(dir, "machines.toml")? {
+        let parsed: crate::machines::RawMachineToml = toml::from_str(&text)
             .map_err(|error| format!("machines.toml: {error}"))?;
         if parsed
             .schema_version
@@ -109,16 +109,16 @@ fn parse_mod_dir(dir: &Path) -> Result<RawMod, String> {
     } else {
         None
     };
-    let nests = if dir.join("nests.toml").exists() {
+    let nests = if let Some(text) = super::reading::optional(dir, "nests.toml")? {
         Some(
-            toml::from_str::<NestFileToml>(&read("nests.toml"))
+            toml::from_str::<NestFileToml>(&text)
                 .map_err(|error| format!("nests.toml: {error}"))?,
         )
     } else {
         None
     };
-    let screens = if dir.join("screens.toml").exists() {
-        let parsed: crate::screens::RawScreensToml = toml::from_str(&read("screens.toml"))
+    let screens = if let Some(text) = super::reading::optional(dir, "screens.toml")? {
+        let parsed: crate::screens::RawScreensToml = toml::from_str(&text)
             .map_err(|error| format!("screens.toml: {error}"))?;
         if parsed
             .schema_version
@@ -140,7 +140,7 @@ fn parse_mod_dir(dir: &Path) -> Result<RawMod, String> {
                 .into(),
         );
     }
-    let has_script = dir.join("main.rhai").exists();
+    let has_script = dir.join("main.rhai").try_exists().map_err(|error| format!("main.rhai: {error}"))?;
     Ok(RawMod {
         info: ModInfo {
             id: m.id.clone(),
@@ -254,17 +254,13 @@ fn base_mod() -> RawMod {
 }
 
 /// Load base + all mods under `mods_dir` into a fresh registry.
-/// Individual bad mods are skipped with their error recorded.
+/// Individual bad mods are skipped with their error recorded. Runtime publication
+/// must call `Registry::validate` or use `load_validated` instead.
 pub fn load(mods_dir: &Path) -> Registry {
     let mut raws = vec![base_mod()];
     let mut failed: Vec<ModInfo> = Vec::new();
-    if let Ok(rd) = std::fs::read_dir(mods_dir) {
-        let mut dirs: Vec<PathBuf> = rd
-            .flatten()
-            .map(|e| e.path())
-            .filter(|p| p.is_dir() && p.join("mod.toml").exists())
-            .collect();
-        dirs.sort();
+    match super::reading::mod_dirs(mods_dir) {
+        Ok(dirs) => {
         for dir in dirs {
             match parse_mod_dir(&dir) {
                 Ok(r) => raws.push(r),
@@ -279,6 +275,16 @@ pub fn load(mods_dir: &Path) -> Registry {
                 }),
             }
         }
+    }
+        Err(error) => failed.push(ModInfo {
+            id: "mods".into(),
+            name: "Mod directory".into(),
+            version: String::new(),
+            path: Some(mods_dir.to_path_buf()),
+            has_script: false,
+            retrogen: None,
+            error: Some(format!("could not read mod directory: {error}")),
+        }),
     }
 
     // Topological order by depends (base first; unknown deps = load error).
@@ -375,4 +381,3 @@ impl RemoveStable for Vec<RawMod> {
         std::mem::replace(&mut self[idx], dummy)
     }
 }
-

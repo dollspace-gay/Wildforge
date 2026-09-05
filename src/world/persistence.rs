@@ -23,24 +23,9 @@ impl World {
         cancel: &crate::planet_atlas::CancellationToken,
     ) -> std::io::Result<World> {
         super::preparation::check_cancelled(cancel)?;
-        if !reg.material_errors.is_empty() {
-            return Err(std::io::Error::new(
-                std::io::ErrorKind::InvalidData,
-                format!(
-                    "content material accounting failed:\n{}",
-                    reg.material_errors.join("\n")
-                ),
-            ));
-        }
-        if !reg.arcane_errors.is_empty() {
-            return Err(std::io::Error::new(
-                std::io::ErrorKind::InvalidData,
-                format!(
-                    "content arcane accounting failed:\n{}",
-                    reg.arcane_errors.join("\n")
-                ),
-            ));
-        }
+        reg.validate().map_err(|error| {
+            std::io::Error::new(std::io::ErrorKind::InvalidData, error)
+        })?;
         let mut existing = load_world_meta(&save_dir)?;
         storage::PaletteStore::validate_saved(&save_dir)?;
         let seed = existing.as_ref().map(|meta| meta.seed).unwrap_or_else(|| {

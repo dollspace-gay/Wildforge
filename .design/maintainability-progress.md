@@ -1171,3 +1171,29 @@ These corrections are separate from the preceding structural extraction. Tests
 are deferred: final cases must include duplicate hunters at the end/middle of a
 roster, later NPC companions, first-definition retention, and skill failures
 through both content inspection and validated startup/reload.
+
+
+## Complete content publication gate (implementation, unverified)
+
+`registry/publication.rs` now owns aggregate provider/material/arcane diagnostics
+and live material/accepted-quest compatibility checks. Runtime loading returns
+a validated candidate or an error; content inspection retains rejected records
+for the menu. World opening and creation validate before storage/generation,
+and guest entry/content transfer, dedicated startup, and content-dependent CLI
+operations use the shared gate. Missing optional files remain allowed; unreadable
+files or directory scans now produce rejected-content diagnostics instead of
+silently omitting content.
+
+Reload compiles its whole script set against the existing sandbox before changing
+the registry, atlas, inventory, or world. A failed candidate leaves the running
+ASTs and content intact. Successful installation retains KV and queued commands.
+The existing per-mod previous-AST fallback API remains for its other callers.
+Local world entry checks startup script errors while allowing menu inspection.
+The new `script/` directory includes local guides. Ledger persistence failures
+after an accepted live remap remain reported by the existing save path.
+
+No tests, builds, formatting, or lint gates run for this checkpoint. Final cases
+must cover every error family, failed optional-file/directory reads, no save or
+atlas generation on rejected startup, invalid reload preserving all live state,
+script compilation/missing-file failure, retained KV/command order, successful
+remap, and both guest entry paths. Implementation does not establish acceptance.

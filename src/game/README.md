@@ -1,5 +1,11 @@
 <!-- wildforge:guide -->
 
+Content inspection may retain a rejected pack on the menu. Local world entry
+checks its registry and compiled scripts before starting a worker; guest entry
+checks its local registry. Reload prepares validated definitions and scripts,
+checks live material/quest compatibility, then replaces the active content.
+Preparation failure leaves the current registry, scripts, and inventories intact.
+
 # Graphical application
 
 The windowed app coordinates input, UI, sessions, streaming, actions, and presentation. Existing broad Game access is being replaced with cohesive owners.

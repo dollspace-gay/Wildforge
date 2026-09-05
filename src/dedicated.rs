@@ -4,7 +4,13 @@ use super::*;
 
 /// Headless dedicated host: same binary, no window. `--server <world>`.
 pub(super) fn run_headless_server(world_name: &str) {
-    let reg = Arc::new(registry::load(std::path::Path::new("mods")));
+    let reg = match registry::load_validated(std::path::Path::new("mods")) {
+        Ok(reg) => Arc::new(reg),
+        Err(error) => {
+            eprintln!("server: {error}");
+            std::process::exit(1);
+        }
+    };
     let mut world =
         match World::load_or_create(PathBuf::from("saves").join(world_name), reg.clone()) {
             Ok(world) => world,

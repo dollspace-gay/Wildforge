@@ -15,6 +15,11 @@ impl Game {
         if self.loading.is_active() {
             return;
         }
+        if let Err(error) = self.content.validate() {
+            eprintln!("world: entry refused: {error}");
+            self.toast(format!("Could not enter world: {error}"));
+            return;
+        }
         // Capture fixtures may pin an exact atlas site instead of the common homeland.
         let override_wanted = std::env::var("WILDFORGE_SPAWN").ok().and_then(|s| {
             let mut fields = s.split(',').map(str::trim);
@@ -43,6 +48,11 @@ impl Game {
 
     pub(super) fn create_new_world(&mut self) {
         if self.loading.is_active() {
+            return;
+        }
+        if let Err(error) = self.content.validate() {
+            eprintln!("world: creation refused: {error}");
+            self.ui_state.new_world_status = error.to_string().to_uppercase();
             return;
         }
         let Ok(seed) = self.ui_state.new_world_seed.parse::<u32>() else {

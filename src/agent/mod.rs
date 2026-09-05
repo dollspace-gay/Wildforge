@@ -126,7 +126,7 @@ impl Agent {
         let identity = identity::LocalIdentity::load_or_create(&id_dir)
             .map_err(|e| format!("identity: {e}"))?;
         let mods_dir = PathBuf::from("mods");
-        let reg = Arc::new(registry::load(&mods_dir));
+        let reg = Arc::new(registry::load_validated(&mods_dir).map_err(|error| error.to_string())?);
         let hash = net::content_hash(&mods_dir);
         let client = net::Client::connect(addr, name.to_string(), hash, 0, &identity, None)
             .map_err(|e| format!("connect: {e}"))?;
