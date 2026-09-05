@@ -436,3 +436,43 @@ New production/test modules are below 400 lines. `game/session.rs` shrank from
 reports 119 files above 400, 102 above 500, and 71 clone groups; no existing debt
 has been suppressed. Native entry/cancellation and broad qualification remain
 pending, including the five historical visual-source freshness failures.
+
+## Clean loading-owner gates and native cancellation proof
+
+The clean `b2d1901` checkpoint passes format, strict all-target/all-feature Clippy,
+Rust 1.95 MSRV, all 15 serial agent scenarios, doctests (zero defined), release
+build, 28 Python scenarios, folder guidance, advisory analysis, and whitespace
+checks. The full subsystem run has **1,069 passes, 24 ignored, and five failures**;
+the failures are exclusively the existing visual qualification source-fingerprint
+checks. This run includes all 12 background owner scenarios, 6 loading-owner
+scenarios, and 4 preparation/read-error scenarios. Exact commands, clean revision,
+timings, and logs are in `target/maintainability/loading-owner-gates/results.json`.
+No stale visual manifest was rewritten to turn a failure into a pass.
+
+Three native scenarios ran from disposable working directories with cwd-local
+identities and configuration. The reproducible script, invocations, executable
+SHA-256, logs, process IDs, and results are retained under
+`target/maintainability/loading-owner-native/`:
+
+- Existing-world entry produced a settled 1280x720 frame on the NVIDIA RTX 5070 Ti
+  Laptop GPU using Vulkan. It completed in 15.602 seconds and records 65 resident
+  chunks, 63 opaque GPU meshes, 30 water meshes, and 115 settled frames. Raw
+  capture conversion and deterministic report validation both pass; the inspected
+  PNG contains the woodland, terrain, shadows, and in-world HUD.
+- Escape during missing-world entry cancelled atlas preparation. All observed
+  `world-loading`/homeland threads were gone after 3.054 seconds, the process was
+  still alive, and no destination world was published. A graceful window-quit
+  request then produced exit code zero.
+- A graceful window-quit request while `world-loading` was still present produced
+  exit code zero with no published world. The entire startup/close scenario took
+  1.983 seconds. Automatic screenshot exit was disabled for both cancellation
+  scenarios, so they exercise the normal window/owner Drop path.
+
+All three processes exited and are absent from `/proc`. The original playtest
+save's 59 files (294,610,196 bytes) have identical before/after SHA-256 inventories.
+These timings are individual native lifecycle observations, not paired cold/warm
+or travel benchmarks. The screenshot path itself still uses `process::exit` and
+therefore does not establish graceful capture shutdown. Dedicated shutdown,
+in-world save-failure/close and session-switch scenarios, content/palette worker
+invalidation, controlled performance evidence, five complete visual
+requalifications, and the remaining Phase 3–8 ownership migrations stay open.
