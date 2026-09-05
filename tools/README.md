@@ -11,6 +11,11 @@ build prerequisites and complete checks. Commands below run from the repository 
 
 Use explicit input/output paths and preserve user data. Keep shared verification rules in one owner and report incomplete scans/runs as failures.
 
+`run_gameplay_proofs.py` runs real client interaction and guest-entry scenarios
+on a hardware Vulkan adapter with disposable state. Its optional `--output`
+argument retains the native screenshot, scenario report, exact test-binary hash,
+and exit status in a new directory. Existing output directories are refused.
+
 ## Focused checks
 
 ```sh

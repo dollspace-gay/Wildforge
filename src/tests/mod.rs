@@ -22,6 +22,7 @@ mod climate_audit;
 mod dross;
 mod dungeon;
 mod ecology;
+pub(crate) mod fixtures;
 mod gameplay;
 mod geology;
 mod hearts;

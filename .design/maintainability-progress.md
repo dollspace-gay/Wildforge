@@ -911,3 +911,26 @@ Logs use `target/maintainability/client-session-replica-*`. New replica and test
 modules contain 107 and 247 lines; the session owner contains 179 lines.
 World-domain authority separation, shared events/outgoing requests, content
 transfer failures, and new native guest/full GPU qualification remain open.
+
+## Shared host fixture and native guest proof (in verification)
+
+The deterministic QUIC stage moved from the oversized agent test module into
+`src/tests/fixtures/host.rs`, with explicit ownership of its simulation thread
+and transport. Existing agent tests and native graphical tests share it. The
+stage's terrain, seed, spawn, wildlife/weather policy, and simulation cadence
+are unchanged. The two new maintained directories include local guides.
+
+The hardware gameplay harness now includes graphical guest admission, a real
+uploaded entry mesh, a second ordinary agent, shared roster/chat, movement
+through the graphical frame update, receipt of movement by the host, a renderer
+screenshot, and normal guest disconnect/worker release. The runner's optional
+`--output` preserves the scenario report, screenshot, exact binary SHA-256, and
+exit status in a new directory. It refuses an existing destination. Only these
+proof artifacts are copied; disposable identities and saves are not exported.
+
+Preflight passes: strict all-target/all-feature Clippy, Rust 1.95 checking,
+19 serial agent scenarios, all 35 Python tool tests, format, advisory analysis,
+and 64-directory guidance coverage. Logs use
+`target/maintainability/client-session-native-*`. The native scenario has not
+yet run at this checkpoint; it follows from a clean committed source. This
+functional stage proof does not replace production GPU/performance qualification.

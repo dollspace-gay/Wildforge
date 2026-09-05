@@ -1,6 +1,5 @@
 //! Entry failures are observable through the production guest and real wire.
 
-use std::sync::atomic::Ordering;
 use std::time::{Duration, Instant};
 
 use super::{Agent, TestHost, pump_until};
@@ -10,8 +9,7 @@ use crate::planet::EntityPos;
 pub(super) fn paused_host(tag: &str) -> (TestHost, Agent) {
     let mut host = TestHost::start(tag);
     let agent = Agent::connect_for_test(host.addr, tag).expect("fixture guest joins");
-    host.stop.store(true, Ordering::Relaxed);
-    host.handle.take().unwrap().join().expect("host pump joins");
+    host.pause();
     // Simulation stops, but the ordinary owned QUIC transport stays alive.
     (host, agent)
 }

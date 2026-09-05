@@ -5,6 +5,9 @@ use super::*;
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use winit::platform::x11::EventLoopBuilderExtX11;
 
+#[path = "gameplay_proofs/guest.rs"]
+mod guest;
+
 #[derive(Default)]
 struct ProofApp {
     failures: Vec<String>,
@@ -27,6 +30,11 @@ impl ApplicationHandler for ProofApp {
                 .expect("create real game window"),
         );
         let mut game = Game::new(window);
+        assert!(
+            game.renderer.adapter_hardware,
+            "the proof requires a hardware GPU"
+        );
+        assert_eq!(game.renderer.adapter_backend, "Vulkan");
         for (name, item, held, staged, accepted) in [
             ("whole stack", "base:clay_ball", 32, 0, 32),
             ("remaining appetite", "base:clay_ball", 16, 60, 4),
@@ -40,6 +48,9 @@ impl ApplicationHandler for ProofApp {
             {
                 self.failures.push(name.to_string());
             }
+        }
+        if catch_unwind(AssertUnwindSafe(|| guest::run(&mut game))).is_err() {
+            self.failures.push("native guest entry".into());
         }
         event_loop.exit();
     }
@@ -135,7 +146,7 @@ fn depot_case(game: &mut Game, name: &str, item_name: &str, held: u32, staged: u
 
 #[test]
 #[ignore = "requires a real Vulkan GPU and X11 display; run tools/run_gameplay_proofs.py"]
-fn real_depot_right_clicks_conserve_goods() {
+fn real_client_interactions_and_guest_entry() {
     assert!(
         PathBuf::from("mods/proof/mod.toml").exists(),
         "use the isolated gameplay proof runner"
