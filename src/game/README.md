@@ -10,6 +10,12 @@ finished meshes, and uploads them through the existing renderer. Startup/runtime
 worker failures reach the entry screen or pause notification; native GPU proof
 is required in addition to worker buffer/lifecycle tests.
 
+`world_loading.rs` owns one creation or entry operation until its worker joins.
+`world_loading_work.rs` prepares a private world; `world_loading_ui.rs` maps
+requests and terminal outcomes to screens and session adoption. UI state holds
+only presentation status. Requested registry identity guards entry across content
+reload, separately from placeholder definitions restored into the loaded world.
+
 Start with `actions.rs`, `app.rs`, `browser.rs`, `capture.rs`, `combat.rs`, `containers.rs`, `content.rs`, `demos.rs`. See the [repository overview](../../README.md) for
 build prerequisites and complete checks. Commands below run from the repository root.
 

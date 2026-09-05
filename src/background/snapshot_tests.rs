@@ -191,3 +191,52 @@ fn zero_workers_or_capacity_are_rejected_at_startup() {
         assert_eq!(result.err().unwrap().kind(), io::ErrorKind::InvalidInput);
     }
 }
+
+#[test]
+fn initialization_is_once_per_worker_and_failure_is_supervised() {
+    struct Context(Arc<AtomicUsize>);
+    impl Drop for Context {
+        fn drop(&mut self) {
+            self.0.fetch_add(1, Ordering::SeqCst);
+        }
+    }
+    let dropped = Arc::new(AtomicUsize::new(0));
+    let worker_dropped = Arc::clone(&dropped);
+    let (initialized, ready) = channel();
+    let mut pool = SnapshotJobs::with_initializer("private-context", 2, 2, move || {
+        let context = Context(Arc::clone(&worker_dropped));
+        initialized.send(()).unwrap();
+        move |value: u32| {
+            let _keep_context = &context;
+            value * 3
+        }
+    })
+    .unwrap();
+    ready.recv_timeout(Duration::from_secs(10)).unwrap();
+    ready.recv_timeout(Duration::from_secs(10)).unwrap();
+    assert!(pool.request(2));
+    assert_eq!(receive(&mut pool), 6);
+    pool.shutdown().unwrap();
+    assert_eq!(dropped.load(Ordering::SeqCst), 2);
+
+    fn broken_initializer() -> fn(u32) -> u32 {
+        panic!("fixture context initialization panic");
+    }
+    let mut pool =
+        SnapshotJobs::with_initializer("initialization", 1, 1, broken_initializer).unwrap();
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while pool.failure().is_none() {
+        assert!(
+            Instant::now() < deadline,
+            "initializer panic was not reported"
+        );
+        std::thread::yield_now();
+    }
+    assert!(
+        pool.failure()
+            .unwrap()
+            .to_string()
+            .contains("fixture context initialization panic")
+    );
+    assert!(pool.shutdown().is_err());
+}

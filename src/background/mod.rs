@@ -1,6 +1,8 @@
 //! Native thread boundaries shared by specialized background work owners.
 
+mod operation;
 mod snapshots;
+pub(crate) use operation::{Operation, OperationUpdate, Progress};
 pub(crate) use snapshots::SnapshotJobs;
 
 use std::io;
@@ -20,15 +22,15 @@ pub(crate) fn spawn(name: String, task: Task) -> io::Result<JoinHandle<()>> {
 pub(crate) fn run_guarded(name: &str, task: impl FnOnce() -> io::Result<()>) -> io::Result<()> {
     match std::panic::catch_unwind(std::panic::AssertUnwindSafe(task)) {
         Ok(result) => result,
-        Err(payload) => {
-            let detail = payload
-                .downcast_ref::<String>()
-                .map(String::as_str)
-                .or_else(|| payload.downcast_ref::<&str>().copied())
-                .unwrap_or("non-string panic payload");
-            Err(io::Error::other(format!(
-                "{name} worker panicked: {detail}"
-            )))
-        }
+        Err(payload) => Err(panic_error(name, payload.as_ref())),
     }
+}
+
+fn panic_error(name: &str, payload: &(dyn std::any::Any + Send)) -> io::Error {
+    let detail = payload
+        .downcast_ref::<String>()
+        .map(String::as_str)
+        .or_else(|| payload.downcast_ref::<&str>().copied())
+        .unwrap_or("non-string panic payload");
+    io::Error::other(format!("{name} worker panicked: {detail}"))
 }

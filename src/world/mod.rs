@@ -45,6 +45,7 @@ mod persistence;
 pub(crate) mod pieces;
 mod power;
 pub(crate) mod power_draw;
+mod preparation;
 #[cfg_attr(test, allow(unused))]
 #[path = "storage/region.rs"]
 pub(crate) mod region;
@@ -801,8 +802,9 @@ fn publish_created_world(
             geography
                 .write_new(&temporary)
                 .map_err(std::io::Error::other)?;
-            let mut world = World::load_or_create(temporary.clone(), Arc::clone(reg))?;
-            world.prepare_common_spawn(|stage, completed, total| {
+            let mut world =
+                World::load_or_create_cancellable(temporary.clone(), Arc::clone(reg), cancel)?;
+            world.prepare_common_spawn_cancellable(cancel, |stage, completed, total| {
                 progress(WorldCreationProgress::Homeland {
                     stage: stage.to_owned(),
                     completed,

@@ -4,8 +4,9 @@
 //! windowed hosts, and dedicated hosts must all begin at the same doorstep.
 
 use std::collections::{HashMap, HashSet, VecDeque};
-use std::sync::mpsc::channel;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
+
+use super::preparation::{check_cancelled, generate_trial_region};
 
 use super::*;
 use crate::planet::{FACE_BLOCKS, Face, SurfacePos};
@@ -445,72 +446,6 @@ fn entry_chunks(surface: SurfacePos) -> Vec<ChunkPos> {
 
 pub(crate) fn player_entry_chunks(surface: SurfacePos) -> Vec<ChunkPos> {
     chunks_around(surface, 1)
-}
-
-fn generate_trial_region(
-    seed: u32,
-    reg: Arc<Registry>,
-    atlas: Arc<PlanetAtlas>,
-    positions: &[ChunkPos],
-    mut progress: impl FnMut(usize, usize),
-) -> std::io::Result<Vec<(ChunkPos, Chunk)>> {
-    let (request, request_rx) = channel::<ChunkPos>();
-    let (ready_tx, ready) = channel::<(ChunkPos, Chunk)>();
-    let request_rx = Arc::new(Mutex::new(request_rx));
-    let worker_count = std::thread::available_parallelism()
-        .map(|count| count.get().saturating_sub(2).clamp(2, 4))
-        .unwrap_or(2)
-        .min(positions.len().max(1));
-    let mut workers = Vec::new();
-    for _ in 0..worker_count {
-        let request_rx = Arc::clone(&request_rx);
-        let ready_tx = ready_tx.clone();
-        let reg = Arc::clone(&reg);
-        let atlas = Arc::clone(&atlas);
-        workers.push(std::thread::spawn(move || {
-            let generator = crate::worldgen::Generator::with_atlas(seed, &reg, atlas);
-            loop {
-                let position = {
-                    let Ok(receiver) = request_rx.lock() else {
-                        return;
-                    };
-                    let Ok(position) = receiver.recv() else {
-                        return;
-                    };
-                    position
-                };
-                if ready_tx
-                    .send((position, generator.generate(position, &reg)))
-                    .is_err()
-                {
-                    return;
-                }
-            }
-        }));
-    }
-    drop(ready_tx);
-    for position in positions {
-        request
-            .send(*position)
-            .map_err(|_| std::io::Error::other("spawn generation workers stopped"))?;
-    }
-    drop(request);
-    let mut generated = Vec::with_capacity(positions.len());
-    for completed in 1..=positions.len() {
-        generated.push(
-            ready
-                .recv()
-                .map_err(|_| std::io::Error::other("spawn generation worker failed"))?,
-        );
-        progress(completed, positions.len());
-    }
-    for worker in workers {
-        if worker.join().is_err() {
-            return Err(std::io::Error::other("spawn generation worker panicked"));
-        }
-    }
-    generated.sort_by_key(|(position, _)| *position);
-    Ok(generated)
 }
 
 #[derive(Clone, Copy)]
@@ -1031,8 +966,20 @@ impl World {
     /// conservation ledgers are durable.
     pub fn prepare_common_spawn(
         &mut self,
+        progress: impl FnMut(&str, usize, usize),
+    ) -> std::io::Result<crate::planet::EntityPos> {
+        self.prepare_common_spawn_cancellable(
+            &crate::planet_atlas::CancellationToken::default(),
+            progress,
+        )
+    }
+
+    pub(crate) fn prepare_common_spawn_cancellable(
+        &mut self,
+        cancel: &crate::planet_atlas::CancellationToken,
         mut progress: impl FnMut(&str, usize, usize),
     ) -> std::io::Result<crate::planet::EntityPos> {
+        check_cancelled(cancel)?;
         let path = self.save_dir.join("spawn.toml");
         if path.is_file() {
             let metadata = fs::metadata(&path)?;
@@ -1090,7 +1037,13 @@ impl World {
             // distinguish a usable evolved homeland from corruption without
             // rejecting ordinary play.
             for (index, position) in manifest.chunks.iter().copied().enumerate() {
-                self.ensure_chunk(position);
+                check_cancelled(cancel)?;
+                self.try_ensure_chunk(position)?;
+                if !self.has_chunk(position) {
+                    return Err(std::io::Error::other(format!(
+                        "could not load homeland chunk {position:?}"
+                    )));
+                }
                 progress(
                     "loading prepared homeland",
                     index + 1,
@@ -1113,6 +1066,9 @@ impl World {
                     "prepared homeland has no same-landmass early magical observation site",
                 ));
             }
+            check_cancelled(cancel)?;
+            // Complete any durable retrogen transaction even if cancellation
+            // arrives during it; the caller will then discard session entry.
             let changed = self.ensure_spawn_discovery_sites(spawn.surface())?;
             if !changed.is_empty() {
                 // A structure origin can write through a neighboring chunk.
@@ -1154,6 +1110,7 @@ impl World {
         let mut fallback_score = (0u32, 0usize);
         let mut rejections = Vec::new();
         for (candidate_index, candidate) in candidates.iter().enumerate() {
+            check_cancelled(cancel)?;
             progress("testing homeland", candidate_index, candidates.len());
             let positions = entry_chunks(candidate.surface);
             let generated = generate_trial_region(
@@ -1161,6 +1118,7 @@ impl World {
                 Arc::clone(&self.reg),
                 Arc::clone(&atlas),
                 &positions,
+                cancel,
                 |completed, total| progress("generating homeland", completed, total),
             )?;
             match qualify_trial_region(&self.reg, &atlas, candidate.surface, &generated) {
@@ -1223,6 +1181,9 @@ impl World {
         }
         let spawn_surface = qualification.spawn;
 
+        // Once adoption starts, complete the ledger/chunk/manifest publication
+        // as one preparation operation; do not abandon partially saved state.
+        check_cancelled(cancel)?;
         let total = generated.len();
         for (index, (position, chunk)) in generated.into_iter().enumerate() {
             self.adopt_generated(position, chunk);
