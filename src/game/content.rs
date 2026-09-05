@@ -181,7 +181,7 @@ impl Game {
 
         self.content.reg = new_reg.clone();
         if let Some(remote) = self.multiplayer.remote.as_mut() {
-            remote.content.rebind(Arc::clone(&new_reg));
+            remote.session.rebind_content(Arc::clone(&new_reg));
         }
         if self.content.diagnostic_families.is_some() {
             self.content.diagnostic_families = Some(visual_capture::diagnostic_families(

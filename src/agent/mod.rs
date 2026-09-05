@@ -14,7 +14,7 @@ use std::sync::Arc;
 use glam::Vec3;
 
 use crate::chunk::ChunkPos;
-use crate::client_session::{Admission, ContentMap, PresentationRequirement};
+use crate::client_session::{ContentMap, GuestSession, PresentationRequirement};
 use crate::inventory::{HOTBAR_SLOTS, Inventory, ItemStack, TOTAL_SLOTS};
 use crate::physics::{self, Player};
 use crate::registry::{self, ItemId, Registry};
@@ -72,7 +72,7 @@ pub struct Agent {
     /// sends one click, waits for one echo, and only then trusts the
     /// inventory mirror for its next decision.
     pub echoes: u64,
-    content: ContentMap,
+    session: GuestSession,
     /// id -> (label, pos, yaw) for every other player on the wire.
     pub players: HashMap<u32, (String, crate::planet::EntityPos, f32)>,
     names: HashMap<u32, String>,
@@ -80,7 +80,6 @@ pub struct Agent {
     trail: HashMap<u32, VecDeque<crate::planet::EntityPos>>,
     /// Walkable waypoints are separate from observations of the leader.
     follow_path: Option<motion::FollowPath>,
-    snapshots: crate::client_session::Snapshots,
     /// Human-readable happenings, drained by the events tool.
     pub events: VecDeque<String>,
     last_discovery: Option<crate::discovery::ObservationSummary>,
@@ -94,8 +93,6 @@ pub struct Agent {
     last_working_result: Option<crate::workings::WorkingResult>,
     active_working_request: Option<(String, u64, crate::workings::WorkingTargetIntent)>,
     pub behavior: Behavior,
-    pending_chunks: VecDeque<(ChunkPos, Vec<u8>)>,
-    admission: Admission,
     move_timer: f32,
     /// (pos sampled, seconds since) for stuck detection.
     stuck_probe: (crate::planet::EntityPos, f32),
@@ -144,7 +141,11 @@ impl Agent {
                 .expect("agent default player position is canonical");
         let mut agent = Agent {
             client,
-            content: ContentMap::empty(Arc::clone(&reg)),
+            session: GuestSession::new(
+                Arc::clone(&reg),
+                PresentationRequirement::TerrainOnly,
+                std::time::Instant::now(),
+            ),
             reg,
             world,
             my_id: 0,
@@ -163,7 +164,6 @@ impl Agent {
             names: HashMap::new(),
             trail: HashMap::new(),
             follow_path: None,
-            snapshots: Default::default(),
             events: VecDeque::new(),
             last_discovery: None,
             last_discovery_records: None,
@@ -176,11 +176,6 @@ impl Agent {
             last_working_result: None,
             active_working_request: None,
             behavior: Behavior::Idle,
-            pending_chunks: VecDeque::new(),
-            admission: Admission::new(
-                PresentationRequirement::TerrainOnly,
-                std::time::Instant::now(),
-            ),
             move_timer: 0.0,
             stuck_probe: (default_origin, 0.0),
             mods_dir,
@@ -198,7 +193,10 @@ impl Agent {
             {
                 return Err(refusal);
             }
-            if agent.admission.timed_out(std::time::Instant::now())
+            if agent
+                .session
+                .admission()
+                .timed_out(std::time::Instant::now())
                 || start.elapsed().as_secs() > 120
             {
                 return Err("timed out waiting for safe world entry".into());
@@ -235,19 +233,19 @@ impl Agent {
         self.health = state.health;
         self.hunger = state.hunger;
         self.hotbar = (state.hotbar as usize).min(HOTBAR_SLOTS - 1);
-        self.inventory.slots = self.content.slots(&state.inventory);
+        self.inventory.slots = self.session.content().slots(&state.inventory);
         self.cursor = state
             .cursor
             .as_ref()
-            .and_then(|stack| self.content.stack(stack));
+            .and_then(|stack| self.session.content().stack(stack));
     }
 
     /// One tick: apply the host's stream, advance the standing
     /// behavior, step physics, send our movement upstream.
     pub fn pump(&mut self, dt: f32) {
         if !self.client.is_connected() {
-            if !self.admission.is_closed() {
-                self.admission.close();
+            if !self.session.admission().is_closed() {
+                self.session.close();
                 let message = if self.in_world {
                     "disconnected from host"
                 } else {
@@ -260,35 +258,12 @@ impl Agent {
         }
         let messages = self.client.poll();
         if !messages.is_empty() {
-            self.admission.note_activity(std::time::Instant::now());
+            self.session.note_activity(std::time::Instant::now());
         }
-        let mut block_updates = Vec::new();
         for msg in messages {
-            match msg {
-                net::S2C::Chunk { face, u, v, rle } => {
-                    if let Some(face) = crate::planet::Face::from_u8(face)
-                        && let Ok(pos) = ChunkPos::new(face, u, v)
-                    {
-                        self.pending_chunks.push_back((pos, rle));
-                    }
-                }
-                net::S2C::BlockSet {
-                    pos,
-                    id,
-                    meta,
-                    salt_mass,
-                    soil_salinity,
-                } => {
-                    let local = self.content.block(id);
-                    block_updates.push((pos, local, meta, salt_mass, soil_salinity));
-                }
-                other => self.apply(other),
-            }
+            self.apply(msg);
         }
         self.apply_pending_chunks();
-        if !block_updates.is_empty() {
-            self.world.apply_remote_block_states(block_updates);
-        }
         if self.in_world {
             self.tick_behavior(dt);
             self.move_timer += dt;
@@ -305,22 +280,8 @@ impl Agent {
     }
 
     fn apply_pending_chunks(&mut self) {
-        if !self.pending_chunks.is_empty() {
-            let chunks: Vec<_> = self
-                .pending_chunks
-                .drain(..self.pending_chunks.len().min(CHUNKS_PER_PUMP))
-                .collect();
-            self.world.insert_remote_chunks(
-                chunks.iter().map(|(pos, rle)| (*pos, rle.as_slice())),
-                self.content.blocks(),
-            );
-            for (pos, _) in chunks {
-                if self.world.has_chunk(pos) {
-                    self.admission.resident(pos);
-                }
-            }
-        }
-        if self.admission.take_ready() {
+        self.session.apply_terrain(&mut self.world, CHUNKS_PER_PUMP);
+        if self.session.take_ready() {
             self.client.send(&net::C2S::EntryReady);
         }
     }
@@ -377,30 +338,27 @@ impl Agent {
                 world.ire = ire;
                 self.my_id = your_id;
                 self.names = roster.into_iter().map(|p| (p.id, p.display_name)).collect();
-                self.content = ContentMap::new(Arc::clone(&self.reg), palette, items);
-                self.snapshots = Default::default();
+                self.session.begin(
+                    ContentMap::new(Arc::clone(&self.reg), palette, items),
+                    world_name,
+                    player_state.pos,
+                    std::time::Instant::now(),
+                );
                 self.world = world;
                 self.time_of_day = time;
                 self.apply_player_state(player_state, true);
                 self.in_world = false;
-                self.admission
-                    .begin(world_name, self.player.pos, std::time::Instant::now());
-                self.pending_chunks.clear();
             }
             net::S2C::EntryProgress { resident, total } => {
                 self.event(format!("preparing entry terrain: {resident}/{total}"));
             }
             net::S2C::EntryManifest { spawn, required } => {
-                let world = &self.world;
-                if let Err(error) = self
-                    .admission
-                    .manifest(spawn, required, |pos| world.has_chunk(pos))
-                {
+                if let Err(error) = self.session.manifest(spawn, required, &self.world) {
                     self.in_world = false;
                     self.event(format!("refused: {error}"));
                 }
             }
-            net::S2C::EntryAccepted => match self.admission.accepted() {
+            net::S2C::EntryAccepted => match self.session.accepted() {
                 Ok(world) => {
                     self.in_world = true;
                     self.event(format!("joined {world}"));
@@ -411,7 +369,7 @@ impl Agent {
                 }
             },
             net::S2C::Refused(why) => {
-                self.admission.close();
+                self.session.close();
                 self.event(format!("refused: {}", why.detail));
                 self.in_world = false;
             }
@@ -419,8 +377,7 @@ impl Agent {
                 if let Some(face) = crate::planet::Face::from_u8(face)
                     && let Ok(pos) = ChunkPos::new(face, u, v)
                 {
-                    self.world
-                        .insert_remote_chunk(pos, &rle, self.content.blocks());
+                    self.session.queue_chunk(pos, rle);
                 }
             }
             net::S2C::BlockSet {
@@ -430,17 +387,11 @@ impl Agent {
                 salt_mass,
                 soil_salinity,
             } => {
-                let local = self.content.block(id);
-                self.world.apply_remote_block_states([(
-                    pos,
-                    local,
-                    meta,
-                    salt_mass,
-                    soil_salinity,
-                )]);
+                self.session
+                    .queue_block(pos, id, meta, salt_mass, soil_salinity);
             }
             net::S2C::Players(part) => {
-                let Some(list) = self.snapshots.players(part) else {
+                let Some(list) = self.session.snapshots().players(part) else {
                     return;
                 };
                 let present: std::collections::HashSet<u32> =
@@ -468,7 +419,7 @@ impl Agent {
                 }
             }
             net::S2C::Mobs(part) => {
-                let Some(snaps) = self.snapshots.mobs(part) else {
+                let Some(snaps) = self.session.snapshots().mobs(part) else {
                     return;
                 };
                 let mobs = snaps
@@ -588,7 +539,7 @@ impl Agent {
                 arcane_id,
                 current_units,
             } => {
-                if let Some(local) = self.content.item(item) {
+                if let Some(local) = self.session.content().item(item) {
                     let reg = self.reg.clone();
                     let mut stack = ItemStack::new(&reg, local, count.max(1));
                     if durability > 0 {
@@ -648,7 +599,9 @@ impl Agent {
                 );
             }
             net::S2C::HeldResult(held) => {
-                self.cursor = held.as_ref().and_then(|stack| self.content.stack(stack));
+                self.cursor = held
+                    .as_ref()
+                    .and_then(|stack| self.session.content().stack(stack));
             }
             net::S2C::RoleChanged { role } => {
                 self.event(format!("role is now {role:?}"));
@@ -681,7 +634,7 @@ impl Agent {
                 ));
             }
             net::S2C::Bolts(part) => {
-                if let Some(snaps) = self.snapshots.bolts(part) {
+                if let Some(snaps) = self.session.snapshots().bolts(part) {
                     self.world.replace_projectiles(
                         snaps
                             .into_iter()
@@ -703,10 +656,10 @@ impl Agent {
                 }
             }
             net::S2C::LooseItems(part) => {
-                if let Some(snaps) = self.snapshots.loose_items(part) {
+                if let Some(snaps) = self.session.snapshots().loose_items(part) {
                     let items = snaps
                         .into_iter()
-                        .filter_map(|snap| self.content.loose_item(&snap))
+                        .filter_map(|snap| self.session.content().loose_item(&snap))
                         .collect();
                     self.world.replace_loose_items(items);
                 }

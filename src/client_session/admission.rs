@@ -199,6 +199,13 @@ impl Admission {
     pub(crate) fn is_closed(&self) -> bool {
         matches!(self.phase, Phase::Closed)
     }
+
+    pub(super) fn receives_world(&self) -> bool {
+        matches!(
+            self.phase,
+            Phase::AwaitingManifest(_) | Phase::Receiving(_) | Phase::ReadySent(_) | Phase::Active
+        )
+    }
 }
 
 #[cfg(test)]

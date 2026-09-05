@@ -823,3 +823,34 @@ This is a local checkpoint. Full session/replica ownership, shared content
 transfer failure handling, full subsystem/release gates, and new native guest
 and GPU evidence remain outstanding. The campaign recorded above still
 qualifies only its own source revision.
+
+## Guest session lifetime and paced terrain owner
+
+`GuestSession` now owns content mapping, snapshot reconstruction, admission, and
+the terrain inbox for both adapters. Welcome replaces all four together. Closure
+discards queued mutations; pre-Welcome or closed admission cannot queue terrain.
+The inbox retains host IDs until application so pending block updates use the
+current registry after a reload. Graphical request bookkeeping clears on Welcome.
+The former unpaced single-chunk storage wrapper is now test-only; both production
+adapters decode through the shared batch owner, at their existing budgets.
+
+Category A (root cause): block updates collected earlier in the same poll could
+previously outlive Welcome and mutate the replacement world. Keeping them in the
+session closes that lifetime gap alongside queued chunks and snapshot generations.
+The agent's duplicated Chunk/BlockSet dispatch was removed. Graphical player-state
+application receives only its content map instead of the entire remote adapter.
+Interpolation, navigation, input cadence, and mesh upload remain consumers.
+
+All 27 focused session tests, 18 serial agent tests, 25 multiplayer tests, strict
+all-target/all-feature Clippy, Rust 1.95 checking, format, advisory analysis, and
+the 62-directory guide check pass. Six new tests exercise coordinated reset,
+paced decoding under both presentation policies, chunk/edit ordering within an
+adopted batch, pending updates across content reload, closure, and rejected
+payloads through real replica storage. Logs use
+`target/maintainability/client-session-owner-*`; the new owner, inbox, and test
+modules are under 400 lines.
+
+This consolidates protocol lifetime and terrain application, not the complete
+replica domain. Entity replication, shared outgoing requests/events, content
+transfer failure handling, explicit authority types, and new native runtime/GPU
+qualification remain open. Full phase acceptance is not claimed.

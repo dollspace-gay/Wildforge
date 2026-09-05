@@ -734,6 +734,7 @@ impl World {
     /// Insert a network-streamed chunk, remapping host block ids to local
     /// ones. Current hosts include their settled derived light; older payloads
     /// remain compatible and are relit locally.
+    #[cfg(test)]
     pub fn insert_remote_chunk(&mut self, pos: ChunkPos, rle: &[u8], remap: &[BlockId]) {
         self.insert_remote_chunks([(pos, rle)], remap);
     }

@@ -1,7 +1,7 @@
 //! Guest connection setup and remote snapshot application.
 
 use super::*;
-use crate::client_session::{Admission, ContentMap, PresentationRequirement};
+use crate::client_session::{ContentMap, GuestSession, PresentationRequirement};
 
 impl Game {
     /// The name this client will present to a multiplayer host, plus whether
@@ -21,7 +21,7 @@ impl Game {
 
     fn apply_remote_player_state(
         &mut self,
-        remote: &Remote,
+        content: &ContentMap,
         state: net::PlayerStateSnap,
         initial: bool,
     ) {
@@ -48,12 +48,9 @@ impl Game {
             self.camera.pitch = state.pitch;
         }
         self.survival.spawn_point = state.spawn;
-        self.inventory.slots = remote.content.slots(&state.inventory);
-        self.survival.armor = remote.content.slots(&state.armor);
-        self.ui_state.held_stack = state
-            .cursor
-            .as_ref()
-            .and_then(|stack| remote.content.stack(stack));
+        self.inventory.slots = content.slots(&state.inventory);
+        self.survival.armor = content.slots(&state.armor);
+        self.ui_state.held_stack = state.cursor.as_ref().and_then(|stack| content.stack(stack));
         self.survival.health = state.health;
         self.survival.hunger = state.hunger;
         self.survival.nutrition = state.nutrition;
@@ -109,7 +106,11 @@ impl Game {
                     client,
                     my_id: 0,
                     role: identity::Role::Player,
-                    content: ContentMap::empty(Arc::clone(&self.content.reg)),
+                    session: GuestSession::new(
+                        Arc::clone(&self.content.reg),
+                        PresentationRequirement::FirstFrame,
+                        std::time::Instant::now(),
+                    ),
                     players: Default::default(),
                     player_positions: Default::default(),
                     player_held: Default::default(),
@@ -123,16 +124,10 @@ impl Game {
                     mob_lerp: Default::default(),
                     mob_age: 0.0,
                     mob_interval: 0.05,
-                    snapshots: Default::default(),
                     // Until the host answers, assume the old fixed ring.
                     granted_view_dist: 5,
                     asked_view_dist: 0,
                     wants: Default::default(),
-                    admission: Admission::new(
-                        PresentationRequirement::FirstFrame,
-                        std::time::Instant::now(),
-                    ),
-                    pending_entry_chunks: Default::default(),
                 });
                 self.multiplayer.join_status = format!("{policy} - {admission} - SYNCING...");
             }
@@ -189,7 +184,7 @@ impl Game {
             return;
         };
         if !r.client.is_connected() {
-            r.admission.close();
+            r.session.close();
             if self.in_world {
                 self.toast("Disconnected from host.".to_string());
                 self.quit_to_title();
@@ -201,13 +196,12 @@ impl Game {
         }
         let msgs = r.client.poll();
         if !msgs.is_empty() {
-            r.admission.note_activity(std::time::Instant::now());
-        } else if !self.in_world && r.admission.timed_out(std::time::Instant::now()) {
+            r.session.note_activity(std::time::Instant::now());
+        } else if !self.in_world && r.session.admission().timed_out(std::time::Instant::now()) {
             self.multiplayer.join_status = "WORLD PREPARATION TIMED OUT".into();
             self.multiplayer.remote = None;
             return;
         }
-        let mut block_updates = Vec::new();
         for msg in msgs {
             match msg {
                 net::S2C::Challenge { .. } => {}
@@ -298,24 +292,23 @@ impl Game {
                         .into_iter()
                         .map(|presence| (presence.id, presence_label(&presence)))
                         .collect();
-                    r.content = ContentMap::new(Arc::clone(&self.content.reg), palette, items);
-                    r.snapshots = Default::default();
+                    let content = ContentMap::new(Arc::clone(&self.content.reg), palette, items);
                     self.server = server::Server::new(world, time, 7);
                     self.renderer.clear_chunks();
-                    self.apply_remote_player_state(&r, player_state, true);
+                    self.apply_remote_player_state(&content, player_state, true);
                     self.creative = mode == "creative";
                     self.in_world = false;
-                    r.admission
-                        .begin(world_name, self.player.pos, std::time::Instant::now());
-                    r.pending_entry_chunks.clear();
+                    r.session.begin(
+                        content,
+                        world_name,
+                        self.player.pos,
+                        std::time::Instant::now(),
+                    );
+                    r.wants.clear();
                     self.multiplayer.join_status = "PREPARING SAFE WORLD ENTRY...".into();
                 }
                 net::S2C::EntryManifest { spawn, required } => {
-                    let world = &self.server.world;
-                    if let Err(error) = r
-                        .admission
-                        .manifest(spawn, required, |pos| world.has_chunk(pos))
-                    {
+                    if let Err(error) = r.session.manifest(spawn, required, &self.server.world) {
                         self.multiplayer.join_status = format!("FAILED: {error}").to_uppercase();
                         self.multiplayer.remote = None;
                         return;
@@ -326,7 +319,7 @@ impl Game {
                         format!("PREPARING SAFE WORLD ENTRY... {resident}/{total}");
                 }
                 net::S2C::EntryAccepted => {
-                    let world_name = match r.admission.accepted() {
+                    let world_name = match r.session.accepted() {
                         Ok(name) => name,
                         Err(error) => {
                             self.multiplayer.join_status =
@@ -341,7 +334,7 @@ impl Game {
                     self.toast(format!("Joined {}.", world_name.to_uppercase()));
                 }
                 net::S2C::Refused(why) => {
-                    r.admission.close();
+                    r.session.close();
                     if self.in_world {
                         // Kicked mid-game: a clean exit, not a broken
                         // half-local world.
@@ -367,17 +360,12 @@ impl Game {
                     // of those chunks here froze the UI immediately after
                     // EntryAccepted. The paced adoption stage below is shared
                     // by admission and ordinary view expansion.
-                    if !self.server.world.has_chunk(pos)
-                        && !r
-                            .pending_entry_chunks
-                            .iter()
-                            .any(|(queued, _)| *queued == pos)
-                    {
+                    if !self.server.world.has_chunk(pos) && !r.session.has_queued_chunk(pos) {
                         // Proactively pushed chunks are pending too; marking
                         // them wanted prevents the repair scan from asking for
                         // duplicates before paced adoption reaches them.
                         r.wants.insert(pos);
-                        r.pending_entry_chunks.push_back((pos, rle));
+                        r.session.queue_chunk(pos, rle);
                     }
                 }
                 net::S2C::BlockSet {
@@ -387,9 +375,10 @@ impl Game {
                     salt_mass,
                     soil_salinity,
                 } => {
-                    let local = r.content.block(id);
+                    let local = r
+                        .session
+                        .queue_block(pos, id, meta, salt_mass, soil_salinity);
                     let old = self.server.world.get_block_at(pos);
-                    block_updates.push((pos, local, meta, salt_mass, soil_salinity));
                     // Someone broke something: the world crumbles for
                     // everyone watching.
                     if local == crate::registry::AIR
@@ -407,7 +396,7 @@ impl Game {
                     }
                 }
                 net::S2C::Players(part) => {
-                    let Some(list) = r.snapshots.players(part) else {
+                    let Some(list) = r.session.snapshots().players(part) else {
                         continue;
                     };
                     // Anyone the host stopped mentioning has walked out of
@@ -461,7 +450,7 @@ impl Game {
                     r.player_age = 0.0;
                 }
                 net::S2C::Mobs(part) => {
-                    let Some(snaps) = r.snapshots.mobs(part) else {
+                    let Some(snaps) = r.session.snapshots().mobs(part) else {
                         continue;
                     };
                     let t = (r.mob_age / r.mob_interval.max(0.001)).clamp(0.0, 1.0);
@@ -504,7 +493,7 @@ impl Game {
                     r.granted_view_dist = chunks.max(1) as i32;
                 }
                 net::S2C::Falling(part) => {
-                    let Some(snaps) = r.snapshots.falling(part) else {
+                    let Some(snaps) = r.session.snapshots().falling(part) else {
                         continue;
                     };
                     let falling = snaps
@@ -512,13 +501,13 @@ impl Game {
                         .map(|f| world::FallingBlock {
                             pos: f.pos,
                             vel: 0.0,
-                            block: r.content.block(f.block),
+                            block: r.session.content().block(f.block),
                         })
                         .collect();
                     self.server.world.replace_falling_blocks(falling);
                 }
                 net::S2C::Bolts(part) => {
-                    let Some(snaps) = r.snapshots.bolts(part) else {
+                    let Some(snaps) = r.session.snapshots().bolts(part) else {
                         continue;
                     };
                     let projectiles = snaps
@@ -541,12 +530,12 @@ impl Game {
                     self.server.world.replace_projectiles(projectiles);
                 }
                 net::S2C::LooseItems(part) => {
-                    let Some(snaps) = r.snapshots.loose_items(part) else {
+                    let Some(snaps) = r.session.snapshots().loose_items(part) else {
                         continue;
                     };
                     let items = snaps
                         .into_iter()
-                        .filter_map(|snap| r.content.loose_item(&snap))
+                        .filter_map(|snap| r.session.content().loose_item(&snap))
                         .collect();
                     self.server.world.replace_loose_items(items);
                 }
@@ -641,7 +630,12 @@ impl Game {
                     cue,
                     visual,
                 } => {
-                    self.present_implement_activation(pos, cue, visual, Some(r.content.items()));
+                    self.present_implement_activation(
+                        pos,
+                        cue,
+                        visual,
+                        Some(r.session.content().items()),
+                    );
                     // The next player snapshot remains authoritative for the
                     // held model; this short-lived event only drives the
                     // visible settling gesture and local envelope.
@@ -686,7 +680,7 @@ impl Game {
                     arcane_id,
                     current_units,
                 } => {
-                    if let Some(local) = r.content.item(item) {
+                    if let Some(local) = r.session.content().item(item) {
                         let reg = self.content.reg.clone();
                         let mut stack = ItemStack::new(&reg, local, count.max(1));
                         if durability > 0 {
@@ -713,7 +707,7 @@ impl Game {
                     }
                 }
                 net::S2C::PlayerState(state) => {
-                    self.apply_remote_player_state(&r, state, false);
+                    self.apply_remote_player_state(r.session.content(), state, false);
                 }
                 net::S2C::SignText { pos, lines } => {
                     self.server.world.insert_block_entity_at(
@@ -792,7 +786,8 @@ impl Game {
                     aux,
                 } => {
                     let conv = |s: &Option<net::StackSnap>| -> Option<ItemStack> {
-                        s.as_ref().and_then(|stack| r.content.stack(stack))
+                        s.as_ref()
+                            .and_then(|stack| r.session.content().stack(stack))
                     };
                     let entity = match kind {
                         0 => {
@@ -859,7 +854,8 @@ impl Game {
                     // palette; the handler's layout rebuilds the instance.
                     let reg = self.content.reg.clone();
                     let conv = |s: &Option<net::StackSnap>| -> Option<ItemStack> {
-                        s.as_ref().and_then(|stack| r.content.stack(stack))
+                        s.as_ref()
+                            .and_then(|stack| r.session.content().stack(stack))
                     };
                     let Some(kind) = reg.machine_kind(&machine) else {
                         return;
@@ -910,8 +906,9 @@ impl Game {
                 net::S2C::HeldResult(held) => {
                     // The authoritative cursor after our click replaces
                     // the local prediction (identical on agreement).
-                    self.ui_state.held_stack =
-                        held.as_ref().and_then(|stack| r.content.stack(stack));
+                    self.ui_state.held_stack = held
+                        .as_ref()
+                        .and_then(|stack| r.session.content().stack(stack));
                 }
                 net::S2C::Sleep { sleeping, present } => {
                     self.toast(format!("{sleeping}/{present} sleeping..."));
@@ -945,31 +942,13 @@ impl Game {
         // before claiming readiness; Welcome by itself never exposes a blank
         // world.
         const REMOTE_CHUNKS_PER_FRAME: usize = 8;
-        let mut terrain_batch = Vec::with_capacity(REMOTE_CHUNKS_PER_FRAME);
-        for _ in 0..REMOTE_CHUNKS_PER_FRAME {
-            let Some((position, rle)) = r.pending_entry_chunks.pop_front() else {
-                break;
-            };
+        for position in r
+            .session
+            .apply_terrain(&mut self.server.world, REMOTE_CHUNKS_PER_FRAME)
+        {
             r.wants.remove(&position);
-            terrain_batch.push((position, rle));
         }
-        if !terrain_batch.is_empty() {
-            self.server.world.insert_remote_chunks(
-                terrain_batch
-                    .iter()
-                    .map(|(position, rle)| (*position, rle.as_slice())),
-                r.content.blocks(),
-            );
-            for (position, _) in &terrain_batch {
-                if self.server.world.has_chunk(*position) {
-                    r.admission.resident(*position);
-                }
-            }
-        }
-        if !block_updates.is_empty() {
-            self.server.world.apply_remote_block_states(block_updates);
-        }
-        if let Some(center) = r.admission.frame_needed()
+        if let Some(center) = r.session.admission().frame_needed()
             && [(-1, 0), (1, 0), (0, -1), (0, 1)]
                 .iter()
                 .all(|(du, dv)| self.server.world.has_chunk(center.offset(*du, *dv)))
@@ -978,12 +957,12 @@ impl Game {
             self.renderer.upload_chunk(center, &mesh);
             self.presentation.lights.chunk_meshed(center, mesh.emitters);
             self.server.world.mark_chunk_meshed(center);
-            if let Err(error) = r.admission.frame_ready() {
+            if let Err(error) = r.session.frame_ready() {
                 self.multiplayer.join_status = format!("FAILED: {error}").to_uppercase();
                 return;
             }
         }
-        if r.admission.take_ready() {
+        if r.session.take_ready() {
             r.client.send(&net::C2S::EntryReady);
         }
         // Snapshot smoothing: glide players and mobs along their spans,

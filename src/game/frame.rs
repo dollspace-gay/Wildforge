@@ -1687,11 +1687,13 @@ impl Game {
                 let gait = self.gait_for(id, pos, dt);
                 let (held, implement, st) = {
                     let r = self.multiplayer.remote.as_ref().unwrap();
-                    let held = r.player_held.get(&id).and_then(|w| r.content.item(*w));
-                    let implement =
-                        r.player_implement.get(&id).copied().map(|visual| {
-                            self.held_art_implement(visual, |wire| r.content.item(wire))
-                        });
+                    let held = r
+                        .player_held
+                        .get(&id)
+                        .and_then(|w| r.session.content().item(*w));
+                    let implement = r.player_implement.get(&id).copied().map(|visual| {
+                        self.held_art_implement(visual, |wire| r.session.content().item(wire))
+                    });
                     let st = r
                         .player_style
                         .get(&id)
@@ -2318,7 +2320,7 @@ impl Game {
                     let Some(&held) = r.player_held.get(id) else {
                         continue;
                     };
-                    let local = r.content.item(held);
+                    let local = r.session.content().item(held);
                     let glow = r
                         .player_implement
                         .get(id)

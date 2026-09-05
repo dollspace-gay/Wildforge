@@ -3,6 +3,12 @@
 # Shared guest session
 
 This module owns protocol interpretation shared by graphical guests and agents.
+`session.rs` coordinates one world lifetime: Welcome replaces its content map,
+receivers, admission, queued chunks, and block updates together. Closure drops
+queued work. `terrain.rs` paces decoding at the caller's existing budget and
+applies the poll's block updates after terrain. Queued block IDs remain host IDs
+until application, including across local content reload.
+
 `palette.rs` resolves host block/item IDs against one immutable registry and
 converts inventory, armor, cursor, and loose-item snapshots. Its callers retain
 control of cameras, interpolation, HUD state, perception, and movement.

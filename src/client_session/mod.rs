@@ -3,10 +3,12 @@
 mod admission;
 mod assembly;
 mod palette;
+mod session;
 mod snapshots;
+mod terrain;
 
-pub(crate) use admission::{Admission, PresentationRequirement};
+pub(crate) use admission::PresentationRequirement;
 #[cfg(test)]
 pub(crate) use assembly::SnapshotAssembler;
 pub(crate) use palette::ContentMap;
-pub(crate) use snapshots::Snapshots;
+pub(crate) use session::GuestSession;

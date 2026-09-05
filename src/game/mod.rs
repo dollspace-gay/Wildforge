@@ -553,7 +553,7 @@ struct Remote {
     client: net::Client,
     my_id: u32,
     role: identity::Role,
-    content: crate::client_session::ContentMap,
+    session: crate::client_session::GuestSession,
     /// id -> (name, pos, yaw) of every other player (render state).
     players: std::collections::HashMap<u32, (String, Vec3, f32)>,
     /// Latest canonical authoritative position for each rendered player.
@@ -573,7 +573,6 @@ struct Remote {
     mob_lerp: std::collections::HashMap<u32, Lerp>,
     mob_age: f32,
     mob_interval: f32,
-    snapshots: crate::client_session::Snapshots,
     /// View distance the host granted, in chunks. Terrain past it is not
     /// coming, so the fog and the eviction radius both respect it.
     granted_view_dist: i32,
@@ -583,8 +582,6 @@ struct Remote {
     /// Chunks we have asked the host for and not yet received, so a gap is
     /// requested once rather than every frame until it lands.
     wants: std::collections::HashSet<ChunkPos>,
-    admission: crate::client_session::Admission,
-    pending_entry_chunks: std::collections::VecDeque<(ChunkPos, Vec<u8>)>,
 }
 
 struct Game {
