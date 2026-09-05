@@ -1,35 +1,105 @@
-//! Pointer capture, cursor look, and screen/input state transitions.
+//! Held input and pointer capture. Capture/warp state has a single owner.
 
-use super::*;
+use winit::window::{CursorGrabMode, Window};
+use crate::camera::Camera;
 
-impl Game {
-    pub(super) fn rand01(&mut self) -> f32 {
-        self.rng = self.rng.wrapping_mul(1664525).wrapping_add(1013904223);
-        (self.rng >> 8) as f32 / (1 << 24) as f32
+#[derive(Default)]
+pub(super) struct KeysDown {
+    pub(super) w: bool,
+    pub(super) a: bool,
+    pub(super) s: bool,
+    pub(super) d: bool,
+    pub(super) space: bool,
+    pub(super) sprint: bool,
+    pub(super) block: bool,
+}
+
+/// Pointer, keyboard, capture, and input-rate state that resets together.
+pub(super) struct InputState {
+    pub(super) keys: KeysDown,
+    mouse_captured: bool,
+    raw_look: bool,
+    last_cursor: Option<(f64, f64)>,
+    warp_pending: bool,
+    allow_warp: bool,
+    pub(super) left_held: bool,
+    pub(super) right_held: bool,
+    /// Edge-triggered dodge request, consumed by `advance_player`.
+    pub(super) dodge_pressed: bool,
+    pub(super) action_cooldown: f32,
+    pub(super) attack_cooldown: f32,
+    pub(super) hotbar_sel: usize,
+    pub(super) scroll_accum: f32,
+    pub(super) scroll_cooldown: f32,
+    pub(super) ui_cursor: (f32, f32),
+    /// WILDFORGE_CURSOR parked the pointer for a headless capture;
+    /// the window's synthetic CursorMoved events must not undo it.
+    pub(super) cursor_locked: bool,
+}
+
+impl InputState {
+    pub(super) fn new() -> Self {
+        Self {
+                keys: KeysDown::default(),
+                mouse_captured: false,
+                raw_look: false,
+                last_cursor: None,
+                warp_pending: false,
+                allow_warp: std::env::var("WSL_DISTRO_NAME").is_err()
+                    && !std::path::Path::new("/mnt/wslg").exists(),
+                left_held: false,
+                right_held: false,
+                dodge_pressed: false,
+                action_cooldown: 0.0,
+                attack_cooldown: 0.0,
+                hotbar_sel: 0,
+                scroll_accum: 0.0,
+                scroll_cooldown: 0.0,
+                ui_cursor: (0.0, 0.0),
+                cursor_locked: false,
+        }
     }
 
-    pub(super) fn capture_mouse(&mut self, capture: bool) {
+    pub(super) fn captured(&self) -> bool {
+        self.mouse_captured
+    }
+
+    pub(super) fn uses_raw_look(&self) -> bool {
+        self.raw_look
+    }
+
+    pub(super) fn cursor_boundary(&mut self) {
+        self.last_cursor = None;
+    }
+
+    pub(super) fn clear_held(&mut self) {
+        self.keys = KeysDown::default();
+        self.left_held = false;
+        self.right_held = false;
+    }
+
+    pub(super) fn capture(&mut self, window: &Window, capture: bool) {
         if capture {
             // A Locked grab pins the cursor: raw deltas are the only signal.
             // Anything less (Confined, or no grab at all): use cursor-position
             // deltas + recentering instead — raw deltas are unreliable on some
             // stacks (notably WSLg's XWayland).
-            self.input.raw_look = self.window.set_cursor_grab(CursorGrabMode::Locked).is_ok();
-            if !self.input.raw_look {
-                let _ = self.window.set_cursor_grab(CursorGrabMode::Confined);
-                self.input.last_cursor = None;
-                self.input.warp_pending =
-                    self.input.allow_warp && self.window.set_cursor_position(self.center()).is_ok();
+            self.raw_look = window.set_cursor_grab(CursorGrabMode::Locked).is_ok();
+            if !self.raw_look {
+                let _ = window.set_cursor_grab(CursorGrabMode::Confined);
+                self.last_cursor = None;
+                self.warp_pending =
+                    self.allow_warp && window.set_cursor_position(Self::center(window)).is_ok();
             }
         } else {
-            let _ = self.window.set_cursor_grab(CursorGrabMode::None);
+            let _ = window.set_cursor_grab(CursorGrabMode::None);
         }
-        self.window.set_cursor_visible(!capture);
-        self.input.mouse_captured = capture;
+        window.set_cursor_visible(!capture);
+        self.mouse_captured = capture;
     }
 
-    pub(super) fn center(&self) -> winit::dpi::PhysicalPosition<f64> {
-        let size = self.window.inner_size();
+    fn center(window: &Window) -> winit::dpi::PhysicalPosition<f64> {
+        let size = window.inner_size();
         winit::dpi::PhysicalPosition::new(size.width as f64 / 2.0, size.height as f64 / 2.0)
     }
 
@@ -38,110 +108,24 @@ impl Game {
     /// The cursor is kept pinned in a small bubble around the window center;
     /// the warp's own event is recognized by landing exactly on center, so
     /// real motion events are never swallowed.
-    pub(super) fn cursor_look(&mut self, pos: winit::dpi::PhysicalPosition<f64>) {
-        let c = self.center();
-        if self.input.warp_pending && (pos.x - c.x).abs() < 1.5 && (pos.y - c.y).abs() < 1.5 {
-            self.input.warp_pending = false;
-            self.input.last_cursor = Some((c.x, c.y));
+    pub(super) fn cursor_look(&mut self, window: &Window, camera: &mut Camera, pos: winit::dpi::PhysicalPosition<f64>) {
+        let c = Self::center(window);
+        if self.warp_pending && (pos.x - c.x).abs() < 1.5 && (pos.y - c.y).abs() < 1.5 {
+            self.warp_pending = false;
+            self.last_cursor = Some((c.x, c.y));
             return;
         }
-        if let Some((lx, ly)) = self.input.last_cursor {
-            self.camera.turn((pos.x - lx) as f32, (pos.y - ly) as f32);
+        if let Some((lx, ly)) = self.last_cursor {
+            camera.turn((pos.x - lx) as f32, (pos.y - ly) as f32);
         }
-        self.input.last_cursor = Some((pos.x, pos.y));
+        self.last_cursor = Some((pos.x, pos.y));
 
-        if self.input.allow_warp
+        if self.allow_warp
             && ((pos.x - c.x).abs() > 40.0 || (pos.y - c.y).abs() > 40.0)
-            && self.window.set_cursor_position(c).is_ok()
+            && window.set_cursor_position(c).is_ok()
         {
-            self.input.warp_pending = true;
+            self.warp_pending = true;
         }
     }
 
-    /// All game modes available for new-world creation (capability E1):
-    /// the two built-ins plus every mode declared by loaded mods.
-    pub(super) fn available_new_world_modes(&self) -> Vec<String> {
-        let mut modes = vec!["survival".to_string(), "creative".to_string()];
-        for m in &self.content.reg.modes {
-            if !modes.contains(&m.id) {
-                modes.push(m.id.clone());
-            }
-        }
-        modes
-    }
-
-    pub(super) fn set_screen(&mut self, screen: Screen) {
-        if self.ui_state.screen == screen {
-            return;
-        }
-        self.presentation.screen_age = 0.0;
-        self.interaction.bow_draw = 0.0; // opening any screen relaxes the draw
-
-        // Leaving a container tells the host to stop streaming it.
-        if matches!(
-            self.ui_state.screen,
-            Screen::Furnace(_)
-                | Screen::Chest(_)
-                | Screen::Offering(_)
-                | Screen::Bloomery(_)
-                | Screen::Kiln(_)
-                | Screen::Workbench(_)
-                | Screen::MobCargo(_)
-                | Screen::Stall(_)
-        ) && let Some(r) = &self.multiplayer.remote
-        {
-            r.client.send(&net::C2S::CloseContainer);
-        }
-        // Leaving the inventory returns the cursor-held stack and craft grid.
-        if self.ui_state.screen == Screen::Inventory
-            || matches!(
-                self.ui_state.screen,
-                Screen::Furnace(_)
-                    | Screen::Chest(_)
-                    | Screen::Offering(_)
-                    | Screen::Bloomery(_)
-                    | Screen::Kiln(_)
-                    | Screen::Workbench(_)
-                    | Screen::Mod(_)
-                    | Screen::MobCargo(_)
-                    | Screen::Stall(_)
-            )
-        {
-            let mut back: Vec<ItemStack> = self.ui_state.held_stack.take().into_iter().collect();
-            for slot in self.interaction.craft_grid.iter_mut() {
-                if let Some(s) = slot.take() {
-                    back.push(s);
-                }
-            }
-            let reg = self.content.reg.clone();
-            for s in back {
-                let left = self.inventory.add_stack(&reg, s);
-                if left > 0 {
-                    self.drop_stack(ItemStack { count: left, ..s });
-                }
-            }
-        }
-        if screen == Screen::Inventory {
-            self.ui_state.inventory_status_open = false;
-            self.ui_state.inventory_discovery_open = false;
-            self.ui_state.discovery_label_focus = false;
-            // Creative mode uses the browser as its item source. In survival
-            // it is secondary help, so keep it tucked away until requested.
-            self.ui_state.inventory_browser_open = self.creative;
-        } else {
-            self.ui_state.search_focus = false;
-            self.ui_state.browse_view = None;
-        }
-        let playing = screen == Screen::Playing;
-        self.ui_state.screen = screen;
-        if playing {
-            self.capture_mouse(true);
-        } else {
-            self.capture_mouse(false);
-            self.input.keys = KeysDown::default();
-            self.input.left_held = false;
-            self.input.right_held = false;
-            self.interaction.breaking = None;
-        }
-    }
 }

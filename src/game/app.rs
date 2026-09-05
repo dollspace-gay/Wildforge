@@ -368,9 +368,9 @@ impl ApplicationHandler for App {
                     }
                     return;
                 }
-                if !game.input.mouse_captured {
+                if !game.input.captured() {
                     if pressed {
-                        game.capture_mouse(true);
+                        game.input.capture(&game.window, true);
                     }
                     return;
                 }
@@ -451,25 +451,23 @@ impl ApplicationHandler for App {
                     let (bx, _, bw, _) = game.slider_bar_rect(i);
                     game.set_slider(i, (position.x as f32 - bx - 2.0) / (bw - 4.0));
                 }
-                if game.input.mouse_captured
-                    && !game.input.raw_look
+                if game.input.captured()
+                    && !game.input.uses_raw_look()
                     && game.ui_state.screen == Screen::Playing
                 {
-                    game.cursor_look(position);
+                    game.input.cursor_look(&game.window, &mut game.camera, position);
                 }
             }
             // Crossing the window boundary teleports the cursor; never treat
             // that jump as look motion.
             WindowEvent::CursorEntered { .. } | WindowEvent::CursorLeft { .. } => {
-                game.input.last_cursor = None;
+                game.input.cursor_boundary();
             }
             WindowEvent::Focused(false) => {
                 if game.ui_state.screen == Screen::Playing {
-                    game.capture_mouse(false);
+                    game.input.capture(&game.window, false);
                 }
-                game.input.keys = KeysDown::default();
-                game.input.left_held = false;
-                game.input.right_held = false;
+                game.input.clear_held();
                 game.interaction.breaking = None;
             }
             WindowEvent::RedrawRequested => {
@@ -482,8 +480,8 @@ impl ApplicationHandler for App {
     fn device_event(&mut self, _el: &ActiveEventLoop, _id: DeviceId, event: DeviceEvent) {
         if let DeviceEvent::MouseMotion { delta: (dx, dy) } = event
             && let Some(game) = self.game.as_mut()
-            && game.input.mouse_captured
-            && game.input.raw_look
+            && game.input.captured()
+            && game.input.uses_raw_look()
             && game.ui_state.screen == Screen::Playing
         {
             game.camera.turn(dx as f32, dy as f32);
@@ -524,3 +522,24 @@ mod tests {
         }
     }
 }
+
+/// Start the platform event loop and windowed client.
+pub(super) fn run_windowed() {
+    // Prefer X11/XWayland on Linux: it supports cursor confinement and
+    // warping, which pure Wayland compositors (notably WSLg) often don't.
+    #[cfg(target_os = "linux")]
+    let event_loop = {
+        use winit::platform::x11::EventLoopBuilderExtX11;
+        let mut builder = EventLoop::builder();
+        if std::env::var("DISPLAY").is_ok() {
+            builder.with_x11();
+        }
+        builder.build().expect("create event loop")
+    };
+    #[cfg(not(target_os = "linux"))]
+    let event_loop = EventLoop::new().expect("create event loop");
+    event_loop.set_control_flow(ControlFlow::Poll);
+    let mut app = app::App::default();
+    event_loop.run_app(&mut app).expect("run event loop");
+}
+

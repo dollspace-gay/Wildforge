@@ -368,12 +368,12 @@ impl Game {
                         .map(|block| self.server.world.get_block_at(block))
                         .unwrap_or(crate::registry::AIR);
                     let tile = self.content.reg.block(under).tiles[2];
-                    self.juice_puff(self.player.pos.render_pos(), tile, 5);
+                    self.presentation.puff(self.player.pos.render_pos(), tile, 5);
                     if fall > 3.0 {
                         self.sfx(Sfx::Thud);
                     } else {
                         let m = self.step_mat_at(self.player.pos);
-                        let p = self.vary() * 0.8;
+                        let p = self.presentation.vary() * 0.8;
                         self.sfx(Sfx::Step(m, p));
                     }
                 }

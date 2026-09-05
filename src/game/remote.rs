@@ -404,7 +404,7 @@ impl Game {
                             pos.surface().centered_v() as f32 + 0.5,
                         );
                         if (center - self.camera.pos).length() < 40.0 {
-                            self.juice_burst(center, self.content.reg.block(old).tiles[0], 8, 2.0);
+                            self.presentation.burst(center, self.content.reg.block(old).tiles[0], 8, 2.0);
                         }
                     }
                 }

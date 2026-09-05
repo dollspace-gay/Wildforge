@@ -546,15 +546,15 @@ impl Game {
         // only — some of the world is just living here.
         self.presentation.ambient_timer -= dt;
         if !paused && self.presentation.ambient_timer <= 0.0 && self.presentation.juice {
-            self.presentation.ambient_timer = 1.6 + self.vary() * 2.4;
+            self.presentation.ambient_timer = 1.6 + self.presentation.vary() * 2.4;
             let day = self
                 .server
                 .world
                 .daylight_at_surface(self.player.pos.surface())
                 > 0.5;
-            let r1 = self.vary();
-            let r2 = self.vary();
-            let r3 = self.vary();
+            let r1 = self.presentation.vary();
+            let r2 = self.presentation.vary();
+            let r3 = self.presentation.vary();
             let Ok(sample) = self.player.eye().translated(Vec3::new(
                 (r1 - 0.5) * 24.0,
                 (r2 - 0.3) * 8.0,
@@ -582,12 +582,12 @@ impl Game {
             if day && near(&|n: &str| n.contains("leaves")) {
                 // A songbird-or-butterfly speck breaking from the canopy.
                 if let Some(b) = reg.block_id("base:berry_bush") {
-                    self.juice_puff(p, reg.block(b).tiles[0], 1);
+                    self.presentation.puff(p, reg.block(b).tiles[0], 1);
                 }
             } else if day && near(&|n: &str| n.contains("water")) {
                 // A dragonfly working the surface.
                 if let Some(b) = reg.block_id("base:kelp_frond") {
-                    self.juice_puff(p, reg.block(b).tiles[0], 1);
+                    self.presentation.puff(p, reg.block(b).tiles[0], 1);
                 }
             }
         }
@@ -614,7 +614,7 @@ impl Game {
             && self.presentation.juice
             && self.ui_state.screen == Screen::Playing
         {
-            self.presentation.presence_timer = 6.0 + (self.vary() - 0.9) * 20.0;
+            self.presentation.presence_timer = 6.0 + (self.presentation.vary() - 0.9) * 20.0;
             let reg = self.content.reg.clone();
             let lurker = self
                 .server
@@ -653,7 +653,7 @@ impl Game {
         if let Some((at, tile)) = self.presentation.demo_burst
             && self.total_frames.is_multiple_of(10)
         {
-            self.juice_burst(at, tile, 10, 2.2);
+            self.presentation.burst(at, tile, 10, 2.2);
             self.survival.damage_flash = 0.4;
         }
 
@@ -675,7 +675,7 @@ impl Game {
                 if self.presentation.step_accum >= 2.2 {
                     self.presentation.step_accum = 0.0;
                     let m = self.step_mat_at(self.player.pos);
-                    let pitch = self.vary();
+                    let pitch = self.presentation.vary();
                     self.sfx(Sfx::Step(m, pitch));
                 }
             } else if hv <= 0.5 {
@@ -729,7 +729,7 @@ impl Game {
                 self.presentation.remote_strides.insert(id, (pos, accum));
             }
             for (mat, pitch, vol) in steps {
-                let p = pitch * self.vary();
+                let p = pitch * self.presentation.vary();
                 self.sfx_vol(Sfx::Step(mat, p), vol * 0.6);
             }
         }
@@ -900,7 +900,7 @@ impl Game {
                             self.presentation.thunder_delay = (dist / 110.0).clamp(0.1, 2.0);
                             let white = *atlas::builtin_slots().get("snow").unwrap_or(&39);
                             for dy in 0..26 {
-                                self.juice_burst(
+                                self.presentation.burst(
                                     at + Vec3::new(0.0, dy as f32 * 1.1, 0.0),
                                     white,
                                     2,
@@ -1231,7 +1231,7 @@ impl Game {
             }
         }
 
-        if self.ui_state.screen == Screen::Playing && self.input.mouse_captured {
+        if self.ui_state.screen == Screen::Playing && self.input.captured() {
             self.interact(dt);
         }
     }
@@ -1684,7 +1684,7 @@ impl Game {
                 })
                 .unwrap_or_default();
             for (id, pos, logical, yaw) in entries {
-                let gait = self.gait_for(id, pos, dt);
+                let gait = self.presentation.gait_for(id, pos, dt);
                 let (held, implement, st) = {
                     let r = self.multiplayer.remote.as_ref().unwrap();
                     let held = r
@@ -1743,7 +1743,7 @@ impl Game {
                 })
                 .unwrap_or_default();
             for (id, pos, logical, yaw, held_wire, pstyle, implement) in entries {
-                let gait = self.gait_for(id, pos, dt);
+                let gait = self.presentation.gait_for(id, pos, dt);
                 let held = if held_wire == u16::MAX {
                     None
                 } else {
@@ -1774,7 +1774,7 @@ impl Game {
             let held = self.inventory.slots[self.input.hotbar_sel];
             let implement = held.and_then(|stack| self.server.world.implement_visual(stack));
             let lum = sample(&self.server.world, self.player.eye());
-            let gait = self.gait_for(u32::MAX, render, dt);
+            let gait = self.presentation.gait_for(u32::MAX, render, dt);
             mobs::emit_humanoid_interpolated(
                 logical,
                 render,
@@ -2654,7 +2654,7 @@ impl Game {
                 p.x,
                 p.y,
                 p.z,
-                if self.input.mouse_captured || self.ui_state.screen != Screen::Playing {
+                if self.input.captured() || self.ui_state.screen != Screen::Playing {
                     ""
                 } else {
                     "  [click to capture mouse]"

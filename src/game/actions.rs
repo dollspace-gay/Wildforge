@@ -116,7 +116,7 @@ impl Game {
             crate::implements::ImplementCue::Use | crate::implements::ImplementCue::Strain => 6,
             crate::implements::ImplementCue::Empty => 2,
         };
-        self.juice_burst(pos.render_pos(), tile, count, 1.4);
+        self.presentation.burst(pos.render_pos(), tile, count, 1.4);
     }
 
     pub(super) fn present_working_cue(&mut self, cue: crate::workings::WorkingCue) {
@@ -155,14 +155,14 @@ impl Game {
         let path_tile = *crate::atlas::builtin_slots()
             .get("stone")
             .unwrap_or(&crate::atlas::UNKNOWN_SLOT);
-        self.juice_burst(
+        self.presentation.burst(
             cue.source.entity_center().render_pos(),
             source_tile,
             4,
             0.75,
         );
         if let Some(target) = cue.path.last().copied() {
-            self.juice_burst(
+            self.presentation.burst(
                 target.entity_center().render_pos(),
                 target_tile,
                 if cue.warning_band >= 2 { 10 } else { 6 },
@@ -172,7 +172,7 @@ impl Game {
         let inner = cue.path.len().saturating_sub(2);
         let stride = inner.div_ceil(8).max(1);
         for pos in cue.path.iter().skip(1).take(inner).step_by(stride) {
-            self.juice_burst(
+            self.presentation.burst(
                 pos.entity_center().render_pos(),
                 path_tile,
                 if cue.warning_band >= 2 { 3 } else { 1 },
@@ -206,7 +206,7 @@ impl Game {
                 .get(tile_name)
                 .unwrap_or(&crate::atlas::UNKNOWN_SLOT);
             let count = 3 + usize::from(cue.intensity) / 20;
-            self.juice_burst(
+            self.presentation.burst(
                 cue.pos.entity_center().render_pos(),
                 tile,
                 count.min(18),
@@ -214,20 +214,6 @@ impl Game {
             );
         }
         self.toast(cue.message);
-    }
-
-    /// Advance a remote player's walk phase from their motion.
-    pub(super) fn gait_for(&mut self, id: u32, pos: Vec3, dt: f32) -> (f32, f32) {
-        let e = self
-            .presentation
-            .player_gait
-            .entry(id)
-            .or_insert((pos, 0.0));
-        let hspeed = Vec3::new(pos.x - e.0.x, 0.0, pos.z - e.0.z).length() / dt.max(0.001);
-        e.0 = pos;
-        let amp = (hspeed / 3.5).clamp(0.0, 1.0);
-        e.1 += hspeed * dt * 3.2;
-        (e.1, amp)
     }
 
     /// The carried light of a held item, if any: an explicit item glow,
@@ -488,7 +474,7 @@ impl Game {
                 .pos
                 .render_pos(),
         );
-        self.juice_burst(at, tile, 12, 2.0);
+        self.presentation.burst(at, tile, 12, 2.0);
         if def.hostile && self.content.scripts.wants("on_enemy_destroyed") {
             self.content.scripts.dispatch(
                 &self.server.world,
@@ -779,7 +765,7 @@ impl Game {
                 if wait <= 0.0 {
                     bite = 1.4;
                     let tile = reg.block(reg.water_block(0)).tiles[0];
-                    self.juice_burst(bobber.render_pos(), tile, 8, 1.4);
+                    self.presentation.burst(bobber.render_pos(), tile, 8, 1.4);
                     self.sfx(Sfx::Splash);
                 }
             }
@@ -990,16 +976,16 @@ impl Game {
                 if self.presentation.juice {
                     if held.is_some_and(|i| reg.item(i).hammer) {
                         // The promised sparks: embers ring off the bloom.
-                        let v = self.vary();
+                        let v = self.presentation.vary();
                         self.sfx_vol(Sfx::Spark, v.min(1.0));
                         let ember = *atlas::builtin_slots().get("ember").unwrap_or(&0);
-                        self.juice_burst(top, ember, 8, 1.8);
+                        self.presentation.burst(top, ember, 8, 1.8);
                     } else {
-                        let v = self.vary();
+                        let v = self.presentation.vary();
                         self.sfx_vol(Sfx::Grind, v.min(1.0));
                         let b = self.server.world.get_block_at(target);
                         let tile = reg.block(b).tiles[2];
-                        self.juice_puff(top, tile, 3);
+                        self.presentation.puff(top, tile, 3);
                     }
                 }
                 if !self.creative && held.is_some() {
@@ -1075,7 +1061,7 @@ impl Game {
                         .expect("mob hit effect stays beside the mob")
                         .pos
                         .render_pos();
-                    self.juice_burst(at, reg.animals[sp].tile, 5, 1.6);
+                    self.presentation.burst(at, reg.animals[sp].tile, 5, 1.6);
                     self.sfx(Sfx::MobHurt(pitch));
                     self.survival.hunger = (self.survival.hunger - 0.01).max(0.0);
                     if !self.creative {
@@ -1132,7 +1118,7 @@ impl Game {
                     .expect("mob hit effect stays beside the mob")
                     .pos
                     .render_pos();
-                self.juice_burst(at, def.tile, 5, 1.6);
+                self.presentation.burst(at, def.tile, 5, 1.6);
                 self.sfx(Sfx::MobHurt(pitch));
                 self.survival.hunger = (self.survival.hunger - 0.01).max(0.0);
                 if !self.creative {
@@ -1208,7 +1194,7 @@ impl Game {
                             .local_structure(sid)
                             .and_then(|s| s.world_position(soff))
                         {
-                            self.juice_burst(
+                            self.presentation.burst(
                                 wp.entity_center().render_pos(),
                                 self.content.reg.block(s_block_id).tiles[0],
                                 10,
@@ -1295,7 +1281,7 @@ impl Game {
                             }
                             self.survival.hunger = (self.survival.hunger - 0.008).max(0.0);
                             self.sfx(Sfx::Break(self.break_mat(b)));
-                            self.juice_burst(
+                            self.presentation.burst(
                                 target.entity_center().render_pos(),
                                 self.content.reg.block(b).tiles[0],
                                 10,
@@ -1322,7 +1308,7 @@ impl Game {
                                 .expect("mining target was validated before completion");
                             let b = result.block;
                             self.sfx(Sfx::Break(self.break_mat(b)));
-                            self.juice_burst(
+                            self.presentation.burst(
                                 target.entity_center().render_pos(),
                                 self.content.reg.block(b).tiles[0],
                                 10,
@@ -1376,7 +1362,7 @@ impl Game {
                             Some((super::BreakTarget::World(target), progress));
                         // Chips fly as each crack stage lands.
                         if (progress * 4.0) as i32 > stage_before {
-                            self.juice_burst(
+                            self.presentation.burst(
                                 target.entity_center().render_pos(),
                                 self.content.reg.block(b).tiles[0],
                                 2,

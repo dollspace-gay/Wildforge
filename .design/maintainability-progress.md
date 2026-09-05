@@ -1365,3 +1365,21 @@ client, whose root no longer imports the whole crate. New app folder guidance
 records the boundary. Client child imports and narrower state ownership remain
 open. No validation commands ran; CLI contracts, Rust gates, native evidence,
 and fresh GPU qualification remain deferred until coding is complete.
+
+
+## Input, navigation, and cosmetic owners (coding checkpoint; unverified)
+
+Pointer capture/warp state is private to InputState. Its operations receive the
+window and camera directly, and both screen changes and focus loss share the
+existing held-key/button reset. The navigation owner holds screens and UI state;
+its explicit coordinator preserves container-close, cursor/craft return, focus,
+and capture order. Cosmetic variation, particles, and gait execute on
+PresentationState without access to simulation state. Client construction and
+platform event-loop startup now live with their respective adapters. Content
+watching and browser/world-name helpers moved to their actual callers' domains.
+
+Field access within other presentation/UI adapters remains an implementation
+seam, not full client encapsulation. No validation gates ran. The final phase
+must cover input capture/focus/repeat behavior, screen inventory conservation,
+cosmetic RNG isolation, startup and hot-reload behavior, native guest play, and
+fresh hardware GPU qualification before accepting this checkpoint.

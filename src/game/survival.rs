@@ -287,3 +287,9 @@ impl Game {
         }
     }
 }
+
+/// Armor: each point blocks 4% of the wild's damage, capped at 60%.
+pub(crate) fn reduced_damage(amount: f32, points: u32) -> f32 {
+    amount * (1.0 - (points as f32 * 0.04).min(0.6))
+}
+

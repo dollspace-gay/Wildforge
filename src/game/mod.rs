@@ -7,6 +7,7 @@ mod capture;
 pub(crate) mod combat;
 mod containers;
 mod content;
+mod content_watch;
 mod demos;
 mod dialogue;
 mod equipment;
@@ -18,6 +19,9 @@ pub(crate) use dialogue::apply_recipe_unlock_reward;
 pub(crate) use dialogue::apply_reputation_reward;
 mod frame;
 mod input;
+mod navigation;
+mod presentation;
+mod startup;
 mod interaction;
 mod inventory_ui;
 mod keymap;
@@ -36,6 +40,20 @@ mod ui;
 mod world_loading;
 mod world_loading_ui;
 
+pub(super) use app::run_windowed;
+#[cfg(test)]
+pub(crate) use browser::browser_items;
+#[cfg(test)]
+pub(crate) use content_watch::content_tree_stamp_of;
+#[cfg(test)]
+pub(crate) use survival::reduced_damage;
+#[cfg(test)]
+pub(crate) use world_loading_ui::next_world_name;
+use content_watch::{content_tree_stamp, script_mod_dirs};
+use input::{InputState, KeysDown};
+use navigation::{AccountTaskResult, Screen, UiState};
+use presentation::PresentationState;
+
 use crate::{atlas, audio, bounce, config, crafting, entity, identity, inventory, lights, mesher, mobs, mp, net, particles, physics, raycast, registry, renderer, script, server, style, visual_capture, world, worldgen};
 
 use std::path::PathBuf;
@@ -50,7 +68,7 @@ use winit::event::{
 };
 use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop};
 use winit::keyboard::{KeyCode, PhysicalKey};
-use winit::window::{CursorGrabMode, Fullscreen, Window, WindowId};
+use winit::window::{Fullscreen, Window, WindowId};
 
 use crate::audio::{Audio, BreakMat, Sfx};
 use crate::camera::Camera;
@@ -81,62 +99,6 @@ const REACH: f32 = 5.0;
 const MAX_HEALTH: f32 = 14.0; // base half-hearts (7 hearts)
 const MAX_AIR: f32 = 15.0; // seconds of breath
 
-#[derive(Clone, PartialEq)]
-enum Screen {
-    Title,
-    NewWorld,
-    CreatingWorld,
-    Accounts,
-    Moderation(u32),
-    Mods,
-    Packs,
-    Settings,
-    Appearance,
-    ConfirmDelete,
-    Playing,
-    Inventory,
-    Furnace(crate::planet::BlockPos),
-    Chest(crate::planet::BlockPos),
-    Offering(crate::planet::BlockPos),
-    Bloomery(crate::planet::BlockPos),
-    Kiln(crate::planet::BlockPos),
-    /// A recipe-list station machine (capability E7): lists the machine's
-    /// `station` recipes and crafts them from the inventory. Temporary
-    /// hardcoded screen; E11 generalizes it into mod-extensible screens.
-    Workbench(crate::planet::BlockPos),
-    /// A tamed carrier's saddlebags, keyed by mob id.
-    MobCargo(u32),
-    /// Writing a placed sign or waystone.
-    SignEdit(crate::planet::BlockPos),
-    /// A market stall: the owner manages, everyone else shops.
-    Stall(crate::planet::BlockPos),
-    /// Talking to a friendly NPC (spec 3.2): the dialogue tree in
-    /// `reg.dialogues` selected by the NPC's def. Holds the NPC mob id,
-    /// the current node id, and the highlighted choice row.
-    Dialog {
-        npc: u32,
-        node_id: String,
-        choice_sel: usize,
-    },
-    /// The quest journal (spec 3.3): accepted quests and their progress.
-    Journal,
-    /// The skill tree (capability E5): allocate learned nodes in the
-    /// active world's mode-gated tree. Temporary hardcoded screen; E11
-    /// generalizes this into mod-extensible screens.
-    Skills,
-    /// The loadout (capability E6): slot components into worn frames,
-    /// repair disabled frames, and save/apply loadout presets. Temporary
-    /// hardcoded screen; E11 generalizes this into mod-extensible screens.
-    Loadout,
-    /// A data-driven mod screen (capability E11): the index into
-    /// `Registry::screens`. Rows render from the def; buttons dispatch the
-    /// mod's `on_screen_click` hook host-authoritatively.
-    Mod(usize),
-    Join,
-    Paused,
-    Dead,
-}
-
 /// One snapshot-smoothing span: render glides from -> to over the
 /// measured packet interval instead of snapping at 20 Hz.
 struct Lerp {
@@ -156,40 +118,6 @@ impl Lerp {
             mobs::lerp_yaw(self.from_yaw, self.to_yaw, t),
         )
     }
-}
-
-#[derive(Default)]
-struct KeysDown {
-    w: bool,
-    a: bool,
-    s: bool,
-    d: bool,
-    space: bool,
-    sprint: bool,
-    block: bool,
-}
-
-/// Pointer, keyboard, capture, and input-rate state that resets together.
-struct InputState {
-    keys: KeysDown,
-    mouse_captured: bool,
-    raw_look: bool,
-    last_cursor: Option<(f64, f64)>,
-    warp_pending: bool,
-    allow_warp: bool,
-    left_held: bool,
-    right_held: bool,
-    /// Edge-triggered dodge request, consumed by `advance_player`.
-    dodge_pressed: bool,
-    action_cooldown: f32,
-    attack_cooldown: f32,
-    hotbar_sel: usize,
-    scroll_accum: f32,
-    scroll_cooldown: f32,
-    ui_cursor: (f32, f32),
-    /// WILDFORGE_CURSOR parked the pointer for a headless capture;
-    /// the window's synthetic CursorMoved events must not undo it.
-    cursor_locked: bool,
 }
 
 /// Player vitals, armor, recovery timers, and respawn ownership.
@@ -294,108 +222,6 @@ struct ContentRuntime {
     diagnostic_families: Option<Vec<visual_capture::DiagnosticFamily>>,
 }
 
-/// Screen navigation, focus, browser history, and cursor-held inventory state.
-struct UiState {
-    screen: Screen,
-    held_stack: Option<ItemStack>,
-    settings_from_pause: bool,
-    pending_delete: Option<usize>,
-    dragging_slider: Option<usize>,
-    search: String,
-    search_focus: bool,
-    /// Sign editor buffer (three short lines) and the active line.
-    sign_lines: [String; 3],
-    sign_line: usize,
-    browse_page: usize,
-    browse_view: Option<(ItemId, bool)>,
-    browse_back: Vec<(ItemId, bool)>,
-    inventory_status_open: bool,
-    inventory_browser_open: bool,
-    inventory_discovery_open: bool,
-    discovery_holder: Option<net::RecordHolderSnap>,
-    discovery_copy_target: Option<net::RecordHolderSnap>,
-    discovery_writing_pos: Option<crate::planet::BlockPos>,
-    discovery_records: Vec<crate::discovery::ObservationSummary>,
-    discovery_capacity: u16,
-    discovery_page: usize,
-    discovery_sort: u8,
-    discovery_selected: [Option<u64>; 2],
-    discovery_include_location: bool,
-    discovery_label: String,
-    discovery_label_focus: bool,
-    appearance_from_pause: bool,
-    account_name: String,
-    account_handle: String,
-    account_focus: u8,
-    account_status: String,
-    account_task: Option<std::sync::mpsc::Receiver<AccountTaskResult>>,
-    new_world_mode: String,
-    new_world_seed: String,
-    new_world_status: String,
-    moderation_confirm: Option<u8>,
-    creation_status: String,
-    creation_progress: (usize, usize),
-    /// Index into `reg.skills.branches` shown on the skill screen.
-    skills_branch: usize,
-    /// Which armor slot (0..=3) the loadout screen acts on.
-    loadout_select: usize,
-    /// Which numbered preset the loadout screen saves into / applies from.
-    loadout_preset_sel: usize,
-}
-
-enum AccountTaskResult {
-    Linked(Result<identity::atproto::AtprotoAccount, String>),
-    Revoked(Result<(), String>),
-}
-
-impl Default for UiState {
-    fn default() -> Self {
-        Self {
-            screen: Screen::Title,
-            held_stack: None,
-            settings_from_pause: false,
-            pending_delete: None,
-            dragging_slider: None,
-            search: String::new(),
-            search_focus: false,
-            sign_lines: Default::default(),
-            sign_line: 0,
-            browse_page: 0,
-            browse_view: None,
-            browse_back: Vec::new(),
-            inventory_status_open: false,
-            inventory_browser_open: false,
-            inventory_discovery_open: false,
-            discovery_holder: None,
-            discovery_copy_target: None,
-            discovery_writing_pos: None,
-            discovery_records: Vec::new(),
-            discovery_capacity: 0,
-            discovery_page: 0,
-            discovery_sort: 0,
-            discovery_selected: [None; 2],
-            discovery_include_location: false,
-            discovery_label: String::new(),
-            discovery_label_focus: false,
-            appearance_from_pause: false,
-            account_name: String::new(),
-            account_handle: String::new(),
-            account_focus: 0,
-            account_status: String::new(),
-            account_task: None,
-            new_world_mode: "survival".into(),
-            new_world_seed: String::new(),
-            new_world_status: String::new(),
-            moderation_confirm: None,
-            creation_status: String::new(),
-            creation_progress: (0, crate::planet_atlas::AtlasStage::ALL.len()),
-            skills_branch: 0,
-            loadout_select: 0,
-            loadout_preset_sel: 0,
-        }
-    }
-}
-
 /// What the player is currently mining: a world block or a structure
 /// block.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -478,101 +304,6 @@ impl Default for InteractionState {
 enum DiscoveryAim {
     Region(crate::planet::BlockPos),
     Block(crate::planet::BlockPos),
-}
-
-/// Cosmetic animation, particles, transient feedback, and light selection.
-struct PresentationState {
-    /// Top of the view-distance slider on this machine, resolved once at
-    /// startup from available memory. A setting that cannot be honoured is
-    /// worse than one that is not offered.
-    max_view_dist: i32,
-    /// Region-whisper bookkeeping: the cell we're in, and cells
-    /// already whispered this session.
-    last_ire_cell: Option<world::RegionCell>,
-    whispered_cells: std::collections::HashSet<world::RegionCell>,
-    /// Qualitative magical signatures already presented this session. The
-    /// same ordinary condition does not toast on every atlas-cell crossing.
-    arcane_signs: std::collections::HashSet<String>,
-    swing: f32,
-    hand_bob: f32,
-    weather_vis: f32,
-    lightning: f32,
-    thunder_delay: f32,
-    atlas_season: usize,
-    juice: bool,
-    rng: u32,
-    pool: particles::Pool,
-    step_accum: f32,
-    mob_strides: std::collections::HashMap<u32, f32>,
-    remote_strides: std::collections::HashMap<u32, (crate::planet::EntityPos, f32)>,
-    ui_flies: Vec<(u16, (f32, f32), usize, f32)>,
-    slot_pulse: [f32; HOTBAR_SLOTS],
-    pickup_streak: (u32, f32),
-    screen_age: f32,
-    /// Countdown to the next ambient speck (songbird, dragonfly).
-    ambient_timer: f32,
-    sel_bounce: f32,
-    press_dip: f32,
-    hitch: f32,
-    nudge: (Vec3, f32),
-    presence_timer: f32,
-    hunger_timer: f32,
-    demo_burst: Option<(Vec3, u16)>,
-    toasts: Vec<(String, f32)>,
-    lights: lights::Director,
-    player_gait: std::collections::HashMap<u32, (Vec3, f32)>,
-    demo_lights: Vec<lights::DynLight>,
-    /// Last host-authored active cue by stable working id. Dedicated guests
-    /// refresh this bounded presentation cache once per second; local play
-    /// reads the authoritative state directly.
-    working_cues: std::collections::HashMap<u64, (crate::workings::WorkingCue, f32)>,
-}
-
-impl PresentationState {
-    fn new() -> Self {
-        Self {
-            max_view_dist: config::max_view_dist_for_memory(),
-            last_ire_cell: None,
-            whispered_cells: std::collections::HashSet::new(),
-            arcane_signs: std::collections::HashSet::new(),
-            swing: 0.0,
-            hand_bob: 0.0,
-            weather_vis: 0.0,
-            lightning: 0.0,
-            thunder_delay: -1.0,
-            atlas_season: 1,
-            juice: std::env::var("WILDFORGE_JUICE")
-                .map(|v| v != "0")
-                .unwrap_or(true),
-            rng: 0x9e3779b9,
-            pool: particles::Pool::default(),
-            step_accum: 0.0,
-            mob_strides: Default::default(),
-            remote_strides: Default::default(),
-            ui_flies: Vec::new(),
-            slot_pulse: [0.0; HOTBAR_SLOTS],
-            pickup_streak: (0, 0.0),
-            screen_age: 1.0,
-            ambient_timer: 3.0,
-            sel_bounce: 1.0,
-            press_dip: 0.0,
-            hitch: 0.0,
-            nudge: (Vec3::ZERO, 0.0),
-            presence_timer: 0.0,
-            hunger_timer: 0.0,
-            demo_burst: None,
-            toasts: Vec::new(),
-            lights: lights::Director::new(),
-            player_gait: Default::default(),
-            demo_lights: Vec::new(),
-            working_cues: Default::default(),
-        }
-    }
-
-    fn vary(&mut self) -> f32 {
-        self.rng = self.rng.wrapping_mul(1664525).wrapping_add(1013904223);
-        0.9 + ((self.rng >> 8) as f32 / (1 << 24) as f32) * 0.2
-    }
 }
 
 /// Guest-side connection state.
@@ -684,306 +415,10 @@ struct Game {
     ui: UiBatch,
 }
 
-/// (mod id, dir) pairs for mods that ship a main.rhai.
-fn script_mod_dirs(reg: &Registry) -> Vec<(String, PathBuf)> {
-    reg.mods
-        .iter()
-        .filter(|m| m.has_script && m.error.is_none())
-        .filter_map(|m| m.path.clone().map(|p| (m.id.clone(), p)))
-        .collect()
-}
-
-/// Cheap fingerprint of the mods tree (file count + max mtime) for hot reload.
-/// Newest-mtime + file-count stamp over the hot-reloadable content trees
-/// (mods/ and packs/); a change re-triggers the 1 s reload poll.
-pub(crate) fn content_tree_stamp_of(roots: &[&std::path::Path]) -> u64 {
-    fn walk(dir: &std::path::Path, acc: &mut u64, count: &mut u64) {
-        let Ok(rd) = std::fs::read_dir(dir) else {
-            return;
-        };
-        for e in rd.flatten() {
-            let p = e.path();
-            if p.is_dir() {
-                walk(&p, acc, count);
-            } else if let Ok(md) = e.metadata() {
-                *count += 1;
-                if let Ok(t) = md.modified()
-                    && let Ok(d) = t.duration_since(std::time::UNIX_EPOCH)
-                {
-                    *acc = (*acc).max(d.as_secs() * 1000 + d.subsec_millis() as u64);
-                }
-            }
-        }
-    }
-    let (mut acc, mut count) = (0u64, 0u64);
-    for root in roots {
-        walk(root, &mut acc, &mut count);
-    }
-    acc ^ (count << 48)
-}
-
-fn content_tree_stamp() -> u64 {
-    content_tree_stamp_of(&[std::path::Path::new("mods"), std::path::Path::new("packs")])
-}
-
-/// Armor: each point blocks 4% of the wild's damage, capped at 60%.
-pub(crate) fn reduced_damage(amount: f32, points: u32) -> f32 {
-    amount * (1.0 - (points as f32 * 0.04).min(0.6))
-}
-
-/// First free "worldN" name. A name is taken if it's in the world list OR
-/// its folder exists on disk at all — a new world must never adopt an
-/// existing folder's chunks/player.toml, even one the listing can't parse.
-pub(crate) fn next_world_name(saves: &std::path::Path, worlds: &[(String, u32)]) -> String {
-    let mut n = 1;
-    loop {
-        let name = format!("world{n}");
-        if !worlds.iter().any(|(w, _)| w == &name) && !saves.join(&name).exists() {
-            return name;
-        }
-        n += 1;
-    }
-}
-
-/// Browser item list: public items (no internal /variants), search-filtered.
-pub(crate) fn browser_items(reg: &Registry, search: &str, creative: bool) -> Vec<ItemId> {
-    let q = search.to_lowercase();
-    (0..reg.items.len() as u16)
-        .map(ItemId)
-        .filter(|i| {
-            let d = reg.item(*i);
-            // `/` marks a generated variant — a growth stage, a fluid
-            // level, or the creative-only placer synthesised for a
-            // block nobody can hold. In creative the builder wants all
-            // of them; in survival none exist.
-            let variant = d.name.contains('/');
-            (!variant || (creative && d.creative_only))
-                && (q.is_empty()
-                    || d.label.to_lowercase().contains(&q)
-                    || d.name.to_lowercase().contains(&q))
-        })
-        .collect()
-}
-
 impl Game {
-    fn new(window: Arc<Window>) -> Game {
-        // Registry + atlas first: the renderer needs the packed texture atlas.
-        let reg = Arc::new(registry::load(std::path::Path::new("mods")));
-        for m in &reg.mods {
-            if let Some(e) = &m.error {
-                eprintln!("mod {}: {e}", m.id);
-            }
-        }
-        std::fs::create_dir_all("packs").ok();
-        let mut config = Config::load();
-        // Dev/capture override, intentionally never persisted. Production
-        // planets can otherwise spend the entire bounded screenshot run
-        // filling a player's large everyday horizon before frame one.
-        if let Ok(distance) = std::env::var("WILDFORGE_VIEW_DIST")
-            && let Ok(distance) = distance.parse::<i32>()
-        {
-            config.view_dist = distance.clamp(config::MIN_VIEW_DIST, config::MAX_VIEW_DIST);
-        }
-        let identity = identity::LocalIdentity::load_or_create(&identity::identity_dir())
-            .expect("load or create local identity");
-        let atproto_account = identity::atproto::AtprotoAccount::load(&identity::identity_dir())
-            .unwrap_or_else(|error| {
-                eprintln!("identity: could not load ATProto link: {error}");
-                None
-            });
-        // Dev override (never persisted): WILDFORGE_PACK=<id> selects a pack.
-        let pack_override = std::env::var("WILDFORGE_PACK").ok();
-        let active_pack = pack_override.clone().unwrap_or_else(|| config.pack.clone());
-        let atlas = atlas::build_atlas(
-            &reg.tex_files,
-            &atlas::pack_chain(&active_pack),
-            &reg.tex_names,
-        );
-        let pack_warnings = atlas.warnings;
-        let tile_variants = atlas.variants;
-        let diagnostic_families = visual_capture::evidence_enabled()
-            .then(|| visual_capture::diagnostic_families(&reg, &tile_variants));
-        // Read the albedos off the finished atlas, before it is handed to the
-        // renderer — this is the last point at which the packed image and the
-        // slot assignments are both in hand.
-        let block_albedo = reg.block_albedo(&atlas::slot_albedo(&atlas.color, atlas.px));
-        let renderer = pollster::block_on(renderer::Renderer::new(
-            window.clone(),
-            atlas.color,
-            atlas.material,
-            atlas.normal,
-            atlas.px,
-        ));
-        let mut scripts = script::ScriptHost::new();
-        scripts.load_mods(&script_mod_dirs(&reg));
-        // No world yet — the game opens on the title screen.
-        let world = World::new(0, PathBuf::from("saves/.none"), reg.clone());
-        let sim = server::Server::new(world, 0.3, 0x51ed_c0de);
-        let spawn = crate::planet::EntityPos::new(
-            crate::planet::Face::PosZ,
-            crate::planet::FACE_BLOCKS as f32 * 0.5 + 0.5,
-            80.0,
-            crate::planet::FACE_BLOCKS as f32 * 0.5 + 0.5,
-        )
-        .expect("initial menu position is at the planet face center");
-        let own_style = style::Style::unpack(config.appearance);
-
-        let size = window.inner_size();
-        let aspect = size.width as f32 / size.height.max(1) as f32;
-        let audio = Audio::new(config.volume);
-
-        let mut g = Game {
-            window,
-            renderer,
-            server: sim,
-            player: Player::new_at(spawn),
-            camera: Camera::new(
-                spawn
-                    .translated(Vec3::new(0.0, EYE_HEIGHT, 0.0))
-                    .expect("initial camera height is inside the shell")
-                    .pos
-                    .render_pos(),
-                aspect,
-            ),
-            input: InputState {
-                keys: KeysDown::default(),
-                mouse_captured: false,
-                raw_look: false,
-                last_cursor: None,
-                warp_pending: false,
-                allow_warp: std::env::var("WSL_DISTRO_NAME").is_err()
-                    && !std::path::Path::new("/mnt/wslg").exists(),
-                left_held: false,
-                right_held: false,
-                dodge_pressed: false,
-                action_cooldown: 0.0,
-                attack_cooldown: 0.0,
-                hotbar_sel: 0,
-                scroll_accum: 0.0,
-                scroll_cooldown: 0.0,
-                ui_cursor: (0.0, 0.0),
-                cursor_locked: false,
-            },
-            ui_state: UiState::default(),
-            inventory: Inventory::new(),
-            survival: SurvivalState::new(spawn),
-            interaction: InteractionState::default(),
-            presentation: PresentationState::new(),
-            combat: combat::CombatState::new(),
-            skills: crate::skills::SkillState::default(),
-            rng: if std::env::var("WILDFORGE_SHOT").is_ok() {
-                0x1234_5678
-            } else {
-                0x1234_5678
-                    ^ std::time::SystemTime::now()
-                        .duration_since(std::time::UNIX_EPOCH)
-                        .map(|d| d.subsec_nanos())
-                        .unwrap_or(0)
-            },
-            content: ContentRuntime {
-                reg,
-                scripts,
-                mods_stamp: 0,
-                mods_poll: 0.0,
-                packs: atlas::discover_packs(),
-                pack_warnings,
-                pack_override,
-                tile_variants,
-                diagnostic_families,
-            },
-            multiplayer: MultiplayerState::default(),
-            identity,
-            atproto_account,
-            config,
-            audio,
-            in_world: false,
-            worlds: Vec::new(),
-            world_details: Default::default(),
-            world_problems: Vec::new(),
-            loading: world_loading::WorldLoading::default(),
-            gen_pool: None,
-            mesh_pool: None,
-            stream_t0: std::time::Instant::now(),
-            creative: false,
-            flying: false,
-            last_space: -9.0,
-            time_abs: 0.0,
-            total_frames: 0,
-            capture_frames: 0,
-            occ_dirty: false,
-            block_albedo,
-            room_light: bounce::RoomLight::new(),
-            settled_frames: 0,
-            shot_at: None,
-            style: own_style,
-            auto_shot: std::env::var("WILDFORGE_SHOT").ok(),
-            last_frame: Instant::now(),
-            last_title: Instant::now(),
-            frames: 0,
-            fps: 0,
-            frame_ms: (0.0, 0.0),
-            ui: UiBatch::new(),
-        };
-        g.content.mods_stamp = content_tree_stamp();
-        g.ui_state.account_name = g.config.display_name.clone();
-        // Migration convenience only: the old implicit name is proposed in
-        // an editable local field. It is neither saved nor transmitted until
-        // the player explicitly presses SAVE LOCAL NAME.
-        if !g.config.profile_complete {
-            for key in ["WILDFORGE_NAME", "USER", "USERNAME"] {
-                if let Ok(value) = std::env::var(key)
-                    && let Ok(name) = identity::DisplayName::parse(&value)
-                {
-                    g.ui_state.account_name = name.to_string();
-                    break;
-                }
-            }
-        }
-        g.ui_state.account_handle = g
-            .atproto_account
-            .as_ref()
-            .and_then(|account| account.handle.clone())
-            .unwrap_or_default();
-        g.apply_config();
-        // Capture/benchmark override only; applying it after `apply_config`
-        // keeps a diagnostic run from rewriting the player's saved slider.
-        if let Ok(view_dist) = std::env::var("WILDFORGE_VIEW_DIST")
-            && let Ok(view_dist) = view_dist.parse::<i32>()
-        {
-            g.config.view_dist =
-                view_dist.clamp(crate::config::MIN_VIEW_DIST, g.presentation.max_view_dist);
-        }
-        g.refresh_worlds();
-        // Dev/headless: open a specific menu screen for UI verification.
-        match std::env::var("WILDFORGE_SCREEN").as_deref() {
-            Ok("newworld") => {
-                g.ui_state.new_world_seed = "20260801".into();
-                g.ui_state.screen = Screen::NewWorld;
-            }
-            Ok("creating") => {
-                g.ui_state.creation_status = "QUALIFYING HOMELAND".into();
-                g.ui_state.creation_progress = (17, 25);
-                g.ui_state.screen = Screen::CreatingWorld;
-            }
-            Ok("mods") => g.ui_state.screen = Screen::Mods,
-            Ok("packs") => g.ui_state.screen = Screen::Packs,
-            Ok("settings") => g.ui_state.screen = Screen::Settings,
-            Ok("appearance") => g.ui_state.screen = Screen::Appearance,
-            Ok("accounts") => g.ui_state.screen = Screen::Accounts,
-            Ok("confirm") => {
-                g.ui_state.pending_delete = if g.worlds.is_empty() { None } else { Some(0) };
-                g.ui_state.screen = Screen::ConfirmDelete;
-            }
-            Ok("join") => {
-                g.multiplayer.discovery = net::Discovery::start().ok();
-                g.ui_state.screen = Screen::Join;
-            }
-            _ => {}
-        }
-        if !g.config.profile_complete && std::env::var("WILDFORGE_SCREEN").is_err() {
-            g.ui_state.screen = Screen::Accounts;
-        }
-        g
+    pub(super) fn rand01(&mut self) -> f32 {
+        self.rng = self.rng.wrapping_mul(1664525).wrapping_add(1013904223);
+        (self.rng >> 8) as f32 / (1 << 24) as f32
     }
 
     fn sfx(&self, s: Sfx) {
@@ -1002,32 +437,6 @@ impl Game {
         }
     }
 
-    /// The variation rule: every repeated sound differs a little.
-    /// Uses the juice rng so cosmetics never touch the sim's dice.
-    fn vary(&mut self) -> f32 {
-        self.presentation.vary()
-    }
-
-    /// Debris burst from a block's own texture (breaks, hits).
-    fn juice_burst(&mut self, at: Vec3, tile: u16, n: usize, speed: f32) {
-        if !self.presentation.juice {
-            return;
-        }
-        let mut r = self.presentation.rng;
-        self.presentation.pool.burst(at, tile, n, speed, &mut r);
-        self.presentation.rng = r;
-    }
-
-    /// A soft ground puff (landings, grinding).
-    fn juice_puff(&mut self, at: Vec3, tile: u16, n: usize) {
-        if !self.presentation.juice {
-            return;
-        }
-        let mut r = self.presentation.rng;
-        self.presentation.pool.puff(at, tile, n, &mut r);
-        self.presentation.rng = r;
-    }
-
     /// The footstep surface under a world position.
     fn step_mat_at(&self, pos: crate::planet::EntityPos) -> audio::StepMat {
         let b = pos
@@ -1038,26 +447,6 @@ impl Game {
             .unwrap_or(crate::registry::AIR);
         audio::step_mat(&self.content.reg.block(b).name, self.break_mat(b))
     }
-}
-
-/// Start the platform event loop and windowed client.
-pub(super) fn run_windowed() {
-    // Prefer X11/XWayland on Linux: it supports cursor confinement and
-    // warping, which pure Wayland compositors (notably WSLg) often don't.
-    #[cfg(target_os = "linux")]
-    let event_loop = {
-        use winit::platform::x11::EventLoopBuilderExtX11;
-        let mut builder = EventLoop::builder();
-        if std::env::var("DISPLAY").is_ok() {
-            builder.with_x11();
-        }
-        builder.build().expect("create event loop")
-    };
-    #[cfg(not(target_os = "linux"))]
-    let event_loop = EventLoop::new().expect("create event loop");
-    event_loop.set_control_flow(ControlFlow::Poll);
-    let mut app = app::App::default();
-    event_loop.run_app(&mut app).expect("run event loop");
 }
 
 #[cfg(test)]

@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use super::world_loading::{CreationRequest, EntryRequest, LoadingEvent, LoadingKind};
-use super::{Game, Screen, next_world_name};
+use super::{Game, Screen};
 
 impl Game {
     pub(super) fn start_world(&mut self, name: &str) {
@@ -155,3 +155,18 @@ impl Game {
         }
     }
 }
+
+/// First free "worldN" name. A name is taken if it's in the world list OR
+/// its folder exists on disk at all — a new world must never adopt an
+/// existing folder's chunks/player.toml, even one the listing can't parse.
+pub(crate) fn next_world_name(saves: &std::path::Path, worlds: &[(String, u32)]) -> String {
+    let mut n = 1;
+    loop {
+        let name = format!("world{n}");
+        if !worlds.iter().any(|(w, _)| w == &name) && !saves.join(&name).exists() {
+            return name;
+        }
+        n += 1;
+    }
+}
+

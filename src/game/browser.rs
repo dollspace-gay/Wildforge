@@ -309,3 +309,24 @@ impl Game {
         false
     }
 }
+
+/// Browser item list: public items (no internal /variants), search-filtered.
+pub(crate) fn browser_items(reg: &Registry, search: &str, creative: bool) -> Vec<ItemId> {
+    let q = search.to_lowercase();
+    (0..reg.items.len() as u16)
+        .map(ItemId)
+        .filter(|i| {
+            let d = reg.item(*i);
+            // `/` marks a generated variant — a growth stage, a fluid
+            // level, or the creative-only placer synthesised for a
+            // block nobody can hold. In creative the builder wants all
+            // of them; in survival none exist.
+            let variant = d.name.contains('/');
+            (!variant || (creative && d.creative_only))
+                && (q.is_empty()
+                    || d.label.to_lowercase().contains(&q)
+                    || d.name.to_lowercase().contains(&q))
+        })
+        .collect()
+}
+

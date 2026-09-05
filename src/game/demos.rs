@@ -1910,7 +1910,7 @@ impl Game {
                     .render_pos();
                 self.presentation.demo_burst =
                     Some((center, self.content.reg.block(dirt).tiles[0]));
-                self.juice_burst(center, self.content.reg.block(dirt).tiles[0], 10, 2.2);
+                self.presentation.burst(center, self.content.reg.block(dirt).tiles[0], 10, 2.2);
             }
             self.survival.health = 5.0;
             self.survival.damage_flash = 0.35;

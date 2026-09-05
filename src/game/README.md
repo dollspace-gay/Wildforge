@@ -53,3 +53,11 @@ python3 tools/run_gameplay_proofs.py
 
 Read [AGENTS.md](AGENTS.md) before changing this area. For a structural migration,
 run the complete applicable gates and record evidence in the migration record.
+
+`startup.rs` constructs the windowed app in content/renderer/session order.
+`input.rs` owns held input and private pointer capture/warp state; its pointer
+operations receive the window and camera directly. `navigation.rs` owns screens
+and UI navigation state, with an explicit coordinator for container closure,
+held-item return, focus, and capture. `presentation.rs` owns cosmetic variation,
+particle emission, and gait; these operations do not receive simulation state.
+`content_watch.rs` observes reload inputs; publication stays in `content.rs`.
