@@ -74,13 +74,7 @@ impl Renderer {
         self.config.height = h.max(1);
         self.surface.configure(&self.device, &self.config);
         self.depth = create_depth(&self.device, &self.config);
-        self.post = create_post_targets(
-            &self.device,
-            &self.config,
-            &self.post_in_bgl,
-            &self.post_tex_bgl,
-            &self.post_sampler,
-        );
+        self.post.resize(&self.device, &self.config);
         self.update_crosshair();
     }
 

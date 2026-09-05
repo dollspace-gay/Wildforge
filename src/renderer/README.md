@@ -27,3 +27,8 @@ bindings, geometry, shadows/light, sky/fog, materials, and pass entry points.
 `device.rs` owns surface-compatible hardware selection, device limits, and
 initial surface configuration. It preserves the adapter ranking and refusal of
 software CPU adapters before handing the configured context to renderer setup.
+
+`post.rs` and `post/setup.rs` own the complete post-processing lifetime: pipelines,
+parameter bindings, HDR/bloom targets, resize, and encoding. Frame orchestration
+passes scalar exposure inputs and explicitly orders bloom, swapchain acquisition,
+composite, and UI; capture replay composites through the same owner.

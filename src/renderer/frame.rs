@@ -27,48 +27,6 @@ fn ao_floor() -> f32 {
     })
 }
 
-/// Scene value that maps to display white; past it the curve compresses rather
-/// than clips. Lower means the highlights roll sooner and the image reads
-/// brighter overall — at 8 the picture goes grey, because almost nothing in it
-/// is ever allowed to reach white. `WILDFORGE_WHITE` overrides it.
-fn white_point() -> f32 {
-    use std::sync::OnceLock;
-    static W: OnceLock<f32> = OnceLock::new();
-    *W.get_or_init(|| {
-        std::env::var("WILDFORGE_WHITE")
-            .ok()
-            .and_then(|v| v.parse().ok())
-            .filter(|v: &f32| *v >= 0.25 && *v <= 64.0)
-            .unwrap_or(2.0)
-    })
-}
-
-/// What the exposure stops down to under full daylight.
-const DAY_EXPOSURE: f32 = 0.45;
-
-/// Scene exposure applied before the tone curve. `WILDFORGE_EXPOSURE` overrides
-/// it — the knob to reach for when the whole image reads too dark or too hot,
-/// as distinct from any one light being wrong.
-fn exposure(daylight: f32) -> f32 {
-    use std::sync::OnceLock;
-    static E: OnceLock<Option<f32>> = OnceLock::new();
-    let forced = *E.get_or_init(|| {
-        std::env::var("WILDFORGE_EXPOSURE")
-            .ok()
-            .and_then(|v| v.parse().ok())
-            .filter(|v: &f32| *v > 0.0 && *v <= 64.0)
-    });
-    if let Some(e) = forced {
-        return e;
-    }
-    // Stopped down by day, open at night — an eye adapting, and the only way
-    // to spend a brighter sun on contrast rather than on brightness. Exposing
-    // for daylight is what makes its shadows deep; holding exposure flat just
-    // makes the whole image paler. Night keeps the old exposure exactly, so
-    // torchlight and moonlight read as they always did.
-    1.0 - (1.0 - DAY_EXPOSURE) * daylight.clamp(0.0, 1.0)
-}
-
 fn shadow_debug() -> u32 {
     use std::sync::OnceLock;
     static M: OnceLock<u32> = OnceLock::new();
@@ -87,14 +45,7 @@ impl Renderer {
         target: &wgpu::TextureView,
         f: &FrameInput<'_>,
     ) {
-        {
-            let mut pass = post_pass(encoder, "composite", target);
-            pass.set_pipeline(&self.composite_pipeline);
-            pass.set_bind_group(0, &self.post.composite_scene_bg, &[]);
-            pass.set_bind_group(1, &self.post.composite_bloom_bg, &[]);
-            pass.set_bind_group(2, &self.post_params_bg, &[]);
-            pass.draw(0..3, 0..1);
-        }
+        self.post.composite(encoder, target);
 
         let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("ui"),
@@ -807,7 +758,7 @@ impl Renderer {
             let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("main"),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: &self.post.hdr_view,
+                    view: self.post.scene_view(),
                     depth_slice: None,
                     resolve_target: None,
                     ops: wgpu::Operations {
@@ -895,7 +846,7 @@ impl Renderer {
             let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("hand"),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: &self.post.hdr_view,
+                    view: self.post.scene_view(),
                     depth_slice: None,
                     resolve_target: None,
                     ops: wgpu::Operations {
@@ -928,43 +879,7 @@ impl Renderer {
             }
         }
 
-        // Bloom: isolate the HDR headroom, then separable blur at half res.
-        // The bright pass clears bloom_a even with bloom off, so the composite
-        // always samples a defined texture (times a zero intensity).
-        let bloom_on = f.bloom > 0.0;
-        // Night factor for the composite's cold grade: ramps 0 -> 1 as daylight
-        // falls from ~dusk (0.30) to deep night (0.05), so the sunset's warm
-        // sky is never cooled — only true night is.
-        let night = ((0.30 - f.daylight) / 0.25).clamp(0.0, 1.0);
-        self.queue.write_buffer(
-            &self.post_params_buf,
-            0,
-            bytemuck::cast_slice(&[f.bloom.max(0.0), night, exposure(f.daylight), white_point()]),
-        );
-        {
-            let mut bp = post_pass(&mut encoder, "bloom-bright", &self.post.bloom_a);
-            if bloom_on {
-                bp.set_pipeline(&self.bright_pipeline);
-                bp.set_bind_group(0, &self.post.bright_bg, &[]);
-                bp.set_bind_group(1, &self.post.bright_aux_bg, &[]);
-                bp.set_bind_group(2, &self.post_params_bg, &[]);
-                bp.draw(0..3, 0..1);
-            }
-        }
-        if bloom_on {
-            {
-                let mut bp = post_pass(&mut encoder, "bloom-blur-h", &self.post.bloom_b);
-                bp.set_pipeline(&self.blur_h_pipeline);
-                bp.set_bind_group(0, &self.post.blur_h_bg, &[]);
-                bp.draw(0..3, 0..1);
-            }
-            {
-                let mut bp = post_pass(&mut encoder, "bloom-blur-v", &self.post.bloom_a);
-                bp.set_pipeline(&self.blur_v_pipeline);
-                bp.set_bind_group(0, &self.post.blur_v_bg, &[]);
-                bp.draw(0..3, 0..1);
-            }
-        }
+        self.post.bloom(&self.queue, &mut encoder, f.bloom, f.daylight);
 
         // Composite HDR + bloom into the sRGB swapchain (the tonemap/encode).
         // Only now does the swapchain image matter: acquire it here so the

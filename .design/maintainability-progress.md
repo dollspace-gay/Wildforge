@@ -1460,3 +1460,18 @@ No build, test, or GPU command ran. Final verification must compare shader
 sources, validate all shader modules, check the hardware admission policy, and
 produce fresh native frame/capture/timing evidence. Resource/pipeline ownership
 continues as implementation work.
+
+
+## Post-processing resource owner (coding checkpoint; unverified)
+
+PostProcess now owns private pipelines, parameter bindings, samplers/layouts,
+and HDR/bloom targets. Setup creates a complete owner, resize replaces its target
+set, and frame orchestration calls its bloom/composite operations explicitly.
+Only the HDR scene view crosses into world/viewmodel encoding. Exposure/white
+point inputs, night grade, half-resolution targets, bloom-off clear, pass order,
+and capture replay remain unchanged. The new setup directory has guides.
+
+No validation commands ran. Final checks must cover resize and target lifetime,
+bloom off/on, exposure overrides, UI/capture ordering, Naga/pipeline contracts,
+and fresh native GPU captures and timings. Other renderer and client/world
+ownership work remains in progress.

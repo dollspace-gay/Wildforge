@@ -18,7 +18,7 @@ mod post;
 mod resources;
 mod setup;
 
-use post::*;
+use post::{PostProcess, create_depth};
 use resources::{atlas_bind_group, upload_atlas};
 
 #[repr(C)]
@@ -425,18 +425,7 @@ pub struct Renderer {
     pt_face_buf: wgpu::Buffer,             // per-face {view_proj, light_pos}
     pt_face_bg: wgpu::BindGroup,           // dynamic-offset bind of pt_face_buf
 
-    // HDR + bloom post chain. The pipelines are size-independent; the targets
-    // and their bind groups are rebuilt on resize by `create_post_targets`.
-    post_in_bgl: wgpu::BindGroupLayout,
-    post_tex_bgl: wgpu::BindGroupLayout,
-    post_sampler: wgpu::Sampler,
-    post_params_buf: wgpu::Buffer,
-    post_params_bg: wgpu::BindGroup,
-    bright_pipeline: wgpu::RenderPipeline,
-    blur_h_pipeline: wgpu::RenderPipeline,
-    blur_v_pipeline: wgpu::RenderPipeline,
-    composite_pipeline: wgpu::RenderPipeline,
-    post: PostTargets,
+    post: PostProcess,
 
     outline_buf: wgpu::Buffer,
     crosshair_buf: wgpu::Buffer,
