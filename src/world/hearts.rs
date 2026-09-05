@@ -626,15 +626,7 @@ impl World {
     /// water over it reaches sea level. A dug pond on a hillside fails
     /// the first test; a one-deep tidal scrape fails the second.
     pub fn is_open_water_at(&self, pos: SurfacePos) -> bool {
-        let floor = self.surface_height_at(pos);
-        floor < crate::chunk::SEA_LEVEL - 1
-            && BlockPos::new(
-                pos.face(),
-                pos.u(),
-                (crate::chunk::SEA_LEVEL - 1) as u8,
-                pos.v(),
-            )
-            .is_ok_and(|at| self.reg.is_water(self.get_block_at(at)))
+        super::TerrainRead::is_open_water_at(self, pos)
     }
 
     /// Live water-column conditions for ecology. A dug canal changes the

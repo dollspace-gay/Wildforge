@@ -46,3 +46,14 @@ pub(crate) fn seasonal_temperature(field: f32, position: SurfacePos, day: f64) -
     let delta = (phase.sin() * latitude.sin() * 14.0) as f32;
     field * 22.0 + 8.0 + delta
 }
+
+/// Deterministic identity noise for one canonical surface cell.
+pub(crate) fn surface_hash(seed: u32, salt: u32, pos: SurfacePos) -> u32 {
+        // Canonical face/cell identity means the same physical cell has one
+        // roll even at seams. Adjacent cells remain decorrelated as intended.
+        let a = ((pos.face() as u32) << 29) ^ (u32::from(pos.u()) << 13) ^ u32::from(pos.v());
+        let mut h = seed ^ salt ^ a.wrapping_mul(0x9e37_79b9);
+        h ^= h >> 16;
+        h = h.wrapping_mul(0x85eb_ca6b);
+        h ^ (h >> 13)
+}

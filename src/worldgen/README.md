@@ -24,3 +24,9 @@ immutable generator storage, and the explicit stage coordinator.
 The immutable temperature field and seam-safe surface noise live in the source
 climate module so replica weather fallback shares the same seed and sampling
 formula without constructing a Generator. Atlas-backed climate stays here.
+
+`Geography` now owns climate fields, relief splines, and the derived province
+cache with their query algorithms. It has no registry/material bindings or chunk
+generation method. Generator forwards its established query API through
+`queries.rs`; generation stages borrow the geography-owned detail fields.
+Replicas use Geography for the same atlas-free biome and climate observations.

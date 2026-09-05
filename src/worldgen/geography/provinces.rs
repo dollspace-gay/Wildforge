@@ -1,10 +1,11 @@
 //! Canonical province partition, cached labels, and neighborhood queries.
 
-use super::{Biome, Generator, Province, ProvinceKey, ProvinceLabel, hash2};
+use super::super::{Biome, Province, ProvinceKey, ProvinceLabel, hash2};
+use super::Geography;
 use crate::planet::{FACE_BLOCKS, Face, SurfacePos, geodesic_distance};
 use crate::chunk::SEA_LEVEL;
 
-impl Generator {
+impl Geography {
     /// Provinces: the world's countries. A jittered-grid Voronoi
     /// partition (the plate trick at a smaller scale) whose climate is
     /// sampled ONCE at the site — so a province has one biome, not a

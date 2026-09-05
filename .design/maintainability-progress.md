@@ -1596,3 +1596,20 @@ No validation ran. Final native teardown, queued reliable ordering, movement
 datagrams, admission failure, reconnect, and ordinary UI/agent request scenarios
 must exercise this lifetime. Graphical replica and remaining ownership work are
 still implementation, not accepted phase completion.
+
+## Immutable geography ownership (coding checkpoint; unverified)
+
+Geography now owns the seeded climate fields, relief splines, optional immutable
+atlas, and derived province-label cache with their climate/province/relief query
+methods. Generator retains its established public query API through explicit
+forwarding, and generation stages borrow the same detail fields. ReplicaWorld
+uses this query owner without terrain/content bindings or a generate operation;
+its observed biome preserves the former atlas-free, ungrafted guest policy.
+Open-water classification is shared through TerrainRead.
+
+Source moves retain seed salts, spline points, topology packing, field formulas,
+province cache/iteration behavior, and atlas overrides. The new geography folder
+has both guides. No validation ran. Final fixtures must compare legacy queries,
+chunk/atlas outputs, seams, ties, cache/request order, and worker counts. This
+supplies the biome observation needed for graphical replica migration; graphical
+runtime ownership and the final campaign remain open.

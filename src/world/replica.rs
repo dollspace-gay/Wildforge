@@ -4,7 +4,7 @@ use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 use crate::chunk::{Chunk, ChunkPos};
-use crate::climate::TemperatureField;
+use crate::worldgen::Geography;
 use crate::entity::ItemEntity;
 use crate::mobs::{Mob, Projectile};
 use crate::planet::{BlockPos, SurfacePos};
@@ -19,7 +19,7 @@ use super::{BlockEntity, ReplicaObservations, ReplicationTarget, TerrainRead};
 pub(crate) struct ReplicaWorld {
     registry: Arc<Registry>,
     terrain: TerrainStore,
-    temperature: TemperatureField,
+    geography: Geography,
     observations: ReplicaObservations,
     block_entities: HashMap<BlockPos, BlockEntity>,
     mobs: Vec<Mob>,
@@ -34,7 +34,7 @@ impl ReplicaWorld {
         Self {
             registry,
             terrain: TerrainStore::default(),
-            temperature: TemperatureField::new(seed),
+            geography: Geography::new(seed, None),
             observations: ReplicaObservations::default(),
             block_entities: HashMap::new(),
             mobs: Vec::new(),
@@ -72,10 +72,19 @@ impl ReplicaWorld {
     pub(crate) fn weather_at_surface(&self, position: SurfacePos) -> LocalWeatherSample {
         self.observations.weather_at(position).unwrap_or_else(|| LocalWeatherSample {
             temperature_c: crate::climate::seasonal_temperature(
-                self.temperature.sample(position), position, f64::from(self.day),
+                self.geography.climate_at(position).t, position, f64::from(self.day),
             ),
             ..LocalWeatherSample::default()
         })
+    }
+
+    pub(crate) fn biome_here_at(&self, position: SurfacePos) -> crate::worldgen::Biome {
+        if self.is_open_water_at(position) {
+            crate::worldgen::Biome::Ocean
+        } else {
+            // Heart graft state is authoritative and has never been streamed.
+            self.geography.biome_at(position)
+        }
     }
 
     fn apply_block(

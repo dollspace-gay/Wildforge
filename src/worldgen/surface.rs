@@ -69,9 +69,9 @@ impl Generator {
                 }) || (ecology.is_none()
                     && biome == Biome::Mountains
                     && top >= 150
-                    && Self::noise_at(&self.detail, surface, 9.0, [0.0; 3]) > -0.2);
+                    && Self::noise_at(&self.geography.detail, surface, 9.0, [0.0; 3]) > -0.2);
 
-                let scrub_sandy = Self::noise_at(&self.detail, surface, 33.0, [0.0; 3]) > 0.15;
+                let scrub_sandy = Self::noise_at(&self.geography.detail, surface, 33.0, [0.0; 3]) > 0.15;
                 // None = leave the natural rock exposed (bare mountains,
                 // steep faces — the strata read in the cliffs).
                 let (top_b, under_b): (Option<BlockId>, Option<BlockId>) = if underwater {
@@ -87,7 +87,7 @@ impl Generator {
                         || top < SEA_LEVEL - 14
                     {
                         (Some(self.gravel), Some(self.gravel))
-                    } else if Self::noise_at(&self.detail, surface, 23.0, [0.0; 3]) > 0.34 {
+                    } else if Self::noise_at(&self.geography.detail, surface, 23.0, [0.0; 3]) > 0.34 {
                         // Clay beds: patches where still shallows let
                         // the fine sediment settle (wild arc, stage 5
                         // — the crock starts here).
@@ -110,7 +110,7 @@ impl Generator {
                     (None, None)
                 } else {
                     let beach = top <= SEA_LEVEL + 1;
-                    let patch = Self::noise_at(&self.detail, surface, 9.0, [0.0; 3]);
+                    let patch = Self::noise_at(&self.geography.detail, surface, 9.0, [0.0; 3]);
                     if let Some(sample) = ecology {
                         if sample.habitat_flags & crate::planet_atlas::HABITAT_SALT_MARSH != 0 {
                             if sample.salinity >= 150 && patch > 0.48 {

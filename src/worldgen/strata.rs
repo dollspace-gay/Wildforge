@@ -6,8 +6,8 @@ use crate::registry::BlockId;
 
 impl Generator {
     pub(super) fn strata_bands_at(&self, pos: SurfacePos, cl: &Climate) -> [i32; 5] {
-        let w1 = Self::noise_at(&self.bandwarp, pos, 260.0, [0.0, 0.0, 0.0]);
-        let w2 = Self::noise_at(&self.bandwarp, pos, 170.0, [7.3, -2.1, 4.7]);
+        let w1 = Self::noise_at(&self.geography.bandwarp, pos, 260.0, [0.0, 0.0, 0.0]);
+        let w2 = Self::noise_at(&self.geography.bandwarp, pos, 170.0, [7.3, -2.1, 4.7]);
         if let Some(atlas) = &self.atlas {
             let geology = atlas.geology_sample(pos.center());
             let base = match geology.stratigraphic_stack {

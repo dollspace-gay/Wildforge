@@ -1,11 +1,12 @@
 //! Continental and tectonic relief before hydrology.
 
-use super::{Climate, Generator};
+use super::super::{Climate};
+use super::Geography;
 use crate::planet::SurfacePos;
 #[cfg(test)]
 use noise::NoiseFn;
 
-impl Generator {
+impl Geography {
     /// Spline-driven terrain parameters for a column: (offset, factor).
     /// Plate-driven relief for a column: fold ranges where continents
     /// collide, coastal ranges and offshore trenches at subduction
@@ -40,12 +41,12 @@ impl Generator {
     /// Terrain offset before hydrology: continents, worn highlands,
     /// and plate relief.
     /// Hot, dry, rugged inland climate: mesa country.
-    pub(super) fn is_badlands(cl: &Climate) -> bool {
+    pub(in crate::worldgen) fn is_badlands(cl: &Climate) -> bool {
         cl.t > 0.7 && cl.h < -0.4 && cl.c > 0.1
     }
 
     #[cfg(test)]
-    pub(super) fn base_offset(&self, wx: i32, wz: i32, cl: &Climate) -> f32 {
+    pub(in crate::worldgen) fn base_offset(&self, wx: i32, wz: i32, cl: &Climate) -> f32 {
         let base = self.offset_base.at(cl.c);
         // Old erosion mountains stay as worn highlands; the young
         // dramatic ranges belong to the plate boundaries now.
@@ -61,7 +62,7 @@ impl Generator {
         off
     }
 
-    pub(super) fn base_offset_at(&self, pos: SurfacePos, cl: &Climate) -> f32 {
+    pub(in crate::worldgen) fn base_offset_at(&self, pos: SurfacePos, cl: &Climate) -> f32 {
         if let Some(atlas) = &self.atlas {
             let terrain = atlas.terrain_sample(pos.center());
             let baseline = terrain.eroded_elevation - atlas.sampled_volcanic_relief(pos.center())

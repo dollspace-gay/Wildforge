@@ -14,16 +14,15 @@ mod structures;
 mod landmarks;
 pub use landmarks::{heart_form, heart_height};
 
-mod climate;
-mod provinces;
-mod relief;
+mod geography;
+pub(crate) use geography::Geography;
+mod queries;
 mod hydrology;
 mod prospecting;
 mod density;
 mod strata;
 mod context;
 
-use std::collections::HashMap;
 use std::sync::Arc;
 
 use noise::Perlin;
@@ -268,23 +267,12 @@ pub struct Generator {
     /// Direct unit-test generators may omit it to exercise legacy fine-detail
     /// math without allocating a planet fixture.
     atlas: Option<Arc<crate::planet_atlas::PlanetAtlas>>,
-    /// Province label cache: classifying a country means sampling its
-    /// site climate (tectonics included), and every column in it wants
-    /// the same answer. Keyed by province, so the work happens once.
-    province_cache: std::sync::RwLock<HashMap<ProvinceKey, ProvinceLabel>>,
+    geography: Geography,
     base3d: [Perlin; 3],
-    cont: Perlin,
-    ero: Perlin,
-    ridge: Perlin,
-    temperature: crate::climate::TemperatureField,
-    moisture: Perlin,
     cheese: Perlin,
     spag1: Perlin,
     spag2: Perlin,
-    detail: Perlin,
     seed: u32,
-    offset_base: Spline,
-    mountain_amp: Spline,
     factor_spline: Spline,
     // Resolved block ids.
     grass: BlockId,
@@ -348,7 +336,6 @@ pub struct Generator {
     lava: BlockId,
     quartz_block: BlockId,
     amethyst_block: BlockId,
-    bandwarp: Perlin,
     granite3d: Perlin,
     rivernoise: Perlin,
     lakenoise: Perlin,

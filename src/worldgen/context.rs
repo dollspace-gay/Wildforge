@@ -1,7 +1,6 @@
 //! Seeded immutable noise, content bindings, and coordinate sampling.
 
 use super::{Biome, Generator, Spline, hash2};
-use std::collections::HashMap;
 use std::sync::Arc;
 use noise::{NoiseFn, Perlin};
 use crate::chunk::{CHUNK_X, CHUNK_Z, ChunkPos};
@@ -46,13 +45,7 @@ impl Generator {
     }
 
     pub(super) fn hash_surface(&self, salt: u32, pos: SurfacePos) -> u32 {
-        // Canonical face/cell identity means the same physical cell has one
-        // roll even at seams. Adjacent cells remain decorrelated as intended.
-        let a = ((pos.face() as u32) << 29) ^ (u32::from(pos.u()) << 13) ^ u32::from(pos.v());
-        let mut h = self.seed ^ salt ^ a.wrapping_mul(0x9e37_79b9);
-        h ^= h >> 16;
-        h = h.wrapping_mul(0x85eb_ca6b);
-        h ^ (h >> 13)
+        crate::climate::surface_hash(self.seed, salt, pos)
     }
 
     pub fn new(seed: u32, reg: &Registry) -> Generator {
@@ -60,37 +53,12 @@ impl Generator {
         let p = |k: u32| Perlin::new(seed.wrapping_add(k));
         Generator {
             atlas: None,
-            province_cache: std::sync::RwLock::new(HashMap::new()),
+            geography: super::Geography::new(seed, None),
             base3d: [p(10), p(11), p(12)],
-            cont: p(20),
-            ero: p(21),
-            ridge: p(22),
-            temperature: crate::climate::TemperatureField::new(seed),
-            moisture: p(5),
             cheese: p(30),
             spag1: p(31),
             spag2: p(32),
-            detail: p(2),
             seed,
-            // Continental base height: ocean floor -> coast -> inland.
-            offset_base: Spline::new(&[
-                (-1.0, 38.0),
-                (-0.45, 52.0),
-                (-0.18, 62.0),
-                (-0.05, 66.0),
-                (0.2, 72.0),
-                (0.6, 84.0),
-                (1.0, 92.0),
-            ]),
-            // Mountain amplitude by erosion (low erosion = young peaks).
-            mountain_amp: Spline::new(&[
-                (-1.0, 130.0),
-                (-0.6, 85.0),
-                (-0.3, 38.0),
-                (0.0, 14.0),
-                (0.5, 5.0),
-                (1.0, 0.0),
-            ]),
             // Vertical squish by erosion (high erosion = flat).
             factor_spline: Spline::new(&[
                 (-1.0, 1.7),
@@ -174,7 +142,6 @@ impl Generator {
             lava: b("base:lava"),
             quartz_block: b("base:quartz_block"),
             amethyst_block: b("base:amethyst_block"),
-            bandwarp: p(40),
             granite3d: p(42),
             rivernoise: p(50),
             lakenoise: p(51),
@@ -187,6 +154,7 @@ impl Generator {
         atlas: Arc<crate::planet_atlas::PlanetAtlas>,
     ) -> Generator {
         let mut generator = Self::new(seed, reg);
+        generator.geography = super::Geography::new(seed, Some(Arc::clone(&atlas)));
         generator.atlas = Some(atlas);
         generator
     }

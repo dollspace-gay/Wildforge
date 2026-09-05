@@ -70,6 +70,13 @@ pub trait TerrainRead {
         0
     }
 
+    fn is_open_water_at(&self, surface: SurfacePos) -> bool {
+        self.surface_height_at(surface) < crate::chunk::SEA_LEVEL - 1
+            && BlockPos::new(
+                surface.face(), surface.u(), (crate::chunk::SEA_LEVEL - 1) as u8, surface.v(),
+            ).is_ok_and(|position| self.registry().is_water(self.get_block_at(position)))
+    }
+
     #[cfg(test)]
     fn get_block(&self, x: i32, y: i32, z: i32) -> BlockId {
         BlockPos::of_world(x, y, z).map_or(AIR, |position| self.get_block_at(position))
