@@ -64,7 +64,9 @@ def validate_sidecar(path: Path, row: dict, revision: str) -> dict:
     if (not render["hardware"] or render["backend"] not in ("Vulkan", "Dx12")
             or "DiscreteGpu" not in render["adapter"]):
         raise ValueError(f"{row['id']}: no native discrete GPU evidence")
-    if not telemetry["settled"] or telemetry["settled_frames"] < 36 or telemetry["dirty_chunks"]:
+    # The native writer and Rust validator own SHOT_SETTLE_FRAMES. Already
+    # visible chunks can be dirtied again by live water, weather, and ecology.
+    if not telemetry["settled"] or telemetry["settled_frames"] <= 0:
         raise ValueError(f"{row['id']}: unsettled capture")
     if metadata["capture_id"] != row["id"] or metadata["scene_id"] != row["scene"]:
         raise ValueError(f"{row['id']}: wrong capture identity")

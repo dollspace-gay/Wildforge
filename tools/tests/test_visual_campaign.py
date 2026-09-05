@@ -61,6 +61,18 @@ class CampaignTests(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     validate_sidecar(path, row, row["template"]["build"]["commit"])
 
+    def test_live_remeshing_does_not_reject_an_initially_settled_capture(self):
+        _, rows = plan(self.root, "2026-09-05")
+        row = rows[0]
+        metadata = copy.deepcopy(row["template"])
+        metadata["capture_id"] = row["id"]
+        metadata["scene_id"] = row["scene"]
+        metadata["telemetry"].update(settled=True, settled_frames=10, dirty_chunks=17)
+        with tempfile.TemporaryDirectory() as temporary:
+            path = Path(temporary) / "capture.toml"
+            path.write_text(render(metadata))
+            self.assertEqual(validate_sidecar(path, row, metadata["build"]["commit"]), metadata)
+
     def test_fingerprint_detects_new_modules_and_ignores_guides(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
