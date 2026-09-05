@@ -13,6 +13,10 @@ water/salt accounting stays in the existing water-cycle ledger.
 volcanism, relief, strata/provinces, finite deposits, validation, and queries.
 Its parent retains the bounded deterministic attempt-selection coordinator.
 
+`hydrology/` separates ordered flooding/flow, erosion, ocean and lake reservoirs,
+watersheds, river/channel geometry, validation, sampling, and finite placers.
+Its parent keeps the generation sequence and final dense-cell accounting.
+
 Start with `biomes.rs`, `climate.rs`, `diagnostics.rs`, `geology.rs`, `hydrology.rs`, `water_cycle.rs`. See the [repository overview](../../README.md) for
 build prerequisites and complete checks. Commands below run from the repository root.
 
