@@ -54,6 +54,8 @@ cargo +1.95.0 check --locked --all-targets
 cargo test --locked --all-targets
 cargo build --locked --release
 cargo deny check advisories
+python3 -m unittest discover -s tools/tests -v
+python3 tools/check_maintainability.py
 ```
 
 For quick feedback, CI runs non-agent tests separately:
@@ -111,6 +113,12 @@ platform/app -> client Game -> Server simulation -> World/content
 The rationale, compatibility constraints, and two-pass refactor record live
 in [the modularization plan](docs/modularization-plan.md). A separate reusable
 engine crate is intentionally deferred until there is a second real consumer.
+
+The next [maintainability refactor plan](.design/maintainability-refactor.md)
+covers shared terrain jobs, client sessions, authoritative operations, and
+domain ownership. The [advisory maintainability checker](tools/maintainability/README.md)
+reports files over 400/500 physical lines and exact-token copy/paste candidates.
+These are soft review signals; existing size/duplication findings do not fail CI.
 
 ### WSL2 / WSLg note
 
