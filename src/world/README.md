@@ -54,3 +54,8 @@ read rules. `standing.rs` preserves position rescue order with explicit column
 preparation: authority can load a column, while replica prediction reads only
 resident terrain. `terrain/remap.rs` remaps resident block identities by name;
 authority separately reconciles its gates, ledgers, and generator bindings.
+
+`country_view.rs` shares seed bearings and heart descriptions from immutable
+geography plus an explicit known-dead predicate/visible heart. Soil warning
+priority similarly uses observed salinity and optional habitat/moisture inputs.
+Guests retain their existing absence of private heart and climate-water books.

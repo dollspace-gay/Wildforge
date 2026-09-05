@@ -49,6 +49,7 @@ pub(crate) mod pieces;
 mod power;
 mod query;
 mod standing;
+mod country_view;
 mod view;
 pub(crate) use view::WorldView;
 mod replica;

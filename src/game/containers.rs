@@ -15,6 +15,23 @@ use super::Game;
 use super::navigation::Screen;
 use crate::registry::RecipeDef;
 
+#[derive(Clone, Copy)]
+enum ContainerPanel { Chest, Offering, Furnace, Bloomery, Kiln }
+
+impl ContainerPanel {
+    fn accepts(self, entity: &world::BlockEntity, registry: &crate::registry::Registry) -> bool {
+        match (self, entity) {
+            (Self::Chest, world::BlockEntity::Chest(_))
+            | (Self::Offering, world::BlockEntity::Offering(_))
+            | (Self::Furnace, world::BlockEntity::Furnace(_)) => true,
+            (Self::Bloomery, world::BlockEntity::Multiblock(machine)) => matches!(machine.kind.handler(registry),
+                Some(crate::machines::MachineHandler::Bloomery | crate::machines::MachineHandler::Forge)),
+            (Self::Kiln, world::BlockEntity::Multiblock(_)) => true,
+            _ => false,
+        }
+    }
+}
+
 impl Game {
     pub(super) fn slot_get(&self, craft: bool, i: usize) -> Option<ItemStack> {
         if craft {
@@ -262,7 +279,7 @@ impl Game {
         slot: usize,
         right: bool,
     ) {
-        self.exchange_container_slot(pos, slot, right);
+        self.exchange_container_slot(pos, slot, right, ContainerPanel::Bloomery);
     }
 
     /// The LIGHT action: needs an ember in hand or inventory, a valid
@@ -355,7 +372,7 @@ impl Game {
     }
 
     pub(super) fn kiln_click(&mut self, pos: crate::planet::BlockPos, slot: usize, right: bool) {
-        self.exchange_container_slot(pos, slot, right);
+        self.exchange_container_slot(pos, slot, right, ContainerPanel::Kiln);
     }
 
     pub(super) fn furnace_slot_rect(&self, i: usize) -> (f32, f32, f32, f32) {
@@ -477,13 +494,15 @@ impl Game {
         slot: usize,
         right: bool,
     ) {
-        self.exchange_container_slot(pos, slot, right);
+        self.exchange_container_slot(pos, slot, right, ContainerPanel::Offering);
     }
 
     /// The same exchange updates a local container or predicts the received
     /// snapshot. The host echo remains the truth for a graphical guest.
-    fn exchange_container_slot(&mut self, pos: crate::planet::BlockPos, slot: usize, right: bool) {
+    fn exchange_container_slot(&mut self, pos: crate::planet::BlockPos, slot: usize, right: bool, panel: ContainerPanel) {
         self.remote_container_notify(pos, slot, right);
+        if !self.runtime.view().block_entity_at(&pos)
+            .is_some_and(|entity| panel.accepts(entity, &self.content.reg)) { return; }
         let result = self.runtime.click_container(
             pos, &mut self.ui_state.held_stack,
             crate::player_ops::container::Click { slot, right, actor: None },
@@ -512,11 +531,11 @@ impl Game {
     }
 
     pub(super) fn chest_click(&mut self, pos: crate::planet::BlockPos, slot: usize, right: bool) {
-        self.exchange_container_slot(pos, slot, right);
+        self.exchange_container_slot(pos, slot, right, ContainerPanel::Chest);
     }
 
     pub(super) fn furnace_click(&mut self, pos: crate::planet::BlockPos, slot: usize, right: bool) {
-        self.exchange_container_slot(pos, slot, right);
+        self.exchange_container_slot(pos, slot, right, ContainerPanel::Furnace);
     }
 
     pub(super) const BCOLS: usize = 6;

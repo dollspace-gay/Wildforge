@@ -1706,7 +1706,7 @@ impl Game {
                     == Some("heart")
             });
             if !at_heart && held.is_some_and(|i| world::seed_nature(&reg.item(i).name).is_some()) {
-                let line = self.runtime.local().world.seed_bearing_at(self.player.pos);
+                let line = self.runtime.view().seed_bearing_at(self.player.pos);
                 self.toast(line);
                 self.sfx(Sfx::Click);
                 self.input.action_cooldown = 0.6;
@@ -2384,7 +2384,7 @@ impl Game {
                     // A raised cairn is bought knowledge: anyone reads
                     // the surveyor's ground, no pick required — and a
                     // country's heart is the first thing worth knowing.
-                    let report = self.runtime.local().world.heart_report_at(h.block.surface());
+                    let report = self.runtime.view().heart_report_at(h.block.surface());
                     self.toast(report);
                     self.toast_prospect(h.block.surface());
                     self.sfx(Sfx::Click);
@@ -2686,7 +2686,7 @@ impl Game {
                 }
                 if needs_farmland
                     && let Some(below) = pos.offset(0, -1, 0)
-                    && let Some(reason) = self.runtime.local().world.soil_failure_at(below)
+                    && let Some(reason) = self.runtime.view().soil_failure_at(below)
                 {
                     self.toast(reason.to_string());
                 }

@@ -147,3 +147,12 @@ impl ReplicaWorld {
         super::super::standing::settle(self, want)
     }
 }
+
+impl ReplicaWorld {
+    pub(crate) fn seed_bearing_at(&self, from: crate::planet::EntityPos) -> String {
+        crate::world::country_view::seed_bearing(&self.geography, from, |_| false)
+    }
+    pub(crate) fn heart_report_at(&self, position: SurfacePos) -> String {
+        crate::world::country_view::heart_report(&self.geography, &self.registry, position, None)
+    }
+}

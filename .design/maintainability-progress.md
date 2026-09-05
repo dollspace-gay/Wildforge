@@ -1712,3 +1712,15 @@ which panics when that byte lies inside a UTF-8 code point. The same bounded
 messages are unchanged. Final receiver regressions must include multibyte text
 crossing the limit, short Unicode, and empty text for both guest adapters.
 No tests ran during this implementation checkpoint.
+
+
+## Remaining scene observation routing (coding checkpoint; unverified)
+
+Country seed bearings/heart reports now share pure read algorithms over immutable
+geography and explicit heart observations. Soil warnings share their priority
+rules over salinity and optional atlas habitat/moisture. The graphical guest
+retains the former empty private heart map and atlas-free moisture baseline.
+Container screens retain their expected entity-type guard before prediction while
+sending the existing host click first; shared slot rules stay centralized.
+These complete the identified unconditional country/soil reads in the graphical
+action adapter. Full Rust/API/scene parity checks remain deferred to the end.

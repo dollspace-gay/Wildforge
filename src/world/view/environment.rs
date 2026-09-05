@@ -137,3 +137,26 @@ impl<'a> WorldView<'a> {
         }
     }
 }
+
+impl WorldView<'_> {
+    pub(crate) fn seed_bearing_at(&self, from: crate::planet::EntityPos) -> String {
+        match self.source {
+            Source::Authority(world) => world.seed_bearing_at(from),
+            Source::Replica(world) => world.seed_bearing_at(from),
+        }
+    }
+    pub(crate) fn heart_report_at(&self, position: SurfacePos) -> String {
+        match self.source {
+            Source::Authority(world) => world.heart_report_at(position),
+            Source::Replica(world) => world.heart_report_at(position),
+        }
+    }
+    pub(crate) fn soil_failure_at(&self, position: crate::planet::BlockPos) -> Option<&'static str> {
+        match self.source {
+            Source::Authority(world) => world.soil_failure_at(position),
+            // No atlas/weather water books are sent. The old guest used the
+            // atlas-free moisture baseline of 1.0 and no habitat sample.
+            Source::Replica(world) => crate::world::soil::soil_failure(world.get_soil_salinity_at(position), None, false, 1.0),
+        }
+    }
+}
