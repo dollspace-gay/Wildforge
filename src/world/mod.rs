@@ -51,6 +51,7 @@ mod query;
 mod standing;
 mod country_view;
 mod calendar_state;
+mod weather_state;
 mod population;
 mod view;
 pub(crate) use view::WorldView;
@@ -1020,7 +1021,7 @@ pub struct World {
     chunks: terrain::TerrainStore,
     pub generator: Generator,
     planet_atlas: Option<Arc<crate::planet_atlas::PlanetAtlas>>,
-    planetary_weather: Option<crate::planet_atlas::PlanetaryWeather>,
+    weather_state: weather_state::WeatherState,
     /// Persisted qualified doorstep, populated only after preparation or
     /// successful manifest revalidation.
     common_spawn: Option<crate::planet::EntityPos>,
@@ -1053,9 +1054,6 @@ pub struct World {
     /// Bodily burden is persisted with player profiles; this cadence cache is
     /// deliberately transient and cannot mint or delete environmental dross.
     dross_exposure_tick: HashMap<[u8; 16], u64>,
-    /// Atlas-free unit fixtures can request a local condition explicitly.
-    /// Production worlds never consult this: their weather is atlas state.
-    weather_override: Option<crate::planet_atlas::LocalWeatherSample>,
     pub reg: Arc<Registry>,
     #[allow(dead_code)]
     pub seed: u32,
@@ -1378,12 +1376,7 @@ impl World {
         planet_atlas: Option<Arc<crate::planet_atlas::PlanetAtlas>>,
         load_authority: bool,
     ) -> World {
-        let planetary_weather = planet_atlas.as_ref().map(|atlas| {
-            crate::planet_atlas::PlanetaryWeather::new(
-                atlas.dynamic.clone(),
-                atlas.water_cycle.clone(),
-            )
-        });
+        let weather_state = weather_state::WeatherState::new(planet_atlas.as_deref());
         let generator = planet_atlas.as_ref().map_or_else(
             || Generator::new(seed, &reg),
             |atlas| Generator::with_atlas(seed, &reg, atlas.clone()),
@@ -1486,7 +1479,7 @@ impl World {
             chunks: terrain::TerrainStore::default(),
             generator,
             planet_atlas,
-            planetary_weather,
+            weather_state,
             common_spawn: None,
             material_ledger,
             arcane_ledger,
@@ -1497,7 +1490,6 @@ impl World {
             alchemy_state,
             water_carriers,
             dross_exposure_tick: HashMap::new(),
-            weather_override: None,
             palette: storage::PaletteStore::new(&save_dir, &reg),
             reg,
             seed,
@@ -1821,9 +1813,7 @@ impl World {
         let mut water_available = positions
             .into_iter()
             .map(|pos| {
-                let available = self
-                    .planetary_weather
-                    .as_ref()
+                let available = self.weather_state.live()
                     .map_or(u64::MAX / 4, |weather| weather.ecology_soil_water_hu(pos));
                 (pos, available)
             })
@@ -1861,7 +1851,7 @@ impl World {
         let processed = report.processed;
         let completed_days = report.completed_days;
         let dross_harm = report.dross_harm;
-        if let Some(weather) = &mut self.planetary_weather {
+        if let Some(weather) = self.weather_state.live_mut() {
             for (pos, requested) in report.transpiration {
                 let moved = weather.transpire_ecology(pos, requested);
                 if moved != requested {
@@ -2556,14 +2546,14 @@ impl World {
     pub(crate) fn planetary_weather_for_test(
         &self,
     ) -> Option<&crate::planet_atlas::PlanetaryWeather> {
-        self.planetary_weather.as_ref()
+        self.weather_state.live()
     }
 
     #[cfg(test)]
     pub(crate) fn planetary_weather_for_test_mut(
         &mut self,
     ) -> Option<&mut crate::planet_atlas::PlanetaryWeather> {
-        self.planetary_weather.as_mut()
+        self.weather_state.live_mut()
     }
 
     pub fn get_block_at(&self, pos: crate::planet::BlockPos) -> BlockId {
@@ -2600,16 +2590,14 @@ impl World {
 
     #[cfg(test)]
     pub fn live_water_audit(&self) -> Option<crate::planet_atlas::WaterAudit> {
-        self.planetary_weather
-            .as_ref()
+        self.weather_state.live()
             .map(crate::planet_atlas::PlanetaryWeather::water_audit)
     }
 
     #[cfg(test)]
     pub fn ecology_soil_water_hu_at(&self, surface: crate::planet::SurfacePos) -> Option<u64> {
         let atlas = self.planet_atlas.as_ref()?;
-        self.planetary_weather
-            .as_ref()
+        self.weather_state.live()
             .map(|weather| weather.ecology_soil_water_hu(atlas.atlas_pos(surface)))
     }
 
@@ -2713,7 +2701,7 @@ impl World {
         }
         if ecology_plan.as_ref().is_some_and(|plan| {
             plan.water_hu != 0
-                && self.planetary_weather.as_ref().is_some_and(|weather| {
+                && self.weather_state.live().is_some_and(|weather| {
                     let Some(atlas) = self.planet_atlas.as_ref() else {
                         return true;
                     };
@@ -2910,7 +2898,7 @@ impl World {
                 leaves_bud = plan.leaves_bud;
                 if plan.water_hu != 0
                     && let (Some(weather), Some(atlas)) =
-                        (self.planetary_weather.as_mut(), self.planet_atlas.as_ref())
+                        (self.weather_state.live_mut(), self.planet_atlas.as_ref())
                 {
                     let moved = weather
                         .harvest_ecology_water(atlas.atlas_pos(pos.surface()), plan.water_hu);
@@ -3266,7 +3254,7 @@ impl World {
         self.refresh_loaded_arcane_ecology();
         if returns_ecology_water
             && let (Some(atlas), Some(weather)) =
-                (self.planet_atlas.as_ref(), self.planetary_weather.as_mut())
+                (self.planet_atlas.as_ref(), self.weather_state.live_mut())
         {
             weather.return_ecology_water_to_soil(
                 atlas.atlas_pos(pos.surface()),

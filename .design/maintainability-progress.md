@@ -1795,3 +1795,20 @@ final test work. Final checks include dawn/sleep and overflow behavior, calendar
 save/load, opposite hemispheres, moon/season timing, Long Winter transitions,
 offering/reseed order, and actual capture sky/weather consistency. No tests or
 validation commands ran in this implementation checkpoint.
+
+
+## Live weather lifetime and update admission (coding checkpoint; unverified)
+
+WeatherState owns the optional live PlanetaryWeather and atlas-free override.
+Climate-hour admission retains the dross-route dependency and prior target-hour
+comparison; failed updates abort their owned hour before returning the error.
+Development forcing retains the exact vapor/cloud redistribution and cannot mint
+water. PlanetaryWeather remains the conserved-water owner. World supplies atlas,
+calendar, and local-ire inputs, then applies loaded inboxes and the ordered
+spring/shore edit batch after a completed hour. Water, alchemy, machinery,
+persistence, and entry diagnostics borrow the same live state through explicit
+accessors. Initialization cloning and save formats remain unchanged.
+
+No tests/format/build/analyzers ran. Final climate/dross routing, failure-abort,
+water conservation, machine/alchemy transfers, save/reload, and hardware weather
+captures remain required before this checkpoint is accepted.

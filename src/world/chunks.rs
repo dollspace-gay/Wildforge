@@ -648,7 +648,7 @@ impl World {
 
     fn commit_fresh_chunk_water(&mut self, pos: ChunkPos, chunk: &mut Chunk) {
         let reg = self.reg.clone();
-        let (Some(atlas), Some(weather)) = (&self.planet_atlas, &mut self.planetary_weather) else {
+        let (Some(atlas), Some(weather)) = (&self.planet_atlas, self.weather_state.live_mut()) else {
             return;
         };
         let existing = weather

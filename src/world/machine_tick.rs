@@ -418,7 +418,7 @@ impl World {
                     let v = self.reg.water_volume(self.get_block_at(cell)).unwrap_or(0);
                     self.move_water_units(cell, out, v);
                 } else if let (Some(atlas), Some(weather)) =
-                    (&self.planet_atlas, &mut self.planetary_weather)
+                    (&self.planet_atlas, self.weather_state.live_mut())
                 {
                     let atlas_pos = atlas.atlas_pos(pos.surface());
                     let parcel = weather
@@ -576,7 +576,7 @@ impl World {
             if let Some((c, _v)) = drink {
                 let mass = self.water_mass_at(c).unwrap_or_default();
                 let preferred = self.surface_reservoir_at(c);
-                let accepted = if let Some(weather) = &mut self.planetary_weather {
+                let accepted = if let Some(weather) = self.weather_state.live_mut() {
                     weather.move_detailed_to_industrial_from(preferred, mass)
                 } else {
                     true
@@ -611,7 +611,7 @@ impl World {
                     .saturating_div((STEAM_SECS_PER_WATER * 1_000_000.0) as u64)
                     .min(s.water.water_hu);
                 let exhausted = if let (Some(atlas), Some(weather)) =
-                    (&self.planet_atlas, &mut self.planetary_weather)
+                    (&self.planet_atlas, self.weather_state.live_mut())
                 {
                     let alchemy_reserved = self
                         .alchemy_state

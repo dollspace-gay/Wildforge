@@ -38,7 +38,7 @@ impl World {
         {
             return;
         }
-        if let Some(weather) = &mut self.planetary_weather {
+        if let Some(weather) = self.weather_state.live_mut() {
             weather.ensure_dynamic_basin(pos.chunk(), i32::from(pos.y()) * 1000);
         }
     }
@@ -59,7 +59,7 @@ impl World {
         let hydro = atlas.genesis.hydrology.values()[index];
         let ground = atlas.genesis.ground.values()[index];
         let below_ocean = hydro.ocean_basin_id != 0 && i32::from(pos.y()) <= SEA_LEVEL;
-        let below_water_table = self.planetary_weather.as_ref().is_some_and(|weather| {
+        let below_water_table = self.weather_state.live().is_some_and(|weather| {
             weather.water.cells.values()[index].groundwater.water_hu
                 >= crate::planet_atlas::HYDRO_UNITS_PER_VISIBLE_LEVEL
                 && weather.water.cells.values()[index].groundwater_head_milliblocks
@@ -73,7 +73,7 @@ impl World {
                 crate::planet_atlas::SurfaceReservoirKind::Ocean,
                 u32::from(hydro.ocean_basin_id),
             );
-            self.planetary_weather.as_mut().map_or(
+            self.weather_state.live_mut().map_or(
                 crate::planet_atlas::ReservoirMass::default(),
                 |weather| {
                     weather.materialize_surface_water(
@@ -83,7 +83,7 @@ impl World {
                 },
             )
         } else {
-            self.planetary_weather.as_mut().map_or(
+            self.weather_state.live_mut().map_or(
                 crate::planet_atlas::ReservoirMass::default(),
                 |weather| {
                     weather.pump_groundwater(
@@ -104,7 +104,7 @@ impl World {
             return None;
         }
         let preferred = self.surface_reservoir_at(pos);
-        let class = if let Some(weather) = &mut self.planetary_weather {
+        let class = if let Some(weather) = self.weather_state.live_mut() {
             weather.move_detailed_to_portable_from(preferred, mass)?
         } else {
             mass.water_class()
@@ -122,7 +122,7 @@ impl World {
             return false;
         }
         self.player_touched.insert(pos.chunk());
-        let mass = if let Some(weather) = &mut self.planetary_weather {
+        let mass = if let Some(weather) = self.weather_state.live_mut() {
             let Some(mass) = weather.move_portable_to_detailed(class) else {
                 return false;
             };
@@ -138,7 +138,7 @@ impl World {
             )
         };
         self.write_water_mass_at(pos, mass);
-        if let Some(weather) = &mut self.planetary_weather {
+        if let Some(weather) = self.weather_state.live_mut() {
             let _ = weather.register_dynamic_basin(pos.chunk(), i32::from(pos.y()) * 1000, mass);
         }
         true
@@ -445,7 +445,7 @@ impl World {
         };
         let preferred = self.surface_reservoir_at(pos);
         let transferred = if let (Some(atlas), Some(weather)) =
-            (&self.planet_atlas, &mut self.planetary_weather)
+            (&self.planet_atlas, self.weather_state.live_mut())
         {
             let atlas_pos = atlas.atlas_pos(pos.surface());
             weather.credit_detailed_vapor_from(atlas_pos, preferred, mass)
@@ -473,7 +473,7 @@ impl World {
         }
         let preferred = self.surface_reservoir_at(pos);
         let transferred = if let (Some(atlas), Some(weather)) =
-            (&self.planet_atlas, &mut self.planetary_weather)
+            (&self.planet_atlas, self.weather_state.live_mut())
         {
             weather.credit_detailed_vapor_from(atlas.atlas_pos(pos.surface()), preferred, vapor)
         } else {
@@ -493,7 +493,7 @@ impl World {
         let rejected = mass.salt_mass.saturating_sub(retained);
         let preferred = self.surface_reservoir_at(pos);
         if rejected != 0
-            && let (Some(atlas), Some(weather)) = (&self.planet_atlas, &mut self.planetary_weather)
+            && let (Some(atlas), Some(weather)) = (&self.planet_atlas, self.weather_state.live_mut())
             && !weather.reject_detailed_salt_to_runoff_from(
                 atlas.atlas_pos(pos.surface()),
                 preferred,

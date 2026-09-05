@@ -77,3 +77,8 @@ the same entity fields and establish loaded NPC companion identity immediately.
 and separate reciprocity rollover fraction. Server advancement and save loading
 use explicit transitions; pure CalendarView remains shared with replicas. Weather
 and conservation coordinators sample that state without mutating clock fields.
+
+`weather_state.rs` owns the live PlanetaryWeather lifetime, climate-hour admission,
+error abort, and development weather overrides. The existing PlanetaryWeather
+owns conserved water. World supplies immutable atlas/calendar/ire inputs and
+coordinates completed-hour water inboxes, springs, shores, and batched relighting.

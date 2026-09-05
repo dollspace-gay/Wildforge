@@ -752,9 +752,7 @@ fn prepared_chunk_digest(
 }
 
 fn validate_spawn_ledgers(world: &World) -> std::io::Result<()> {
-    let weather = world
-        .planetary_weather
-        .as_ref()
+    let weather = world.weather_state.live()
         .ok_or_else(|| std::io::Error::other("planetary spawn requires a water ledger"))?;
     let water = weather
         .water

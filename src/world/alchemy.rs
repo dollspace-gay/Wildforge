@@ -703,9 +703,7 @@ impl World {
                 CarrierKind::Brine => WaterClass::Salt,
                 _ => unreachable!(),
             };
-            let mass = self
-                .planetary_weather
-                .as_ref()
+            let mass = self.weather_state.live()
                 .ok_or("Alchemy water needs the authoritative planetary water cycle.")?
                 .preview_move_portable_to_industrial(class, amount)
                 .ok_or("The portable-water ledger does not contain that full vessel.")?;
@@ -797,9 +795,7 @@ impl World {
         )?;
         state.validate().map_err(|error| error.to_string())?;
         if let Some((class, expected)) = water_move {
-            let moved = self
-                .planetary_weather
-                .as_mut()
+            let moved = self.weather_state.live_mut()
                 .and_then(|weather| weather.move_portable_to_industrial(class, amount))
                 .ok_or("Preflighted carrier water unexpectedly failed to move.")?;
             debug_assert_eq!(moved, expected);
@@ -2267,9 +2263,7 @@ impl World {
         let residue_water = batch_snapshot
             .as_ref()
             .map_or_else(ReservoirMass::default, |batch| batch.residue_water);
-        let cleaning_water = self
-            .planetary_weather
-            .as_ref()
+        let cleaning_water = self.weather_state.live()
             .ok_or("Cleaning needs the authoritative planetary water cycle.")?
             .preview_portable_exchange_to_runoff(
                 atlas_pos,
@@ -2354,9 +2348,7 @@ impl World {
                 .record_consumption(&consumed_materials)
                 .map_err(|error| error.to_string())?;
         }
-        let moved = self
-            .planetary_weather
-            .as_mut()
+        let moved = self.weather_state.live_mut()
             .and_then(|weather| {
                 weather.portable_exchange_to_runoff(
                     atlas_pos,
@@ -2723,9 +2715,7 @@ impl World {
                 if inventory.add(&self.reg, bucket, 1) != 0 {
                     return Err("Make room for the reusable bucket before fermenting.".into());
                 }
-                let mass = self
-                    .planetary_weather
-                    .as_ref()
+                let mass = self.weather_state.live()
                     .ok_or("Fermentation needs the authoritative planetary water cycle.")?
                     .preview_move_portable_to_industrial(WaterClass::Fresh, HYDRO_UNITS_PER_BLOCK)
                     .ok_or("The portable-water ledger cannot fund fermentation.")?;
@@ -2783,9 +2773,7 @@ impl World {
         )?;
         state.validate().map_err(|error| error.to_string())?;
         if let Some((class, expected)) = portable_start {
-            let moved = self
-                .planetary_weather
-                .as_mut()
+            let moved = self.weather_state.live_mut()
                 .and_then(|weather| {
                     weather.move_portable_to_industrial(class, HYDRO_UNITS_PER_BLOCK)
                 })
@@ -3556,7 +3544,7 @@ impl World {
         if mass.water_hu == 0 && mass.salt_mass == 0 {
             return Ok(());
         }
-        let (Some(atlas), Some(weather)) = (&self.planet_atlas, &self.planetary_weather) else {
+        let (Some(atlas), Some(weather)) = (&self.planet_atlas, self.weather_state.live()) else {
             return Err("Alchemy water needs the authoritative atlas and water cycle.".into());
         };
         let region = atlas.atlas_pos(pos.surface());
@@ -3579,7 +3567,7 @@ impl World {
         if mass.water_hu == 0 && mass.salt_mass == 0 {
             return Ok(());
         }
-        let (Some(atlas), Some(weather)) = (&self.planet_atlas, &mut self.planetary_weather) else {
+        let (Some(atlas), Some(weather)) = (&self.planet_atlas, self.weather_state.live_mut()) else {
             return Err("Alchemy water needs the authoritative atlas and water cycle.".into());
         };
         let region = atlas.atlas_pos(pos.surface());
@@ -4632,9 +4620,7 @@ impl World {
         let (retained_materials, residue_materials) =
             split_materials(&materials, ingredient_definition.retention_permille);
         let ingredient_water = if item_name == "base:rainbell_dew" {
-            let weather = self
-                .planetary_weather
-                .as_ref()
+            let weather = self.weather_state.live()
                 .ok_or("Rainbell Dew needs the authoritative water ledger.")?;
             let mut available = weather.water.ledger.industrial;
             let parcel = available.take(crate::planet_atlas::HYDRO_UNITS_PER_VISIBLE_LEVEL);

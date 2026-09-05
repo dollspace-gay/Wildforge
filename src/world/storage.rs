@@ -784,7 +784,7 @@ impl World {
                 &self.camera,
             ),
         );
-        if let (Some(atlas), Some(weather)) = (&self.planet_atlas, &self.planetary_weather) {
+        if let (Some(atlas), Some(weather)) = (&self.planet_atlas, self.weather_state.live()) {
             report.record(
                 "planetary weather",
                 crate::planet_atlas::PlanetAtlas::planet_dir(&self.save_dir).join("dynamic.wfd"),

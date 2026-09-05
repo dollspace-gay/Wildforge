@@ -319,13 +319,9 @@ impl World {
         let Some(atlas) = self.planet_atlas.as_ref().cloned() else {
             return Ok(DrossAdvance::default());
         };
-        let target_hour = self
-            .planetary_weather
-            .as_ref()
+        let target_hour = self.weather_state.live()
             .map_or(0, |weather| weather.completed_hours);
-        let runoff_routes = self
-            .planetary_weather
-            .as_ref()
+        let runoff_routes = self.weather_state.live()
             .map_or_else(Vec::new, |weather| weather.last_runoff_routes().to_vec());
         let mut living_hearts = atlas
             .biomes
