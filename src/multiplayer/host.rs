@@ -2533,101 +2533,23 @@ impl HostSession {
                         .as_ref()
                         .is_some_and(|m| m.player_banned(crate::identity::PlayerId(owner)))
                 };
-                let mut bought: Option<ItemStack> = None;
-                let mut paid: Option<ItemStack> = None;
-                if let Some(BlockEntity::Stall(st)) = server.world.block_entity_mut_at(&pos) {
-                    if st.owner == [0; 16] || banned_owner(st.owner) {
-                        return;
-                    }
-                    let Some(price) = st.price else { return };
-                    // The buyer must carry the full price.
-                    let have: u32 = guest
-                        .inventory
-                        .slots
-                        .iter()
-                        .flatten()
-                        .filter(|s| s.item == price.item)
-                        .map(|s| s.count)
-                        .sum();
-                    if have < price.count {
-                        return;
-                    }
-                    // Goods first (nothing moves if the shelf is bare).
-                    let Some(gs) = st.goods.iter_mut().find(|s| s.is_some()) else {
-                        return;
-                    };
-                    // Till must fit the payment.
-                    let fits = st.till.iter().any(|t| match t {
-                        None => true,
-                        Some(t) => {
-                            t.item == price.item
-                                && t.count + price.count <= reg.item(t.item).max_stack
-                        }
-                    });
-                    if !fits {
-                        return;
-                    }
-                    let mut g = gs.take().unwrap();
-                    let sold = ItemStack { count: 1, ..g };
-                    g.count -= 1;
-                    if g.count > 0 {
-                        *gs = Some(g);
-                    }
-                    for t in st.till.iter_mut() {
-                        match t {
-                            Some(ts)
-                                if ts.item == price.item
-                                    && ts.count + price.count <= reg.item(ts.item).max_stack =>
-                            {
-                                ts.count += price.count;
-                                paid = Some(price);
-                                break;
-                            }
-                            None => {
-                                *t = Some(price);
-                                paid = Some(price);
-                                break;
-                            }
-                            _ => {}
-                        }
-                    }
-                    bought = Some(sold);
+                let Some(BlockEntity::Stall(stall)) = server.world.block_entity_mut_at(&pos) else {
+                    return;
+                };
+                if stall.owner == [0; 16] || banned_owner(stall.owner) {
+                    return;
                 }
-                if let (Some(sold), Some(price)) = (bought, paid) {
-                    // Take the payment, hand over the goods.
-                    let mut need = price.count;
-                    for s in guest.inventory.slots.iter_mut() {
-                        if need == 0 {
-                            break;
-                        }
-                        if let Some(st2) = s
-                            && st2.item == price.item
-                        {
-                            let take = st2.count.min(need);
-                            need -= take;
-                            st2.count -= take;
-                            if st2.count == 0 {
-                                *s = None;
-                            }
-                        }
-                    }
-                    let left = guest.inventory.add_stack(&reg, sold);
-                    if left > 0 {
-                        // No room: the purchase lands at their feet.
-                        if let Some(at) = guest.pos.block() {
-                            server.world.push_drop_at(
-                                at,
-                                ItemStack {
-                                    count: left,
-                                    ..sold
-                                },
-                            );
-                        }
-                    }
-                    refresh_held(guest);
-                    self.send_player_state(id);
-                    self.send_container(server, id, pos);
+                let Ok(purchase) = crate::player_ops::trade::purchase(&reg, stall, &mut guest.inventory) else {
+                    return;
+                };
+                if let Some(stack) = purchase.overflow
+                    && let Some(at) = guest.pos.block()
+                {
+                    server.world.push_drop_at(at, stack);
                 }
+                refresh_held(guest);
+                self.send_player_state(id);
+                self.send_container(server, id, pos);
             }
             C2S::SetSign { pos, lines } => {
                 if guest.pos.distance_to(pos.entity_center()) > REACH {

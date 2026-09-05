@@ -43,6 +43,7 @@ mod npc;
 mod particles;
 mod persist;
 mod physics;
+mod player_ops;
 pub mod planet;
 pub mod planet_atlas;
 mod raycast;

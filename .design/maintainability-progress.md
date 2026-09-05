@@ -1007,3 +1007,16 @@ schedule. Final verification must cover valid/invalid transfer, rollback and
 path remapping, entry failure, repeated Welcome, roster departure, both replica
 consumers, and the full applicable Rust/native/GPU gates. This checkpoint does
 not close Phase 3 or its acceptance criterion.
+
+
+## Shared stall transaction (implementation, unverified)
+
+`player_ops::trade::purchase` now owns the stock/payment/till rule previously
+copied in local and network purchase paths. It validates before mutation,
+transfers one good, removes the full payment, inserts the purchase into the
+buyer inventory, and returns overflow for each adapter's existing drop path.
+Reach, structure checks, network seller/moderation checks, presentation, and
+state echoes retain their existing order and policy. The new directory has
+local guides and explicit imports. This extraction preserves the old payment
+matching behavior; identity-bearing barter and malformed stack handling need
+separate correction and final verification. No checks run for this checkpoint.

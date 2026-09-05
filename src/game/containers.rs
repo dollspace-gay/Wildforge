@@ -321,92 +321,16 @@ impl Game {
             self.toast("The stall wants its posts and awning.".to_string());
             return;
         }
-        let result: Option<ItemStack>;
-        let mut price_used: Option<ItemStack> = None;
-        {
-            let have = |inv: &crate::inventory::Inventory, item, n| {
-                inv.slots
-                    .iter()
-                    .flatten()
-                    .filter(|s| s.item == item)
-                    .map(|s| s.count)
-                    .sum::<u32>()
-                    >= n
-            };
-            let Some(world::BlockEntity::Stall(st)) = self.server.world.block_entity_mut_at(&pos)
-            else {
-                return;
-            };
-            let Some(price) = st.price else {
-                return;
-            };
-            if !have(&self.inventory, price.item, price.count) {
-                return;
-            }
-            let Some(gs) = st.goods.iter_mut().find(|s| s.is_some()) else {
-                return;
-            };
-            let fits = st.till.iter().any(|t| match t {
-                None => true,
-                Some(t) => {
-                    t.item == price.item && t.count + price.count <= reg.item(t.item).max_stack
-                }
-            });
-            if !fits {
-                return;
-            }
-            let mut g = gs.take().unwrap();
-            let sold = ItemStack { count: 1, ..g };
-            g.count -= 1;
-            if g.count > 0 {
-                *gs = Some(g);
-            }
-            for t in st.till.iter_mut() {
-                match t {
-                    Some(ts)
-                        if ts.item == price.item
-                            && ts.count + price.count <= reg.item(ts.item).max_stack =>
-                    {
-                        ts.count += price.count;
-                        price_used = Some(price);
-                        break;
-                    }
-                    None => {
-                        *t = Some(price);
-                        price_used = Some(price);
-                        break;
-                    }
-                    _ => {}
-                }
-            }
-            result = Some(sold);
+        let Some(world::BlockEntity::Stall(stall)) = self.server.world.block_entity_mut_at(&pos) else {
+            return;
+        };
+        let Ok(purchase) = crate::player_ops::trade::purchase(&reg, stall, &mut self.inventory) else {
+            return;
+        };
+        if let Some(stack) = purchase.overflow {
+            self.drop_stack(stack);
         }
-        if let (Some(sold), Some(price)) = (result, price_used) {
-            let mut need = price.count;
-            for s in self.inventory.slots.iter_mut() {
-                if need == 0 {
-                    break;
-                }
-                if let Some(st2) = s
-                    && st2.item == price.item
-                {
-                    let take = st2.count.min(need);
-                    need -= take;
-                    st2.count -= take;
-                    if st2.count == 0 {
-                        *s = None;
-                    }
-                }
-            }
-            let left = self.inventory.add_stack(&reg, sold);
-            if left > 0 {
-                self.drop_stack(ItemStack {
-                    count: left,
-                    ..sold
-                });
-            }
-            self.sfx(Sfx::Pickup);
-        }
+        self.sfx(Sfx::Pickup);
     }
 
     pub(super) fn bloomery_light_rect(&self) -> (f32, f32, f32, f32) {
