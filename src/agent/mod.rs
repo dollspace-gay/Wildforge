@@ -14,11 +14,12 @@ use std::sync::Arc;
 use glam::Vec3;
 
 use crate::chunk::ChunkPos;
+use crate::client_session::ContentMap;
 use crate::inventory::{HOTBAR_SLOTS, Inventory, ItemStack, TOTAL_SLOTS};
 use crate::physics::{self, Player};
-use crate::registry::{self, BlockId, ItemId, Registry};
+use crate::registry::{self, ItemId, Registry};
 use crate::world::World;
-use crate::{identity, mp, net};
+use crate::{identity, net};
 
 /// How far an agent asks to see, in chunks. Enough to path somewhere it has
 /// not been; the host clamps it like anyone else's request.
@@ -71,8 +72,7 @@ pub struct Agent {
     /// sends one click, waits for one echo, and only then trusts the
     /// inventory mirror for its next decision.
     pub echoes: u64,
-    block_map: Vec<BlockId>,
-    item_map: Vec<Option<ItemId>>,
+    content: ContentMap,
     /// id -> (label, pos, yaw) for every other player on the wire.
     pub players: HashMap<u32, (String, crate::planet::EntityPos, f32)>,
     names: HashMap<u32, String>,
@@ -80,11 +80,7 @@ pub struct Agent {
     trail: HashMap<u32, VecDeque<crate::planet::EntityPos>>,
     /// Walkable waypoints are separate from observations of the leader.
     follow_path: Option<motion::FollowPath>,
-    /// Snapshots arrive split when they outgrow one datagram.
-    players_rx: net::SnapshotAssembler<net::PlayerSnap>,
-    mobs_rx: net::SnapshotAssembler<net::MobSnap>,
-    bolts_rx: net::SnapshotAssembler<net::BoltSnap>,
-    loose_items_rx: net::SnapshotAssembler<net::LooseItemSnap>,
+    snapshots: crate::client_session::Snapshots,
     /// Human-readable happenings, drained by the events tool.
     pub events: VecDeque<String>,
     last_discovery: Option<crate::discovery::ObservationSummary>,
@@ -152,6 +148,7 @@ impl Agent {
                 .expect("agent default player position is canonical");
         let mut agent = Agent {
             client,
+            content: ContentMap::empty(Arc::clone(&reg)),
             reg,
             world,
             my_id: 0,
@@ -166,16 +163,11 @@ impl Agent {
             time_of_day: 0.3,
             in_world: false,
             echoes: 0,
-            block_map: Vec::new(),
-            item_map: Vec::new(),
             players: HashMap::new(),
             names: HashMap::new(),
             trail: HashMap::new(),
             follow_path: None,
-            players_rx: Default::default(),
-            mobs_rx: Default::default(),
-            bolts_rx: Default::default(),
-            loose_items_rx: Default::default(),
+            snapshots: Default::default(),
             events: VecDeque::new(),
             last_discovery: None,
             last_discovery_records: None,
@@ -237,10 +229,6 @@ impl Agent {
         self.client.send(msg);
     }
 
-    fn local_item(&self, wire: u16) -> Option<ItemId> {
-        *self.item_map.get(wire as usize)?
-    }
-
     fn apply_player_state(&mut self, state: net::PlayerStateSnap, initial: bool) {
         if initial {
             self.player = Player::new_at(state.pos);
@@ -250,29 +238,11 @@ impl Agent {
         self.health = state.health;
         self.hunger = state.hunger;
         self.hotbar = (state.hotbar as usize).min(HOTBAR_SLOTS - 1);
-        let mut inv = Inventory::new();
-        for (i, s) in state.inventory.into_iter().enumerate() {
-            if i >= TOTAL_SLOTS {
-                break;
-            }
-            inv.slots[i] = s.and_then(|s| {
-                Some(ItemStack {
-                    item: self.local_item(s.item)?,
-                    count: s.count,
-                    durability: s.durability,
-                    arcane_id: s.arcane_id,
-                })
-            });
-        }
-        self.inventory = inv;
-        self.cursor = state.cursor.and_then(|s| {
-            Some(ItemStack {
-                item: self.local_item(s.item)?,
-                count: s.count,
-                durability: s.durability,
-                arcane_id: s.arcane_id,
-            })
-        });
+        self.inventory.slots = self.content.slots(&state.inventory);
+        self.cursor = state
+            .cursor
+            .as_ref()
+            .and_then(|stack| self.content.stack(stack));
     }
 
     /// One tick: apply the host's stream, advance the standing
@@ -304,11 +274,7 @@ impl Agent {
                     salt_mass,
                     soil_salinity,
                 } => {
-                    let local = self
-                        .block_map
-                        .get(id as usize)
-                        .copied()
-                        .unwrap_or(self.reg.unknown_block);
+                    let local = self.content.block(id);
                     block_updates.push((pos, local, meta, salt_mass, soil_salinity));
                 }
                 other => self.apply(other),
@@ -341,7 +307,7 @@ impl Agent {
                 .collect();
             self.world.insert_remote_chunks(
                 chunks.iter().map(|(pos, rle)| (*pos, rle.as_slice())),
-                &self.block_map,
+                self.content.blocks(),
             );
             for (pos, _) in chunks {
                 self.entry_required.remove(&pos);
@@ -406,8 +372,8 @@ impl Agent {
                 world.ire = ire;
                 self.my_id = your_id;
                 self.names = roster.into_iter().map(|p| (p.id, p.display_name)).collect();
-                self.block_map = mp::block_remap(&world, &palette);
-                self.item_map = mp::item_remap(&world, &items);
+                self.content = ContentMap::new(Arc::clone(&self.reg), palette, items);
+                self.snapshots = Default::default();
                 self.world = world;
                 self.time_of_day = time;
                 self.apply_player_state(player_state, true);
@@ -448,7 +414,8 @@ impl Agent {
                 if let Some(face) = crate::planet::Face::from_u8(face)
                     && let Ok(pos) = ChunkPos::new(face, u, v)
                 {
-                    self.world.insert_remote_chunk(pos, &rle, &self.block_map);
+                    self.world
+                        .insert_remote_chunk(pos, &rle, self.content.blocks());
                 }
             }
             net::S2C::BlockSet {
@@ -458,11 +425,7 @@ impl Agent {
                 salt_mass,
                 soil_salinity,
             } => {
-                let local = self
-                    .block_map
-                    .get(id as usize)
-                    .copied()
-                    .unwrap_or(self.reg.unknown_block);
+                let local = self.content.block(id);
                 self.world.apply_remote_block_states([(
                     pos,
                     local,
@@ -472,7 +435,7 @@ impl Agent {
                 )]);
             }
             net::S2C::Players(part) => {
-                let Some(list) = self.players_rx.accept(part) else {
+                let Some(list) = self.snapshots.players(part) else {
                     return;
                 };
                 let present: std::collections::HashSet<u32> =
@@ -500,7 +463,7 @@ impl Agent {
                 }
             }
             net::S2C::Mobs(part) => {
-                let Some(snaps) = self.mobs_rx.accept(part) else {
+                let Some(snaps) = self.snapshots.mobs(part) else {
                     return;
                 };
                 let mobs = snaps
@@ -620,7 +583,7 @@ impl Agent {
                 arcane_id,
                 current_units,
             } => {
-                if let Some(local) = self.local_item(item) {
+                if let Some(local) = self.content.item(item) {
                     let reg = self.reg.clone();
                     let mut stack = ItemStack::new(&reg, local, count.max(1));
                     if durability > 0 {
@@ -680,14 +643,7 @@ impl Agent {
                 );
             }
             net::S2C::HeldResult(held) => {
-                self.cursor = held.and_then(|s| {
-                    Some(ItemStack {
-                        item: self.local_item(s.item)?,
-                        count: s.count,
-                        durability: s.durability,
-                        arcane_id: s.arcane_id,
-                    })
-                });
+                self.cursor = held.as_ref().and_then(|stack| self.content.stack(stack));
             }
             net::S2C::RoleChanged { role } => {
                 self.event(format!("role is now {role:?}"));
@@ -720,7 +676,7 @@ impl Agent {
                 ));
             }
             net::S2C::Bolts(part) => {
-                if let Some(snaps) = self.bolts_rx.accept(part) {
+                if let Some(snaps) = self.snapshots.bolts(part) {
                     self.world.replace_projectiles(
                         snaps
                             .into_iter()
@@ -742,20 +698,10 @@ impl Agent {
                 }
             }
             net::S2C::LooseItems(part) => {
-                if let Some(snaps) = self.loose_items_rx.accept(part) {
+                if let Some(snaps) = self.snapshots.loose_items(part) {
                     let items = snaps
                         .into_iter()
-                        .filter_map(|snap| {
-                            let item = (*self.item_map.get(snap.item as usize)?)?;
-                            let mut entity = crate::entity::ItemEntity::new(
-                                snap.pos, snap.vel, item, snap.count,
-                            );
-                            entity.stable_id = snap.id;
-                            entity.age = snap.age;
-                            entity.durability = snap.durability.min(self.reg.item(item).durability);
-                            entity.arcane_id = snap.arcane_id;
-                            Some(entity)
-                        })
+                        .filter_map(|snap| self.content.loose_item(&snap))
                         .collect();
                     self.world.replace_loose_items(items);
                 }

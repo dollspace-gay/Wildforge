@@ -16,6 +16,7 @@ mod background;
 mod bounce;
 mod camera;
 mod chunk;
+mod client_session;
 mod config;
 mod crafting;
 mod dedicated;

@@ -6,4 +6,4 @@
 #[path = "multiplayer/host.rs"]
 mod host;
 
-pub use host::{HostFx, HostSession, Role, block_remap, item_remap};
+pub use host::{HostFx, HostSession, Role};

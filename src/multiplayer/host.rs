@@ -4944,19 +4944,6 @@ fn inspectable_arcane_items(
     (charges, implements, apparatus)
 }
 
-/// Build the host-id -> local-id block remap from a Welcome palette.
-pub fn block_remap(world: &World, palette: &[String]) -> Vec<crate::registry::BlockId> {
-    palette
-        .iter()
-        .map(|name| world.reg.block_id(name).unwrap_or(world.reg.unknown_block))
-        .collect()
-}
-
-/// Build the host-id -> local-id item remap (unknown items map to None).
-pub fn item_remap(world: &World, items: &[String]) -> Vec<Option<crate::registry::ItemId>> {
-    items.iter().map(|name| world.reg.item_id(name)).collect()
-}
-
 #[cfg(test)]
 mod identity_tests {
     use super::*;

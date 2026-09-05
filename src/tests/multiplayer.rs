@@ -630,8 +630,8 @@ fn loopback_join_stream_and_edit() {
     );
     let mut remote = World::new(1, tmp_dir("mpguest"), reg.clone());
     remote.set_remote(true);
-    let remap = crate::mp::block_remap(&remote, &palette);
-    remote.insert_remote_chunk(pos, &rle, &remap);
+    let content = crate::client_session::ContentMap::new(reg.clone(), palette, Vec::new());
+    remote.insert_remote_chunk(pos, &rle, content.blocks());
     let host_chunk = sim.world.chunks().get(&pos).unwrap();
     let guest_chunk = remote.chunks().get(&pos).unwrap();
     assert_eq!(
@@ -1573,7 +1573,8 @@ fn a_full_world_of_mobs_is_batched_under_the_datagram_budget() {
 
 #[test]
 fn a_split_snapshot_is_applied_only_once_it_is_whole() {
-    use crate::net::{DATAGRAM_FLOOR, S2C, SnapshotAssembler, batch_snapshot, decode};
+    use crate::client_session::SnapshotAssembler;
+    use crate::net::{DATAGRAM_FLOOR, S2C, batch_snapshot, decode};
 
     let sent = mob_snaps(200);
     let parts = batch_snapshot(9, sent.clone(), DATAGRAM_FLOOR, S2C::Mobs);
@@ -1603,7 +1604,8 @@ fn a_split_snapshot_is_applied_only_once_it_is_whole() {
 
 #[test]
 fn host_owned_loose_item_ids_survive_batched_guest_and_agent_snapshots() {
-    use crate::net::{DATAGRAM_FLOOR, S2C, SnapshotAssembler, batch_snapshot, decode};
+    use crate::client_session::SnapshotAssembler;
+    use crate::net::{DATAGRAM_FLOOR, S2C, batch_snapshot, decode};
 
     let sent = (0..200)
         .map(|index| crate::net::LooseItemSnap {
@@ -1642,7 +1644,8 @@ fn host_owned_loose_item_ids_survive_batched_guest_and_agent_snapshots() {
 
 #[test]
 fn a_lost_part_costs_its_generation_and_nothing_after_it() {
-    use crate::net::{DATAGRAM_FLOOR, S2C, SnapshotAssembler, batch_snapshot, decode};
+    use crate::client_session::SnapshotAssembler;
+    use crate::net::{DATAGRAM_FLOOR, S2C, batch_snapshot, decode};
 
     let mut rx: SnapshotAssembler<crate::net::MobSnap> = Default::default();
     let dropped = batch_snapshot(1, mob_snaps(200), DATAGRAM_FLOOR, S2C::Mobs);

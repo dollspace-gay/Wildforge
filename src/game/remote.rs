@@ -1,6 +1,7 @@
 //! Guest connection setup and remote snapshot application.
 
 use super::*;
+use crate::client_session::ContentMap;
 
 impl Game {
     /// The name this client will present to a multiplayer host, plus whether
@@ -47,42 +48,12 @@ impl Game {
             self.camera.pitch = state.pitch;
         }
         self.survival.spawn_point = state.spawn;
-        self.inventory = Inventory::new();
-        for (index, stack) in state.inventory.into_iter().enumerate() {
-            if index >= TOTAL_SLOTS {
-                break;
-            }
-            self.inventory.slots[index] = stack.and_then(|stack| {
-                Some(ItemStack {
-                    item: *remote.item_map.get(stack.item as usize)?.as_ref()?,
-                    count: stack.count,
-                    durability: stack.durability,
-                    arcane_id: stack.arcane_id,
-                })
-            });
-        }
-        self.survival.armor = [None; 5];
-        for (index, stack) in state.armor.into_iter().enumerate() {
-            if index >= self.survival.armor.len() {
-                break;
-            }
-            self.survival.armor[index] = stack.and_then(|stack| {
-                Some(ItemStack {
-                    item: *remote.item_map.get(stack.item as usize)?.as_ref()?,
-                    count: stack.count,
-                    durability: stack.durability,
-                    arcane_id: stack.arcane_id,
-                })
-            });
-        }
-        self.ui_state.held_stack = state.cursor.and_then(|stack| {
-            Some(ItemStack {
-                item: *remote.item_map.get(stack.item as usize)?.as_ref()?,
-                count: stack.count,
-                durability: stack.durability,
-                arcane_id: stack.arcane_id,
-            })
-        });
+        self.inventory.slots = remote.content.slots(&state.inventory);
+        self.survival.armor = remote.content.slots(&state.armor);
+        self.ui_state.held_stack = state
+            .cursor
+            .as_ref()
+            .and_then(|stack| remote.content.stack(stack));
         self.survival.health = state.health;
         self.survival.hunger = state.hunger;
         self.survival.nutrition = state.nutrition;
@@ -138,9 +109,7 @@ impl Game {
                     client,
                     my_id: 0,
                     role: identity::Role::Player,
-                    block_map: Vec::new(),
-                    item_map: Vec::new(),
-                    host_block: Default::default(),
+                    content: ContentMap::empty(Arc::clone(&self.content.reg)),
                     players: Default::default(),
                     player_positions: Default::default(),
                     player_held: Default::default(),
@@ -154,11 +123,7 @@ impl Game {
                     mob_lerp: Default::default(),
                     mob_age: 0.0,
                     mob_interval: 0.05,
-                    players_rx: Default::default(),
-                    mobs_rx: Default::default(),
-                    bolts_rx: Default::default(),
-                    loose_items_rx: Default::default(),
-                    falling_rx: Default::default(),
+                    snapshots: Default::default(),
                     // Until the host answers, assume the old fixed ring.
                     granted_view_dist: 5,
                     asked_view_dist: 0,
@@ -335,14 +300,8 @@ impl Game {
                         .into_iter()
                         .map(|presence| (presence.id, presence_label(&presence)))
                         .collect();
-                    r.block_map = mp::block_remap(&world, &palette);
-                    r.item_map = mp::item_remap(&world, &items);
-                    r.host_block = r
-                        .block_map
-                        .iter()
-                        .enumerate()
-                        .map(|(host, local)| (local.0, host as u16))
-                        .collect();
+                    r.content = ContentMap::new(Arc::clone(&self.content.reg), palette, items);
+                    r.snapshots = Default::default();
                     self.server = server::Server::new(world, time, 7);
                     self.renderer.clear_chunks();
                     self.apply_remote_player_state(&r, player_state, true);
@@ -437,11 +396,7 @@ impl Game {
                     salt_mass,
                     soil_salinity,
                 } => {
-                    let local = r
-                        .block_map
-                        .get(id as usize)
-                        .copied()
-                        .unwrap_or(self.content.reg.unknown_block);
+                    let local = r.content.block(id);
                     let old = self.server.world.get_block_at(pos);
                     block_updates.push((pos, local, meta, salt_mass, soil_salinity));
                     // Someone broke something: the world crumbles for
@@ -461,7 +416,7 @@ impl Game {
                     }
                 }
                 net::S2C::Players(part) => {
-                    let Some(list) = r.players_rx.accept(part) else {
+                    let Some(list) = r.snapshots.players(part) else {
                         continue;
                     };
                     // Anyone the host stopped mentioning has walked out of
@@ -515,7 +470,7 @@ impl Game {
                     r.player_age = 0.0;
                 }
                 net::S2C::Mobs(part) => {
-                    let Some(snaps) = r.mobs_rx.accept(part) else {
+                    let Some(snaps) = r.snapshots.mobs(part) else {
                         continue;
                     };
                     let t = (r.mob_age / r.mob_interval.max(0.001)).clamp(0.0, 1.0);
@@ -558,7 +513,7 @@ impl Game {
                     r.granted_view_dist = chunks.max(1) as i32;
                 }
                 net::S2C::Falling(part) => {
-                    let Some(snaps) = r.falling_rx.accept(part) else {
+                    let Some(snaps) = r.snapshots.falling(part) else {
                         continue;
                     };
                     let falling = snaps
@@ -566,17 +521,13 @@ impl Game {
                         .map(|f| world::FallingBlock {
                             pos: f.pos,
                             vel: 0.0,
-                            block: r
-                                .block_map
-                                .get(f.block as usize)
-                                .copied()
-                                .unwrap_or(self.content.reg.unknown_block),
+                            block: r.content.block(f.block),
                         })
                         .collect();
                     self.server.world.replace_falling_blocks(falling);
                 }
                 net::S2C::Bolts(part) => {
-                    let Some(snaps) = r.bolts_rx.accept(part) else {
+                    let Some(snaps) = r.snapshots.bolts(part) else {
                         continue;
                     };
                     let projectiles = snaps
@@ -599,21 +550,12 @@ impl Game {
                     self.server.world.replace_projectiles(projectiles);
                 }
                 net::S2C::LooseItems(part) => {
-                    let Some(snaps) = r.loose_items_rx.accept(part) else {
+                    let Some(snaps) = r.snapshots.loose_items(part) else {
                         continue;
                     };
                     let items = snaps
                         .into_iter()
-                        .filter_map(|snap| {
-                            let item = (*r.item_map.get(snap.item as usize)?)?;
-                            let mut entity = ItemEntity::new(snap.pos, snap.vel, item, snap.count);
-                            entity.stable_id = snap.id;
-                            entity.age = snap.age;
-                            entity.durability =
-                                snap.durability.min(self.content.reg.item(item).durability);
-                            entity.arcane_id = snap.arcane_id;
-                            Some(entity)
-                        })
+                        .filter_map(|snap| r.content.loose_item(&snap))
                         .collect();
                     self.server.world.replace_loose_items(items);
                 }
@@ -708,8 +650,7 @@ impl Game {
                     cue,
                     visual,
                 } => {
-                    let item_map = r.item_map.clone();
-                    self.present_implement_activation(pos, cue, visual, Some(&item_map));
+                    self.present_implement_activation(pos, cue, visual, Some(r.content.items()));
                     // The next player snapshot remains authoritative for the
                     // held model; this short-lived event only drives the
                     // visible settling gesture and local envelope.
@@ -754,9 +695,9 @@ impl Game {
                     arcane_id,
                     current_units,
                 } => {
-                    if let Some(Some(local)) = r.item_map.get(item as usize) {
+                    if let Some(local) = r.content.item(item) {
                         let reg = self.content.reg.clone();
-                        let mut stack = ItemStack::new(&reg, *local, count.max(1));
+                        let mut stack = ItemStack::new(&reg, local, count.max(1));
                         if durability > 0 {
                             stack.durability = durability;
                         }
@@ -859,16 +800,8 @@ impl Game {
                     slots,
                     aux,
                 } => {
-                    let reg = self.content.reg.clone();
                     let conv = |s: &Option<net::StackSnap>| -> Option<ItemStack> {
-                        let s = s.as_ref()?;
-                        let local = (*r.item_map.get(s.item as usize)?)?;
-                        Some(ItemStack {
-                            item: local,
-                            count: s.count,
-                            durability: s.durability,
-                            arcane_id: s.arcane_id,
-                        })
+                        s.as_ref().and_then(|stack| r.content.stack(stack))
                     };
                     let entity = match kind {
                         0 => {
@@ -924,7 +857,6 @@ impl Game {
                             _ => Screen::Offering(pos),
                         });
                     }
-                    let _ = reg;
                 }
                 net::S2C::MachineContainer {
                     pos,
@@ -936,14 +868,7 @@ impl Game {
                     // palette; the handler's layout rebuilds the instance.
                     let reg = self.content.reg.clone();
                     let conv = |s: &Option<net::StackSnap>| -> Option<ItemStack> {
-                        let s = s.as_ref()?;
-                        let local = (*r.item_map.get(s.item as usize)?)?;
-                        Some(ItemStack {
-                            item: local,
-                            count: s.count,
-                            durability: s.durability,
-                            arcane_id: s.arcane_id,
-                        })
+                        s.as_ref().and_then(|stack| r.content.stack(stack))
                     };
                     let Some(kind) = reg.machine_kind(&machine) else {
                         return;
@@ -994,15 +919,8 @@ impl Game {
                 net::S2C::HeldResult(held) => {
                     // The authoritative cursor after our click replaces
                     // the local prediction (identical on agreement).
-                    self.ui_state.held_stack = held.and_then(|s| {
-                        let local = (*r.item_map.get(s.item as usize)?)?;
-                        Some(ItemStack {
-                            item: local,
-                            count: s.count,
-                            durability: s.durability,
-                            arcane_id: s.arcane_id,
-                        })
-                    });
+                    self.ui_state.held_stack =
+                        held.as_ref().and_then(|stack| r.content.stack(stack));
                 }
                 net::S2C::Sleep { sleeping, present } => {
                     self.toast(format!("{sleeping}/{present} sleeping..."));
@@ -1050,7 +968,7 @@ impl Game {
                 terrain_batch
                     .iter()
                     .map(|(position, rle)| (*position, rle.as_slice())),
-                &r.block_map,
+                r.content.blocks(),
             );
         }
         if !block_updates.is_empty() {

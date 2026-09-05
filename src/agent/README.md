@@ -11,6 +11,11 @@ build prerequisites and complete checks. Commands below run from the repository 
 
 The agent is an ordinary guest. Preserve entry readiness, terrain clearance, authoritative inventory, and honest timeout results. Do not add privileged game shortcuts.
 
+`client_session/` owns host content mapping and snapshot reconstruction for both
+guest adapters. Keep breadcrumb trails, perception, navigation, movement cadence,
+and MCP responses here; discard shared receiver state when Welcome starts a new
+session.
+
 ## Focused checks
 
 ```sh

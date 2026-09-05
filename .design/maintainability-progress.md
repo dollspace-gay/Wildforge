@@ -719,3 +719,45 @@ evidence and this record leaves the captured source fingerprint unchanged.
 Broader migration work remains open: guest negotiation, shared client/authority
 ownership, remaining domain and UI decomposition, dependency/complexity tools,
 remaining shutdown cases, and controlled streaming/travel performance coverage.
+
+## Shared guest content and snapshot ownership (in progress)
+
+Phase 3 resumes from the qualified `a73df389` checkpoint. The parked four-file
+client-session draft was restored after verifying its saved SHA-256 inventory;
+the preserved copy remains in ignored working storage. This is new migration
+work, so the preceding GPU campaign remains evidence for its recorded source,
+not qualification of this changed source.
+
+Category A (root cause): `client_session::ContentMap` owns the host's block/item
+names, resolved local IDs, and the registry that defines them. Both graphical
+and agent adapters use it for block updates, inventory/cursor/armor slots,
+container snapshots, held-item presentation, and loose items. Host-owned IDs,
+quantities, instance identities, and the existing loose-item durability clamp
+are preserved. The unused reverse block map and guest remapping helpers in the
+authoritative host module are removed. Local graphical content reload now
+rebinds the retained host names to the new registry; previously its host ID
+tables remained bound to the old local definitions.
+
+`client_session::Snapshots` owns all five independent incoming stream receivers.
+Both adapters replace them on Welcome; presentation interpolation and agent
+navigation/trails remain in their respective consumers. Snapshot reconstruction
+moves out of wire DTO definitions, preserving the transport/session dependency
+direction. The existing packet representation and batching remain unchanged.
+
+The mapping checkpoint passed five focused regressions, strict all-target/
+all-feature Clippy, all 25 multiplayer scenarios, and all 15 serial agent
+scenarios. Logs are under `target/maintainability/client-session-palette-*`.
+Call-site inspection with
+`rg -n '\b(block_remap|item_remap|block_map|item_map|host_block|local_item)\b' src --glob '*.rs'`
+finds no remaining copied adapter mappings or host remap helpers. The new
+module folder has both guides; coverage checks report 61 maintained directories
+and zero documentation problems.
+
+Inspection of the shared receiver exposed stale-single-packet, duplicate,
+fragment-layout, and sequence-wrap defects. Six new regressions all failed
+against the original receiver after its structural move; their exact results
+are retained in `client-session-snapshot-regressions-before.log`. The ordering
+correction follows as a separately reviewable change. No public crate API,
+dependency, MSRV, save/wire format, or generation algorithm changes are part of
+this extraction. Full admission/replica ownership, protocol failure handling,
+new native guest evidence, and final full Rust/GPU gates remain outstanding.

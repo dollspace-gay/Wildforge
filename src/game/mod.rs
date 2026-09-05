@@ -553,12 +553,7 @@ struct Remote {
     client: net::Client,
     my_id: u32,
     role: identity::Role,
-    /// Host block id -> local block id.
-    block_map: Vec<crate::registry::BlockId>,
-    /// Host item id -> local item id.
-    item_map: Vec<Option<ItemId>>,
-    /// Local block id -> host id (for Place).
-    host_block: std::collections::HashMap<u16, u16>,
+    content: crate::client_session::ContentMap,
     /// id -> (name, pos, yaw) of every other player (render state).
     players: std::collections::HashMap<u32, (String, Vec3, f32)>,
     /// Latest canonical authoritative position for each rendered player.
@@ -578,13 +573,7 @@ struct Remote {
     mob_lerp: std::collections::HashMap<u32, Lerp>,
     mob_age: f32,
     mob_interval: f32,
-    /// Snapshots arrive split when they are too big for one datagram; these
-    /// hold the parts until a generation is whole.
-    players_rx: net::SnapshotAssembler<net::PlayerSnap>,
-    mobs_rx: net::SnapshotAssembler<net::MobSnap>,
-    bolts_rx: net::SnapshotAssembler<net::BoltSnap>,
-    loose_items_rx: net::SnapshotAssembler<net::LooseItemSnap>,
-    falling_rx: net::SnapshotAssembler<net::FallSnap>,
+    snapshots: crate::client_session::Snapshots,
     /// View distance the host granted, in chunks. Terrain past it is not
     /// coming, so the fog and the eviction radius both respect it.
     granted_view_dist: i32,

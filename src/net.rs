@@ -10,8 +10,8 @@ mod protocol;
 pub use protocol::{
     AtprotoClaim, BoltSnap, C2S, DATAGRAM_FLOOR, DiscoveryTargetSnap, FallSnap, InventoryArea,
     LooseItemSnap, MAX_GUEST_VIEW_DIST, MobSnap, ModerationAction, PROTOCOL, PlayerPresence,
-    PlayerSnap, PlayerStateSnap, RecordHolderSnap, Refusal, RefusalCode, S2C, Snapshot,
-    SnapshotAssembler, StackSnap, batch_snapshot, decode, encode,
+    PlayerSnap, PlayerStateSnap, RecordHolderSnap, Refusal, RefusalCode, S2C, Snapshot, StackSnap,
+    batch_snapshot, decode, encode,
 };
 
 #[path = "net/handshake.rs"]

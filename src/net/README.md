@@ -4,6 +4,10 @@
 
 protocol.rs defines wire values; handshake.rs authenticates admission; transport.rs owns QUIC channels; content.rs owns mod hashes and transfer inventories.
 
+Guest snapshot reconstruction belongs to `client_session/`, which owns stream
+generations across Welcome and reconnect. This directory retains snapshot wire
+values and datagram batching; it does not depend on the client-session owner.
+
 Start with `handshake.rs`, `protocol.rs`, `transport.rs`. See the [repository overview](../../README.md) for
 build prerequisites and complete checks. Commands below run from the repository root.
 
