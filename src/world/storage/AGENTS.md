@@ -19,4 +19,11 @@ must stay bounded by active work. Test edits saved and unloaded before adoption.
 Prepared terrain is tied to its decoding registry and palette as well as its
 saved bytes. Replace palette snapshots instead of mutating shared tables. A
 loader predating the first palette publication must never replace a saved edit
-with the legacy placeholder-repair result it derives from obsolete context.
+with obsolete prepared work. Fresh mappings must already describe runtime IDs.
+
+Stored palette bindings are append-only. Preserve removed names and vacant IDs;
+never rewrite a global palette in current runtime order while cold chunks still
+use previous IDs. Route every authoritative chunk write through palette
+publication, including unload, retrogen, and material transactions. Disk encoding
+maps to stored IDs; network encoding keeps runtime IDs. Test both paths and
+preserve retryable save failures without publishing undecodable chunk bytes.

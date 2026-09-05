@@ -4,9 +4,10 @@ use std::io;
 use std::sync::Arc;
 
 use super::decoder::{Decoder, invalid};
+use super::palette_store::PaletteSnapshot;
 use super::region_store::{ChunkRevision as SavedRevision, RegionStore};
 use crate::chunk::{CHUNK_X, CHUNK_Y, CHUNK_Z, Chunk, ChunkPos, HydrologyVolumeRecord};
-use crate::registry::{BlockId, Registry};
+use crate::registry::Registry;
 
 /// Missing content and the historically supported placeholder repair are explicit.
 pub(crate) enum ChunkRead {
@@ -19,9 +20,8 @@ pub(crate) enum ChunkRead {
 #[derive(Clone)]
 pub(crate) struct ChunkLoader {
     pub(super) store: RegionStore,
-    pub(super) load_remap: Arc<Vec<BlockId>>,
+    pub(super) palette: Arc<PaletteSnapshot>,
     pub(super) reg: Arc<Registry>,
-    pub(super) palette_stale: bool,
 }
 
 pub(crate) struct ChunkLoad {
@@ -52,8 +52,7 @@ impl ChunkLoader {
     pub(crate) fn matches(&self, other: &Self) -> bool {
         self.store.same_instance(&other.store)
             && Arc::ptr_eq(&self.reg, &other.reg)
-            && Arc::ptr_eq(&self.load_remap, &other.load_remap)
-            && self.palette_stale == other.palette_stale
+            && Arc::ptr_eq(&self.palette, &other.palette)
     }
 
     pub(crate) fn load(&self, pos: ChunkPos) -> io::Result<ChunkRead> {
@@ -61,6 +60,7 @@ impl ChunkLoader {
     }
 
     pub(crate) fn load_versioned(&self, pos: ChunkPos) -> io::Result<ChunkLoad> {
+        self.palette.validate()?;
         let (data, saved) = self.store.read(pos)?;
         let content = match data {
             Some(data) => self.decode(&data)?,
@@ -76,6 +76,7 @@ impl ChunkLoader {
     }
 
     fn decode(&self, data: &[u8]) -> io::Result<ChunkRead> {
+        let remap = &self.palette.mapping()?.decode;
         let mut bytes = Decoder::new(data);
         let version = match &bytes.array::<4>()? {
             b"WFC8" => 8,
@@ -87,8 +88,7 @@ impl ChunkLoader {
         let blocks = chunk.raw_mut();
         bytes.plane("block", blocks, |bytes| {
             let stored = usize::from(bytes.u16()?);
-            Ok(self
-                .load_remap
+            Ok(remap
                 .get(stored)
                 .copied()
                 .unwrap_or(self.reg.unknown_block)
@@ -148,14 +148,14 @@ impl ChunkLoader {
         chunk.set_hydrology_volumes(hydrology);
         chunk.dirty = true;
         chunk.compact();
-        chunk.modified = self.palette_stale;
+        chunk.modified = false;
         Ok(ChunkRead::Present(chunk))
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{ChunkLoader, ChunkRead, RegionStore};
+    use super::{ChunkLoader, ChunkRead, PaletteSnapshot, RegionStore};
     use crate::chunk::{CHUNK_X, CHUNK_Y, CHUNK_Z};
     use crate::registry::{self, AIR};
     use std::io::ErrorKind;
@@ -166,13 +166,12 @@ mod tests {
         let reg = Arc::new(registry::load(Path::new("/nonexistent-mods-dir")));
         ChunkLoader {
             store: RegionStore::new(PathBuf::new()),
-            load_remap: Arc::new(vec![
+            palette: PaletteSnapshot::for_decode(vec![
                 AIR,
                 reg.block_id("base:water").unwrap(),
                 reg.unknown_block,
             ]),
             reg,
-            palette_stale: false,
         }
     }
 
@@ -208,33 +207,39 @@ mod tests {
 
     #[test]
     fn saved_versions_preserve_palette_units_and_modified_flags() {
-        let mut loader = loader();
+        let loader = loader();
         for version in 6..=8 {
-            for stale in [true, false] {
-                loader.palette_stale = stale;
-                let ChunkRead::Present(chunk) = loader.decode(&payload(version, 1)).unwrap() else {
-                    panic!("valid saved chunk was not decoded");
-                };
-                assert_eq!(chunk.get(0, 10, 0), loader.load_remap[1]);
-                assert_eq!(chunk.meta(0, 10, 0), 7);
-                let salt = if version == 6 {
-                    u16::from(loader.reg.water_volume(loader.load_remap[1]).unwrap()) * 32 * 7
-                } else {
-                    42
-                };
-                assert_eq!(chunk.water_salt(0, 10, 0), salt);
-                assert_eq!(
-                    chunk.soil_salinity(0, 10, 0),
-                    if version == 8 { 11 } else { 0 }
-                );
-                assert!(chunk.dirty);
-                assert_eq!(chunk.modified, stale);
-                let record = chunk.hydrology_volumes()[0];
-                assert_eq!(record.reservoir, 5);
-                assert_eq!(record.baseline_hu, if version == 6 { 288 } else { 9 });
-                assert_eq!(record.residual_hu, if version == 6 { -128 } else { -4 });
-                assert_eq!(record.salt_mass, if version == 6 { 0 } else { 42 });
-            }
+            let ChunkRead::Present(chunk) = loader.decode(&payload(version, 1)).unwrap() else {
+                panic!("valid saved chunk was not decoded");
+            };
+            assert_eq!(
+                chunk.get(0, 10, 0),
+                loader.palette.mapping().unwrap().decode[1]
+            );
+            assert_eq!(chunk.meta(0, 10, 0), 7);
+            let salt = if version == 6 {
+                u16::from(
+                    loader
+                        .reg
+                        .water_volume(loader.palette.mapping().unwrap().decode[1])
+                        .unwrap(),
+                ) * 32
+                    * 7
+            } else {
+                42
+            };
+            assert_eq!(chunk.water_salt(0, 10, 0), salt);
+            assert_eq!(
+                chunk.soil_salinity(0, 10, 0),
+                if version == 8 { 11 } else { 0 }
+            );
+            assert!(chunk.dirty);
+            assert!(!chunk.modified);
+            let record = chunk.hydrology_volumes()[0];
+            assert_eq!(record.reservoir, 5);
+            assert_eq!(record.baseline_hu, if version == 6 { 288 } else { 9 });
+            assert_eq!(record.residual_hu, if version == 6 { -128 } else { -4 });
+            assert_eq!(record.salt_mass, if version == 6 { 0 } else { 42 });
         }
     }
 

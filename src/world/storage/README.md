@@ -22,6 +22,17 @@ snapshot. Authoritative adoption checks both that context and the region revisio
 Refreshing a palette replaces its shared allocation; cloning a loader is cheap
 and does not copy the remapping table or read the filesystem.
 
+`palette.rs` parses bounded naming tables and appends new names without reusing
+stored IDs. `palette_store.rs` owns publication and immutable registry mappings
+for a World session. Full saves and direct chunk writes share that publication
+boundary; failed writes retain the pending palette for retry. Failed initial
+reads remain observable and require reopening the session after repair.
+
+`encoder.rs` shares WFC plane encoding while keeping persistence's stored IDs
+separate from WFC9 runtime IDs. A registry reorder leaves unedited disk chunks
+clean. Missing/empty historical palettes retain the legacy identity fallback;
+malformed and unreadable palettes are errors, never a regeneration request.
+
 Preserve WFC6-WFC8 compatibility, water units, stable IDs, and modified/dirty
 flags. Keep read errors distinct from missing content. The authoritative world
 alone adopts decoded terrain and commits lighting, ecology, and accounting.

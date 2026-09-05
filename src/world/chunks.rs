@@ -635,22 +635,9 @@ impl World {
         }
         // Voxel first, ledger marker second. A crash between them simply
         // reruns the deterministic pass; already replaced ore is unchanged.
-        if changed {
-            // This direct write may be the first chunk saved after a mod was
-            // added. Land the naming palette first so a crash/reload cannot
-            // interpret the new ore's numeric id through the old palette.
-            if self.palette_stale {
-                if let Err(error) = self.write_palette() {
-                    eprintln!("materials: retrogen palette write failed: {error}");
-                    return;
-                }
-                self.palette_stale = false;
-                self.load_remap = Arc::new(self.read_palette_remap());
-            }
-            if let Err(error) = self.save_chunk(pos) {
-                eprintln!("materials: retrogen chunk write failed for {pos:?}: {error}");
-                return;
-            }
+        if changed && let Err(error) = self.save_chunk(pos) {
+            eprintln!("materials: retrogen chunk write failed for {pos:?}: {error}");
+            return;
         }
         if let Some(ledger) = &mut self.material_ledger
             && let Err(error) = ledger.mark_retrogen_chunk(

@@ -42,6 +42,7 @@ impl World {
             ));
         }
         let mut existing = load_world_meta(&save_dir)?;
+        storage::PaletteStore::validate_saved(&save_dir)?;
         let seed = existing.as_ref().map(|meta| meta.seed).unwrap_or_else(|| {
             std::env::var("WILDFORGE_SEED")
                 .ok()
@@ -182,8 +183,7 @@ impl World {
         w.ire = ire;
         w.day = day;
         w.clock = day as f64 * crate::server::DAY_LENGTH as f64;
-        w.load_remap = Arc::new(w.read_palette_remap());
-        w.palette_stale = !w.palette_matches_registry();
+        w.palette.snapshot(&w.reg).validate()?;
         // The arcane journal commits before sparse item-owner files. If a
         // process stopped between those two durable writes, roll an
         // unmaterialized account back or remove a stale pre-commit stack
@@ -329,75 +329,6 @@ impl World {
             buf.extend_from_slice(&t.to_le_bytes());
         }
         atomic_replace(&self.save_dir.join("stamps"), &buf)
-    }
-
-    /// Map every stored numeric id to a current runtime id via string names.
-    pub(super) fn read_palette_remap(&self) -> Vec<BlockId> {
-        let Ok(text) = fs::read_to_string(self.save_dir.join("palette")) else {
-            // WFC3 saves from before named palettes stored the then-current
-            // registry ids directly. Treating a missing palette as an empty
-            // remap turns every cell, including air, into base:unknown and
-            // produces solid chunk-height magenta pillars.
-            return self.identity_palette_remap();
-        };
-        let mut remap = Vec::new();
-        for line in text.lines() {
-            let Some((num, name)) = line.split_once(' ') else {
-                continue;
-            };
-            let Ok(num) = num.parse::<usize>() else {
-                continue;
-            };
-            if remap.len() <= num {
-                remap.resize(num + 1, self.reg.unknown_block);
-            }
-            remap[num] = self
-                .reg
-                .block_id(name.trim())
-                .unwrap_or(self.reg.unknown_block);
-        }
-        if remap.is_empty() {
-            self.identity_palette_remap()
-        } else {
-            remap
-        }
-    }
-
-    fn identity_palette_remap(&self) -> Vec<BlockId> {
-        (0..self.reg.blocks.len())
-            .map(|id| BlockId(id as u16))
-            .collect()
-    }
-
-    /// The palette this registry would write: one `id name` line per block.
-    fn palette_text(&self) -> String {
-        let mut out = String::new();
-        for (i, b) in self.reg.blocks.iter().enumerate() {
-            out.push_str(&format!("{i} {}\n", b.name));
-        }
-        out
-    }
-
-    /// Does the saved palette already describe this registry? When it does,
-    /// every chunk file on disk is written in ids we still understand, so a
-    /// chunk that loads unedited does not need saving again. When it does
-    /// NOT (a mod arrived, the game updated), chunk files carry stale ids
-    /// and every one we touch has to be rewritten under the new palette.
-    pub(super) fn palette_matches_registry(&self) -> bool {
-        fs::read_to_string(self.save_dir.join("palette")).is_ok_and(|on_disk| {
-            // A fresh world has no chunks yet, so a missing palette is not
-            // a mismatch — but an unreadable one we treat as stale.
-            on_disk == self.palette_text()
-        })
-    }
-
-    /// Write the current registry as this world's palette (runtime ids are
-    /// stored ids from now on).
-    pub(super) fn write_palette(&self) -> std::io::Result<()> {
-        atomic_replace(
-            &self.save_dir.join("palette"),
-            self.palette_text().as_bytes(),
-        )
     }
 }
 

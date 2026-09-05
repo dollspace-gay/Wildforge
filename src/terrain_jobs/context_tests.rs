@@ -33,7 +33,7 @@ fn first_palette_publication_invalidates_prepared_terrain_without_a_chunk_write(
 }
 
 #[test]
-fn a_reader_created_before_the_first_save_cannot_publish_placeholder_repair() {
+fn a_reader_created_before_the_first_save_keeps_edits_and_rejects_stale_adoption() {
     let root = TestDirectory::new();
     let reg = Arc::new(registry::load(Path::new("/nonexistent-mods-dir")));
     let mut world = World::new(42, root.0.clone(), reg);
@@ -56,7 +56,8 @@ fn a_reader_created_before_the_first_save_cannot_publish_placeholder_repair() {
     assert_eq!(evicted, [position]);
     pool.request(position, Priority::Entry, 2);
     let old = receive(&mut pool);
-    assert_eq!(old.origin, ChunkOrigin::RepairedPlaceholder);
+    assert_eq!(old.origin, ChunkOrigin::Saved);
+    assert_eq!(old.chunk.raw(), before);
     assert!(!world.adopt_prepared_at_revision(position, old.chunk, true, &old.revision));
     pool.reconfigure(context(&world), WorkerPolicy::Dedicated);
     pool.request(position, Priority::Entry, 2);

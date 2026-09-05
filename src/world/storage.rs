@@ -1,8 +1,15 @@
 //! Mob/chunk persistence, planetary chunk streaming, saves, and registry remapping.
 
 mod decoder;
+mod encoder;
+#[cfg(test)]
+pub(crate) use encoder::encode_chunk;
+pub(crate) use encoder::encode_stream_chunk;
+mod palette;
+mod palette_store;
 mod reader;
 mod region_store;
+pub(super) use palette_store::PaletteStore;
 pub(crate) use reader::{ChunkLoader, ChunkRead, ChunkRevision};
 pub(super) use region_store::RegionStore;
 
@@ -705,9 +712,8 @@ impl World {
     pub(crate) fn chunk_loader(&self) -> ChunkLoader {
         ChunkLoader {
             store: self.region_store.clone(),
-            load_remap: Arc::clone(&self.load_remap),
+            palette: self.palette.snapshot(&self.reg),
             reg: Arc::clone(&self.reg),
-            palette_stale: self.palette_stale,
         }
     }
 
@@ -719,6 +725,7 @@ impl World {
 impl World {
     /// Planetary WFC8 block/metadata/water-salt/soil-salt RLE and HU reservoir
     /// residuals for disk. Derived light is deliberately omitted from saves.
+    #[cfg(test)]
     pub fn chunk_rle(&self, pos: ChunkPos) -> Option<Vec<u8>> {
         let chunk = self.chunks.get(&pos)?;
         Some(encode_chunk(chunk))
@@ -921,12 +928,14 @@ impl World {
                 "injected chunk save failure",
             ));
         }
-        let buf = self.chunk_rle(pos).ok_or_else(|| {
+        let chunk = self.chunks.get(&pos).ok_or_else(|| {
             std::io::Error::new(
                 std::io::ErrorKind::NotFound,
                 format!("chunk {pos:?} is not resident"),
             )
         })?;
+        let palette = self.palette.publish(&self.reg)?;
+        let buf = encoder::encode_saved_chunk(chunk, &palette)?;
         self.region_store.write(pos, &buf)
     }
 
@@ -1001,22 +1010,13 @@ impl World {
                     .map_err(std::io::Error::other),
             );
         }
-        // Only when it would actually differ. The palette describes the
-        // registry, not the world, so rewriting it on a timer was 4 KB
-        // of churn every twenty seconds saying the same thing. It has
-        // to land before the chunks below, which are written in the ids
-        // it names.
-        let palette_ready = if self.palette_stale {
-            let path = self.save_dir.join("palette");
-            let ready = report.record("block palette", path, self.write_palette());
-            if ready {
-                self.palette_stale = false;
-                self.load_remap = Arc::new(self.read_palette_remap());
-            }
-            ready
-        } else {
-            true
-        };
+        // One owner publishes extensions for both full saves and direct chunk
+        // writes. Stored names are never renumbered when content changes.
+        let palette_ready = report.record(
+            "block palette",
+            self.save_dir.join("palette"),
+            self.palette.publish(&self.reg).map(|_| ()),
+        );
         let path = self.entities_path();
         report.record("block entities", path, self.save_entities());
         let path = self.save_dir.join("discovery.toml");
@@ -1074,9 +1074,8 @@ impl World {
             .map(|(pos, _)| *pos)
             .collect();
         for pos in dirty {
-            // Chunks use runtime numeric ids. If the palette naming those ids
-            // did not land, writing them would make the next load reinterpret
-            // otherwise healthy terrain under the stale palette.
+            // New stored IDs cannot reach disk before their names. Existing
+            // IDs keep their meaning even when unloaded chunks are untouched.
             if !palette_ready {
                 continue;
             }
@@ -1119,7 +1118,6 @@ impl World {
             chunk.compact();
             chunk.dirty = true;
         }
-        self.load_remap = Arc::new(self.read_palette_remap());
         // Re-resolve gated positions (spec 2.5) against the new registry's
         // gate list by their sealed block; a gate whose def was removed (or
         // whose sealed block changed) stops gating rather than softlocking
@@ -1143,81 +1141,4 @@ impl World {
     }
 
     // ---------------- lighting ----------------
-}
-
-pub(crate) fn encode_chunk(chunk: &Chunk) -> Vec<u8> {
-    encode_chunk_state(chunk, false)
-}
-
-/// Live network form. Unlike the disk codec, WFC9 includes settled block and
-/// sky light so every guest does not recompute the host's identical derived
-/// field while a view is streaming in.
-pub(crate) fn encode_stream_chunk(chunk: &Chunk) -> Vec<u8> {
-    encode_chunk_state(chunk, true)
-}
-
-fn encode_chunk_state(chunk: &Chunk, include_light: bool) -> Vec<u8> {
-    let mut buf: Vec<u8> = Vec::with_capacity(4096);
-    buf.extend_from_slice(if include_light { b"WFC9" } else { b"WFC8" });
-    // Runs come straight off the plane, so a uniform plane is one step rather
-    // than a scan of every cell. Long runs are split for the u16 wire field.
-    for (value, mut run) in chunk.block_runs() {
-        while run > 0 {
-            let take = run.min(u16::MAX as usize);
-            buf.extend_from_slice(&(take as u16).to_le_bytes());
-            buf.extend_from_slice(&value.to_le_bytes());
-            run -= take;
-        }
-    }
-    for (value, mut run) in chunk.meta_runs() {
-        while run > 0 {
-            let take = run.min(u16::MAX as usize);
-            buf.extend_from_slice(&(take as u16).to_le_bytes());
-            buf.push(value);
-            run -= take;
-        }
-    }
-    for (value, mut run) in chunk.water_salt_runs() {
-        while run > 0 {
-            let take = run.min(u16::MAX as usize);
-            buf.extend_from_slice(&(take as u16).to_le_bytes());
-            buf.extend_from_slice(&value.to_le_bytes());
-            run -= take;
-        }
-    }
-    for (value, mut run) in chunk.soil_salinity_runs() {
-        while run > 0 {
-            let take = run.min(u16::MAX as usize);
-            buf.extend_from_slice(&(take as u16).to_le_bytes());
-            buf.push(value);
-            run -= take;
-        }
-    }
-    if include_light {
-        for (value, mut run) in chunk.light_block_runs() {
-            while run > 0 {
-                let take = run.min(u16::MAX as usize);
-                buf.extend_from_slice(&(take as u16).to_le_bytes());
-                buf.extend_from_slice(&value);
-                run -= take;
-            }
-        }
-        for (value, mut run) in chunk.light_sky_runs() {
-            while run > 0 {
-                let take = run.min(u16::MAX as usize);
-                buf.extend_from_slice(&(take as u16).to_le_bytes());
-                buf.push(value);
-                run -= take;
-            }
-        }
-    }
-    let records = chunk.hydrology_volumes();
-    buf.extend_from_slice(&(records.len().min(u16::MAX as usize) as u16).to_le_bytes());
-    for record in records.iter().take(u16::MAX as usize) {
-        buf.extend_from_slice(&record.reservoir.to_le_bytes());
-        buf.extend_from_slice(&record.baseline_hu.to_le_bytes());
-        buf.extend_from_slice(&record.residual_hu.to_le_bytes());
-        buf.extend_from_slice(&record.salt_mass.to_le_bytes());
-    }
-    buf
 }

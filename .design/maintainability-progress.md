@@ -125,10 +125,9 @@ named phase rather than treated as permanent exemptions.
 | `src/tests/mod.rs` | 518 | Shared fixtures remain alongside test registration | Phase 7 scenario fixtures and test organization |
 | `src/net/transport.rs` | 1006 | Content inventory is extracted; QUIC lifecycle/discovery remain | Phases 3 and 8 session/transport boundaries |
 | `src/planet_atlas/climate.rs` | 2440 | Live-audit correction reuses the existing total helper; stage ownership remains debt | Phase 6 climate stage extraction |
-| `src/world/mod.rs` | 4267 | Composes the new region owner; remaining world domains still share fields | Phase 5 domain ownership |
-| `src/world/chunks.rs` | 1205 | Revision validation wraps the existing adoption side-effect sequence | Phase 5 chunk/residency domain |
-| `src/world/persistence.rs` | 420 | Cancellable open still coordinates legacy domain initialization | Phase 5 persistence/domain ownership |
-| `src/world/storage.rs` | 1223 | Delegates chunk I/O; sidecars, save orchestration, and remapping remain | Phase 5 persistence ownership |
+| `src/world/mod.rs` | 4258 | Composes region and palette owners; remaining world domains still share fields | Phase 5 domain ownership |
+| `src/world/chunks.rs` | 1192 | Adoption keeps its existing side-effect sequence; retrogen delegates palette publication | Phase 5 chunk/residency domain |
+| `src/world/storage.rs` | 1144 | Delegates codec, palette, and region I/O; sidecars, save orchestration, and remapping remain | Phase 5 persistence ownership |
 | `src/world/spawn.rs` | 1592 | Fingerprints use coordinated reads; trial/qualification orchestration remains | Phases 5 and 6 entry/genesis ownership |
 
 The host streaming adapter is now 371 lines after extracting its private job
@@ -519,3 +518,49 @@ by itself make a reordered saved palette safe. These remain active migration
 work, alongside caller-level switch/disconnect/save-failure runtime scenarios,
 controlled performance evidence, five full visual requalifications, and the
 remaining Phase 3–8 domains and tooling. No full migration acceptance is claimed.
+
+
+## Stable stored palette owner (in verification)
+
+`storage::PaletteStore` now owns each session's immutable block-ID mappings and
+pending palette publication. Stored numeric IDs keep their original names;
+new content appends entries, and removed names and vacant IDs remain reserved.
+Runtime registry reordering therefore does not require rewriting cold chunks.
+The saved reader uses the owner's immutable mapping and leaves decoded chunks
+unmodified until a real edit. Fresh worlds have an identity mapping before their
+first save, so an earlier loader no longer fabricates all-placeholder repair.
+Successful first publication still retires older prepared-context snapshots.
+
+Every authoritative chunk write now passes through the same palette publication
+boundary, including unload, homeland, material transactions, and retrogen. Failed
+publication retains the pending table and stops chunk publication; a later save
+can retry. Invalid runtime block IDs cannot replace an existing chunk. Initial
+palette read/parse failures remain explicit through loading and terrain workers;
+a repaired file requires reopening the session. Entry validates a saved palette
+before creating or updating world sidecars. Missing/empty historical palettes
+retain the existing identity fallback; malformed tables are refused. Parsing is
+bounded to 16 MiB and 65,536 numeric slots, and extension exhaustion cannot
+partially alter the table.
+
+`storage::encoder` owns the shared WFC planes. Disk encoding maps runtime blocks
+to stored IDs while WFC9 keeps runtime IDs; metadata, light policy, salt, and HU
+records retain their byte layouts. Production no longer exposes a runtime-ID
+WFC8 helper; legacy codec test fixtures retain it under `cfg(test)`. No exported
+crate API, dependency, shader, MSRV, or wire protocol changes were made.
+
+Focused checks pass: strict all-target/all-feature Clippy; 18 storage scenarios
+(including ten new palette/encoding regressions); 20 terrain lifecycle/context
+scenarios; and four saved-I/O/real-QUIC refusal scenarios. The regressions cover
+reordered and added content with unchanged cold bytes, removed/reinstalled names,
+identity-codec byte equivalence, malformed/bounded input, full-table rollback,
+and failed direct-save retry. Full clean gates and native entry/reload/save
+qualification follow; the five existing visual-evidence failures are not bypassed.
+
+All four new modules are below 400 lines. `world/persistence.rs` is now 351 lines
+and no longer needs a size exception; the storage adapter is 1,144 lines and still
+requires sidecar/domain extraction. The advisory scan reports 240 source files,
+118 above 400 lines, 102 above 500, and 71 exact-token clone groups. All 55
+maintained directories retain their README and AGENTS guidance. This addresses
+the palette-publication defect recorded above; guest content negotiation,
+independent authority/replica owners, the remaining Phase 3–8 migrations,
+controlled performance work, and full visual qualification remain open.

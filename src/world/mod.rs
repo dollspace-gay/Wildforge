@@ -1051,12 +1051,7 @@ pub struct World {
     pub seed: u32,
     save_dir: PathBuf,
     region_store: storage::RegionStore,
-    /// stored-id -> runtime-id remap for chunks loaded from disk.
-    load_remap: Arc<Vec<BlockId>>,
-    /// The saved palette no longer matches this registry, so every chunk
-    /// that loads has to be rewritten in current ids before the palette on
-    /// disk is replaced. Cleared by the first full save of the session.
-    palette_stale: bool,
+    palette: storage::PaletteStore,
     water_queue: VecDeque<crate::planet::BlockPos>,
     water_queued: HashSet<crate::planet::BlockPos>,
     lava_queue: VecDeque<crate::planet::BlockPos>,
@@ -1531,15 +1526,11 @@ impl World {
             remote_arcane_items: HashMap::new(),
             remote_implements: HashMap::new(),
             remote_apparatus: HashMap::new(),
+            palette: storage::PaletteStore::new(&save_dir, &reg),
             reg,
             seed,
             region_store: storage::RegionStore::new(save_dir.clone()),
             save_dir,
-            load_remap: Arc::new(Vec::new()),
-            // A world with no save behind it has no palette on disk
-            // either, so the first save owes one. `load_or_create`
-            // replaces this with the answer for an existing save.
-            palette_stale: true,
             water_queue: VecDeque::new(),
             water_queued: HashSet::new(),
             lava_queue: VecDeque::new(),
