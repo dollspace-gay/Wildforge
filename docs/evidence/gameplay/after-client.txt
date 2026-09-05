@@ -1,0 +1,11 @@
+    Finished `test` profile [optimized + debuginfo] target(s) in 0.16s
+
+running 1 test
+test game::actions::gameplay_proofs::real_depot_right_clicks_conserve_goods ... renderer: using NVIDIA GeForce RTX 5070 Ti Laptop GPU [Vulkan, DiscreteGpu]
+PROOF depot whole stack: before held=32 staged=0; after held=0 staged=32 standing=64
+PROOF depot remaining appetite: before held=16 staged=60; after held=12 staged=64 standing=8
+PROOF depot unwanted goods: before held=16 staged=0; after held=16 staged=0 standing=0
+PROOF depot food delivery: before held=8 staged=0; after held=0 staged=8 standing=16
+ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1044 filtered out; finished in 4.81s

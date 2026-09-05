@@ -1,0 +1,7 @@
+[[nest]]
+id = "den"
+block = "proof:nest"
+species = "proof:wolf"
+radius = 16.0
+interval = 4.0
+cap = 3

@@ -521,10 +521,7 @@ impl Game {
             self.skills.respecs
         );
         for (source, count) in &self.skills.source_counts {
-            let _ = writeln!(
-                out,
-                "[[skill_xp]]\nsource = \"{source}\"\ncount = {count}"
-            );
+            let _ = writeln!(out, "[[skill_xp]]\nsource = \"{source}\"\ncount = {count}");
         }
         let sp = self.survival.spawn_point;
         let _ = writeln!(
@@ -588,7 +585,10 @@ impl Game {
                     slot.frame
                 );
                 for component in &slot.components {
-                    let _ = writeln!(out, "[[loadout_preset.slot.component]]\nitem = \"{component}\"");
+                    let _ = writeln!(
+                        out,
+                        "[[loadout_preset.slot.component]]\nitem = \"{component}\""
+                    );
                 }
             }
         }
@@ -878,9 +878,7 @@ impl Game {
         self.skills.allocated = p.allocated;
         self.skills.respecs = p.respecs;
         for entry in p.skill_xp {
-            self.skills
-                .source_counts
-                .insert(entry.source, entry.count);
+            self.skills.source_counts.insert(entry.source, entry.count);
         }
         for s in p.slot {
             if s.index < TOTAL_SLOTS
@@ -944,10 +942,12 @@ impl Game {
                     components: slot.component,
                 });
             }
-            self.survival.loadout_presets.push(crate::equipment::LoadoutPreset {
-                name: entry.name,
-                slots,
-            });
+            self.survival
+                .loadout_presets
+                .push(crate::equipment::LoadoutPreset {
+                    name: entry.name,
+                    slots,
+                });
         }
         if let Some(at) = self.player.pos.block() {
             let migrated = self.server.world.migrate_legacy_player_charms(

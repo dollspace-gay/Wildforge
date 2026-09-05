@@ -69,7 +69,9 @@ fn nest_reg() -> Arc<Registry> {
 #[test]
 fn a_nest_spawns_its_species_until_it_is_cleared() {
     let reg = nest_reg();
-    let wolf = reg.animal_id("denworld:denwolf").expect("nest species registers");
+    let wolf = reg
+        .animal_id("denworld:denwolf")
+        .expect("nest species registers");
     assert_eq!(reg.nests.len(), 1, "the nest def resolved");
     let mut w = test_world_with("nest-spawn", reg.clone());
     let h = w.surface_height(8, 8);
@@ -90,7 +92,9 @@ fn a_nest_spawns_its_species_until_it_is_cleared() {
         .collect::<Vec<_>>();
     assert!(!spawned.is_empty(), "the nest spawned its denwolf");
     for m in &spawned {
-        let d = m.pos.horizontal_distance_to(ep(Vec3::new(8.0, (h + 1) as f32, 8.0)));
+        let d = m
+            .pos
+            .horizontal_distance_to(ep(Vec3::new(8.0, (h + 1) as f32, 8.0)));
         assert!(d <= 20.0, "a denwolf manifested near its den ({d})");
     }
     // Clear the den: the record goes with the block, and no denwolf ever

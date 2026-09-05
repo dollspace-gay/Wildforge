@@ -235,10 +235,7 @@ fn captured_machine_restores_no_block_entity_contents() {
     let crate::world::BlockEntity::Multiblock(m) = entity else {
         panic!("expected a machine shell entity");
     };
-    assert_eq!(
-        m.kind,
-        rc.machine_kind("base:forge").unwrap_or_default()
-    );
+    assert_eq!(m.kind, rc.machine_kind("base:forge").unwrap_or_default());
     assert!(!m.lit, "a stamped forge is not lit");
     assert!(m.charge.iter().all(|s| s.is_none()), "no charge restored");
     assert!(m.fuel.iter().all(|s| s.is_none()), "no fuel restored");

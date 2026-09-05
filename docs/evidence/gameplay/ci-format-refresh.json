@@ -1,0 +1,228 @@
+{
+  "baseline_commit": "7e79e1562f96ec5ad62887e13ad99eb42db70203",
+  "rustfmt_version": "rustfmt 1.9.0-stable (ac68faa20c 2026-05-25)",
+  "source_sets": {
+    "qualification_source_sha256": {
+      "before_sha256": "13fb9cfb7a5d1bc592007dd7407660af14ed0a973e1d1a22c53ed79c83abdba0",
+      "after_sha256": "899a0c7c2758eab2a6705949c178b3cf7b2c22ffd321274661e500155bee31c2",
+      "files": [
+        {
+          "path": "base/textures/basalt.png",
+          "changed_by_rustfmt": false,
+          "before_sha256": "c25f65a5c4279e26061d4f47950b7c8b4ef05d02568779c32602f2a9debaa5aa",
+          "after_sha256": "c25f65a5c4279e26061d4f47950b7c8b4ef05d02568779c32602f2a9debaa5aa"
+        },
+        {
+          "path": "base/textures/granite.png",
+          "changed_by_rustfmt": false,
+          "before_sha256": "687ef6708c00592c48a0d935242f9892771051d6f6dade5baeeb5bb6c56e74f3",
+          "after_sha256": "687ef6708c00592c48a0d935242f9892771051d6f6dade5baeeb5bb6c56e74f3"
+        },
+        {
+          "path": "base/textures/limestone.png",
+          "changed_by_rustfmt": false,
+          "before_sha256": "24de0cdcf40d35eca5336dbd7242ecdbe50cbb7a83e405d5f8d70487bfb49159",
+          "after_sha256": "24de0cdcf40d35eca5336dbd7242ecdbe50cbb7a83e405d5f8d70487bfb49159"
+        },
+        {
+          "path": "base/textures/marble.png",
+          "changed_by_rustfmt": false,
+          "before_sha256": "14c15c46992a1c035b8964bfc13b5048f0343d493afb95638ce20df767395dd6",
+          "after_sha256": "14c15c46992a1c035b8964bfc13b5048f0343d493afb95638ce20df767395dd6"
+        },
+        {
+          "path": "base/textures/quartzite.png",
+          "changed_by_rustfmt": false,
+          "before_sha256": "a899a4175c80e7649ab705d89faa839c621536f1b188f6bd27a1aa6a71895348",
+          "after_sha256": "a899a4175c80e7649ab705d89faa839c621536f1b188f6bd27a1aa6a71895348"
+        },
+        {
+          "path": "base/textures/sandstone.png",
+          "changed_by_rustfmt": false,
+          "before_sha256": "3bf20c8a284fd1d7501924f62f7474516e037195605f2d06f84625b1a968da60",
+          "after_sha256": "3bf20c8a284fd1d7501924f62f7474516e037195605f2d06f84625b1a968da60"
+        },
+        {
+          "path": "base/textures/shale.png",
+          "changed_by_rustfmt": false,
+          "before_sha256": "e902974fffc2a996b453cbaf0e6a674c51d2d4935c976f74ed39368012069442",
+          "after_sha256": "e902974fffc2a996b453cbaf0e6a674c51d2d4935c976f74ed39368012069442"
+        },
+        {
+          "path": "base/textures/slate.png",
+          "changed_by_rustfmt": false,
+          "before_sha256": "57e27f5d902c5123eaa223c98487b5979baefb3ee26db7e7930ade253bd804b5",
+          "after_sha256": "57e27f5d902c5123eaa223c98487b5979baefb3ee26db7e7930ade253bd804b5"
+        },
+        {
+          "path": "build.rs",
+          "changed_by_rustfmt": false,
+          "before_sha256": "ee655d3bd4e5646eca9c2dfa27bfe43e239f37561e946d8251e49c9f296bc66f",
+          "after_sha256": "ee655d3bd4e5646eca9c2dfa27bfe43e239f37561e946d8251e49c9f296bc66f"
+        },
+        {
+          "path": "src/game/app.rs",
+          "changed_by_rustfmt": false,
+          "before_sha256": "82bd6dda88ec94b50babe0ef138e9e9791b80aa6cfa4134168f8414333779eb9",
+          "after_sha256": "82bd6dda88ec94b50babe0ef138e9e9791b80aa6cfa4134168f8414333779eb9"
+        },
+        {
+          "path": "src/game/capture.rs",
+          "changed_by_rustfmt": false,
+          "before_sha256": "7711122f3ad2810ac1373a1d2e2d4c1c84b3f9ece873afd83da56673112dbf63",
+          "after_sha256": "7711122f3ad2810ac1373a1d2e2d4c1c84b3f9ece873afd83da56673112dbf63"
+        },
+        {
+          "path": "src/game/content.rs",
+          "changed_by_rustfmt": false,
+          "before_sha256": "432c895cd9789cf88ea9fde2a007b938d2d6122b435e1b20f7c4708a361bd357",
+          "after_sha256": "432c895cd9789cf88ea9fde2a007b938d2d6122b435e1b20f7c4708a361bd357"
+        },
+        {
+          "path": "src/game/frame.rs",
+          "changed_by_rustfmt": true,
+          "before_sha256": "5877591e66cdc64ba2cd31788aab468acd808a0a3c5e3647577c79ebec92f4e0",
+          "after_sha256": "b06f59d0e9cae7d85fb792cdd6013e6cd295442941ece99f63411fab248b300d"
+        },
+        {
+          "path": "src/game/mod.rs",
+          "changed_by_rustfmt": true,
+          "before_sha256": "3a50f79927cb6900ecea28e124fd2dafb0ef8a0e8ed61575b7d229f849e8ce4b",
+          "after_sha256": "294b23d3b1b6ce09d1e2bfaf1fef99124b812ef02a5c48abb9416ddd1303d46a"
+        },
+        {
+          "path": "src/lib.rs",
+          "changed_by_rustfmt": true,
+          "before_sha256": "209ff50ae7f4d50f760f60c047d9b36bfe1a2569498ae90586d7ae7ed95cdb00",
+          "after_sha256": "51206e08e0e1a195d34166db18dd64174d2b05be0c17a28915202bced4224b44"
+        },
+        {
+          "path": "src/renderer/frame.rs",
+          "changed_by_rustfmt": false,
+          "before_sha256": "1264fe414368606af40661c5cdec785e074fbc6052202b9c1c881fe21c865ef3",
+          "after_sha256": "1264fe414368606af40661c5cdec785e074fbc6052202b9c1c881fe21c865ef3"
+        },
+        {
+          "path": "src/renderer/mod.rs",
+          "changed_by_rustfmt": false,
+          "before_sha256": "d3e22f1d693365d9ac5984c21e49df50d018026a855d621b8570421afcb395b9",
+          "after_sha256": "d3e22f1d693365d9ac5984c21e49df50d018026a855d621b8570421afcb395b9"
+        },
+        {
+          "path": "src/renderer/setup.rs",
+          "changed_by_rustfmt": false,
+          "before_sha256": "02fec4a103d463d33ca18424be51f9685f4261afa46493d62931e67fc85db7ec",
+          "after_sha256": "02fec4a103d463d33ca18424be51f9685f4261afa46493d62931e67fc85db7ec"
+        },
+        {
+          "path": "src/shader.wgsl",
+          "changed_by_rustfmt": false,
+          "before_sha256": "a1f3f1236be8f2d563ebd09c6257803fc22290158980f7c9b0bab06a3422da54",
+          "after_sha256": "a1f3f1236be8f2d563ebd09c6257803fc22290158980f7c9b0bab06a3422da54"
+        },
+        {
+          "path": "src/sky.rs",
+          "changed_by_rustfmt": false,
+          "before_sha256": "434a0770f6d496caa911e6d6fd9b35b77034dd9d3f2b1deba16a90569c189bf3",
+          "after_sha256": "434a0770f6d496caa911e6d6fd9b35b77034dd9d3f2b1deba16a90569c189bf3"
+        },
+        {
+          "path": "src/tests/rendering.rs",
+          "changed_by_rustfmt": false,
+          "before_sha256": "6909e24472703a7133a7f115810b4d5b9aeec38812f0947d6d05574aaca84d76",
+          "after_sha256": "6909e24472703a7133a7f115810b4d5b9aeec38812f0947d6d05574aaca84d76"
+        },
+        {
+          "path": "src/visual_capture.rs",
+          "changed_by_rustfmt": false,
+          "before_sha256": "6479f5d04cbad742dd6ab0d3c9ac95c30abb5589b0ca984983bf2d18dc0b1b9d",
+          "after_sha256": "6479f5d04cbad742dd6ab0d3c9ac95c30abb5589b0ca984983bf2d18dc0b1b9d"
+        },
+        {
+          "path": "tools/audit_tiles.py",
+          "changed_by_rustfmt": false,
+          "before_sha256": "24b99cdba6365efbbf62f4280800f4630a60df7724b4b5dbfd322e3159fecefe",
+          "after_sha256": "24b99cdba6365efbbf62f4280800f4630a60df7724b4b5dbfd322e3159fecefe"
+        },
+        {
+          "path": "tools/gen_base_tiles.py",
+          "changed_by_rustfmt": false,
+          "before_sha256": "b9bc30ba6cda98e50b263f6c5d1d65d02f19d48fae5cb119ed55d6f792c88f88",
+          "after_sha256": "b9bc30ba6cda98e50b263f6c5d1d65d02f19d48fae5cb119ed55d6f792c88f88"
+        },
+        {
+          "path": "tools/verify_visual_closeout.py",
+          "changed_by_rustfmt": false,
+          "before_sha256": "a8431964daa5cf3bd328ad4fff510a1b802cc357b31c0a578857730a29d0b2d4",
+          "after_sha256": "a8431964daa5cf3bd328ad4fff510a1b802cc357b31c0a578857730a29d0b2d4"
+        },
+        {
+          "path": "tools/verify_visual_polish.py",
+          "changed_by_rustfmt": false,
+          "before_sha256": "00042bf2d7c60e74ba8c044c355a0ee2645746f0b313f4d931f63cc92c2e6f38",
+          "after_sha256": "00042bf2d7c60e74ba8c044c355a0ee2645746f0b313f4d931f63cc92c2e6f38"
+        }
+      ]
+    },
+    "geode_qualification_source_sha256": {
+      "before_sha256": "aed81e714ab9cfc53cdb325f1661c7d26784d3a77c0960eab7eab6a50acb78da",
+      "after_sha256": "88741bc73aa0f4b4a0462642d9c51e4ef639879ce912e262b842ab07ee528f89",
+      "files": [
+        {
+          "path": "docs/cracked-geode-capture-plan.md",
+          "changed_by_rustfmt": false,
+          "before_sha256": "d1d4dac5f77f55ed14c15ef3a0e294927bf42834f11bc9cc9f6dd972099abe3c",
+          "after_sha256": "d1d4dac5f77f55ed14c15ef3a0e294927bf42834f11bc9cc9f6dd972099abe3c"
+        },
+        {
+          "path": "src/geode_capture.rs",
+          "changed_by_rustfmt": false,
+          "before_sha256": "611f0b75743519d6942646b27e5ee568e85693c73874da4d4cb6725257027ff5",
+          "after_sha256": "611f0b75743519d6942646b27e5ee568e85693c73874da4d4cb6725257027ff5"
+        },
+        {
+          "path": "src/lib.rs",
+          "changed_by_rustfmt": true,
+          "before_sha256": "209ff50ae7f4d50f760f60c047d9b36bfe1a2569498ae90586d7ae7ed95cdb00",
+          "after_sha256": "51206e08e0e1a195d34166db18dd64174d2b05be0c17a28915202bced4224b44"
+        },
+        {
+          "path": "src/planet_atlas/geology.rs",
+          "changed_by_rustfmt": false,
+          "before_sha256": "1a533da7ecad5a61566772e8d36dad4bd0295a0a31cc4073ab5c8f7e6669b207",
+          "after_sha256": "1a533da7ecad5a61566772e8d36dad4bd0295a0a31cc4073ab5c8f7e6669b207"
+        },
+        {
+          "path": "src/visual_capture.rs",
+          "changed_by_rustfmt": false,
+          "before_sha256": "6479f5d04cbad742dd6ab0d3c9ac95c30abb5589b0ca984983bf2d18dc0b1b9d",
+          "after_sha256": "6479f5d04cbad742dd6ab0d3c9ac95c30abb5589b0ca984983bf2d18dc0b1b9d"
+        },
+        {
+          "path": "src/world/mod.rs",
+          "changed_by_rustfmt": true,
+          "before_sha256": "e81cabb5149a08631d02eeaffe9a1c58effe8fbdb0bf9db7dcbaa2da0b4b05fd",
+          "after_sha256": "81e386941f690ccad645015249b5b05c89e453462ae4b2a272982af3d38b7a9f"
+        },
+        {
+          "path": "src/worldgen.rs",
+          "changed_by_rustfmt": false,
+          "before_sha256": "f44b99c0830852be292e25f106a1a88bed9cc77d52b6a123fbb9159200a854d9",
+          "after_sha256": "f44b99c0830852be292e25f106a1a88bed9cc77d52b6a123fbb9159200a854d9"
+        },
+        {
+          "path": "tools/verify_cracked_geode.py",
+          "changed_by_rustfmt": false,
+          "before_sha256": "cf180944dcce2394c9e3d0c8a794f85aec7eda145d71d91a313638a950afb2dd",
+          "after_sha256": "cf180944dcce2394c9e3d0c8a794f85aec7eda145d71d91a313638a950afb2dd"
+        },
+        {
+          "path": "tools/verify_visual_polish.py",
+          "changed_by_rustfmt": false,
+          "before_sha256": "00042bf2d7c60e74ba8c044c355a0ee2645746f0b313f4d931f63cc92c2e6f38",
+          "after_sha256": "00042bf2d7c60e74ba8c044c355a0ee2645746f0b313f4d931f63cc92c2e6f38"
+        }
+      ]
+    }
+  }
+}

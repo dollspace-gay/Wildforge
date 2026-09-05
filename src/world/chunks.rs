@@ -971,10 +971,9 @@ impl World {
                 // block through the ordinary block path records the nest
                 // automatically; an unknown id is silently skipped.
                 if let Some(nest_name) = marker.kind.strip_prefix("spawn:nest:")
-                    && let Some(nest_index) = reg
-                        .nests
-                        .iter()
-                        .position(|nest| nest.id == nest_name || nest.id == format!("base:{nest_name}"))
+                    && let Some(nest_index) = reg.nests.iter().position(|nest| {
+                        nest.id == nest_name || nest.id == format!("base:{nest_name}")
+                    })
                 {
                     let nest = &reg.nests[nest_index];
                     self.set_block_at(marker.at, nest.block);

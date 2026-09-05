@@ -1,0 +1,12 @@
+[[animal]]
+id = "wolf"
+name = "Test Denwolf"
+hostile = true
+biomes = ["plains"]
+health = 12
+speed = 2.6
+attack = 4
+tex = "@deer"
+aggro_range = 16
+ire_min = 0
+spawn_light_max = 16

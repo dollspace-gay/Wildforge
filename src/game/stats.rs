@@ -17,14 +17,22 @@ impl Game {
         let p = self.survival.preparation_modifiers;
         let mut block = StatBlock::default();
         block.add(StatModifier::new(StatKind::Health, 0.0, p.health_permille));
-        block.add(StatModifier::new(StatKind::Stamina, 0.0, p.stamina_permille));
+        block.add(StatModifier::new(
+            StatKind::Stamina,
+            0.0,
+            p.stamina_permille,
+        ));
         block.add(StatModifier::new(
             StatKind::StaminaRegen,
             0.0,
             p.stamina_regen_permille,
         ));
         block.add(StatModifier::new(StatKind::Carry, 0.0, p.carry_permille));
-        block.add(StatModifier::new(StatKind::BuildRange, 0.0, p.reach_permille));
+        block.add(StatModifier::new(
+            StatKind::BuildRange,
+            0.0,
+            p.reach_permille,
+        ));
         block.add(StatModifier::new(StatKind::ScanRange, 0.0, p.scan_permille));
         block.add(StatModifier::new(
             StatKind::MoveSpeed,
@@ -70,8 +78,7 @@ impl Game {
     }
 
     pub(super) fn reach(&self) -> f32 {
-        self.stat_block()
-            .effective(StatKind::BuildRange, REACH)
+        self.stat_block().effective(StatKind::BuildRange, REACH)
     }
 
     pub(super) fn scan_range(&self) -> f32 {
@@ -80,8 +87,7 @@ impl Game {
     }
 
     pub(super) fn move_speed(&self) -> f32 {
-        self.stat_block()
-            .effective(StatKind::MoveSpeed, 1.0)
+        self.stat_block().effective(StatKind::MoveSpeed, 1.0)
     }
 
     /// Current carried weight in units (sum of stack counts weighted by

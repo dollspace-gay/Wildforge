@@ -1024,10 +1024,10 @@ impl Game {
                 {
                     self.toast(sign);
                 }
-                if let Some(observation) =
-                    self.server
-                        .world
-                        .perceived_arcane_ecology_at(surface, self.scan_range())
+                if let Some(observation) = self
+                    .server
+                    .world
+                    .perceived_arcane_ecology_at(surface, self.scan_range())
                     && self
                         .presentation
                         .arcane_signs
@@ -2267,10 +2267,7 @@ impl Game {
                     // right hand, chest-high and a little ahead of the feet.
                     let f = self.camera.forward();
                     let r = f.cross(self.camera.up()).normalize_or_zero();
-                    self.player.pos.render_pos()
-                        + self.camera.up() * 1.2
-                        + r * 0.35
-                        + f * 0.35
+                    self.player.pos.render_pos() + self.camera.up() * 1.2 + r * 0.35 + f * 0.35
                 };
                 dyn_lights.push(lights::DynLight {
                     key: lights::Key::Held,

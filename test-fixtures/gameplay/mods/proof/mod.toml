@@ -1,0 +1,4 @@
+id = "proof"
+name = "Gameplay regression fixtures"
+world_api = 2
+depends = ["base"]

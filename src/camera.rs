@@ -391,15 +391,15 @@ mod tests {
 
     #[test]
     fn chase_camera_pushes_out_before_a_wall() {
-        let reg = std::sync::Arc::new(crate::registry::load(
-            std::path::Path::new("/nonexistent-mods-dir"),
-        ));
-        let dir = std::env::temp_dir().join(format!("wildforge-camera-chase-{}", std::process::id()));
+        let reg = std::sync::Arc::new(crate::registry::load(std::path::Path::new(
+            "/nonexistent-mods-dir",
+        )));
+        let dir =
+            std::env::temp_dir().join(format!("wildforge-camera-chase-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         let mut w = crate::world::World::new(42, dir.clone(), reg.clone());
         w.ensure_chunk(
-            crate::chunk::ChunkPos::from_centered(crate::planet::Face::PosZ, 0, 0)
-                .expect("chunk"),
+            crate::chunk::ChunkPos::from_centered(crate::planet::Face::PosZ, 0, 0).expect("chunk"),
         );
         let stone = reg.block_id("base:stone").expect("stone");
         let air = crate::registry::AIR;
@@ -407,7 +407,10 @@ mod tests {
         for x in 6..=10 {
             for z in 7..=14 {
                 for y in 198..=202 {
-                    w.set_block_at(crate::planet::BlockPos::of_world(x, y, z).expect("cell"), air);
+                    w.set_block_at(
+                        crate::planet::BlockPos::of_world(x, y, z).expect("cell"),
+                        air,
+                    );
                 }
             }
         }
@@ -415,13 +418,18 @@ mod tests {
         for x in 7..=9 {
             for z in 11..=13 {
                 for y in 198..=202 {
-                    w.set_block_at(crate::planet::BlockPos::of_world(x, y, z).expect("cell"), stone);
+                    w.set_block_at(
+                        crate::planet::BlockPos::of_world(x, y, z).expect("cell"),
+                        stone,
+                    );
                 }
             }
         }
-        let eye =
-            crate::planet::EntityPos::from_local(crate::planet::Face::PosZ, Vec3::new(8.0, 200.0, 8.0))
-                .expect("eye");
+        let eye = crate::planet::EntityPos::from_local(
+            crate::planet::Face::PosZ,
+            Vec3::new(8.0, 200.0, 8.0),
+        )
+        .expect("eye");
         let mut camera = Camera::new(Vec3::ZERO, 16.0 / 9.0);
         camera.follow_planet(eye);
         camera.mode = CameraMode::Third;
@@ -455,7 +463,10 @@ mod tests {
         for x in 7..=9 {
             for z in 11..=13 {
                 for y in 198..=202 {
-                    w.set_block_at(crate::planet::BlockPos::of_world(x, y, z).expect("cell"), air);
+                    w.set_block_at(
+                        crate::planet::BlockPos::of_world(x, y, z).expect("cell"),
+                        air,
+                    );
                 }
             }
         }

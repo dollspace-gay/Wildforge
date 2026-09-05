@@ -37,7 +37,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           key: msrv
-      - run: cargo check --locked --all-targets
+      - run: cargo +1.95.0 check --locked --all-targets
 
   tests:
     name: Tests
@@ -50,6 +50,8 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           key: tests
+      - name: Install pinned integration-test content
+        run: python3 tools/install_test_mods.py
       - name: Fast and subsystem tests
         run: "cargo test --locked --all-targets -- --skip tests::agent::"
 

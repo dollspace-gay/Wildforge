@@ -1,0 +1,18 @@
+[[settlement]]
+id = "haven"
+rep_key = "proof_standing"
+need = [
+  { item = "base:clay_ball", rep = 2 },
+  { item = "base:bread", rep = 2 },
+]
+
+[[assembly]]
+id = "dungeon"
+biomes = ["plains"]
+rarity = 999999
+entry = "base:watch_platform"
+pools = { path = "base:path" }
+max_depth = 2
+max_pieces = 4
+[assembly.dungeon]
+reset = 3.0

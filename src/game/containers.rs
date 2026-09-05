@@ -500,9 +500,8 @@ impl Game {
         // kind's shell and charge rules come from the machine def.
         let res = match station
             .and_then(|interaction| reg.machine_by_interaction(interaction))
-            .filter(|kind| {
-                reg.machine(*kind).is_some_and(|def| def.handler.has_fire())
-            }) {
+            .filter(|kind| reg.machine(*kind).is_some_and(|def| def.handler.has_fire()))
+        {
             Some(kind) => {
                 let matched = match kind.validate(&self.server.world, pos) {
                     Some(matched) => matched,
@@ -511,12 +510,7 @@ impl Game {
                         return;
                     }
                 };
-                crate::world::machines::light_machine_at(
-                    &mut self.server.world,
-                    pos,
-                    kind,
-                    matched,
-                )
+                crate::world::machines::light_machine_at(&mut self.server.world, pos, kind, matched)
             }
             None => self.server.world.light_bloomery_at(pos),
         };
@@ -837,14 +831,24 @@ impl Game {
     pub(super) fn workbench_recipe_rect(&self, index: usize) -> (f32, f32, f32, f32) {
         let w = self.renderer.config.width as f32;
         let h = self.renderer.config.height as f32;
-        (w / 2.0 - 330.0, h / 2.0 - 250.0 + index as f32 * 62.0, 660.0, 56.0)
+        (
+            w / 2.0 - 330.0,
+            h / 2.0 - 250.0 + index as f32 * 62.0,
+            660.0,
+            56.0,
+        )
     }
 
     /// One widget row on a mod screen (capability E11).
     pub(super) fn mod_screen_row_rect(&self, index: usize) -> (f32, f32, f32, f32) {
         let w = self.renderer.config.width as f32;
         let h = self.renderer.config.height as f32;
-        (w / 2.0 - 330.0, h / 2.0 - 240.0 + index as f32 * 56.0, 660.0, 46.0)
+        (
+            w / 2.0 - 330.0,
+            h / 2.0 - 240.0 + index as f32 * 56.0,
+            660.0,
+            46.0,
+        )
     }
 
     /// The def behind the open mod screen, if any.
@@ -919,14 +923,9 @@ impl Game {
     /// screen lists the machine's `station` recipes; clicking one consumes
     /// one of each ingredient and adds the output, exactly like the free
     /// grid but bound to the machine rather than the player's hands.
-    pub(super) fn workbench_craft(
-        &mut self,
-        pos: crate::planet::BlockPos,
-        recipe_index: usize,
-    ) {
+    pub(super) fn workbench_craft(&mut self, pos: crate::planet::BlockPos, recipe_index: usize) {
         let reg = self.content.reg.clone();
-        let Some(world::BlockEntity::Multiblock(m)) =
-            self.server.world.block_entity_at(&pos)
+        let Some(world::BlockEntity::Multiblock(m)) = self.server.world.block_entity_at(&pos)
         else {
             return;
         };
@@ -953,9 +952,7 @@ impl Game {
         let mut found: Vec<usize> = Vec::new();
         'ingredients: for cell in recipe.pattern.iter().flatten() {
             for (index, slot) in self.inventory.slots.iter().enumerate() {
-                if !found.contains(&index)
-                    && slot.is_some_and(|stack| cell.matches(stack.item))
-                {
+                if !found.contains(&index) && slot.is_some_and(|stack| cell.matches(stack.item)) {
                     found.push(index);
                     continue 'ingredients;
                 }
@@ -973,7 +970,10 @@ impl Game {
         let output = ItemStack::new(&reg, recipe.output, recipe.count);
         let left = self.inventory.add_stack(&reg, output);
         if left > 0 {
-            self.drop_stack(ItemStack { count: left, ..output });
+            self.drop_stack(ItemStack {
+                count: left,
+                ..output
+            });
         }
         self.sfx(Sfx::Craft);
         self.grant_xp("craft");

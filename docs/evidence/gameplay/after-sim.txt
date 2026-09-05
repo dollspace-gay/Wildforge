@@ -1,0 +1,18 @@
+    Finished `test` profile [optimized + debuginfo] target(s) in 0.38s
+     Running unittests src/lib.rs (target/debug/deps/wildforge-f0a33d411336b84d)
+
+running 8 tests
+test game::actions::gameplay_proofs::real_depot_right_clicks_conserve_goods ... ignored, requires a real Vulkan GPU and X11 display; run tools/run_gameplay_proofs.py
+test net::protocol::tests::a_full_survey_folio_fits_the_reliable_gameplay_budget ... ok
+test net::protocol::tests::authentication_and_gameplay_frames_have_separate_hard_budgets ... ok
+test tests::gameplay::dungeon_reset_preserves_overworld_den_spawning ... diag-enter: markers=2 first=Some("spawn:npc:base:elder")
+PROOF dungeon reset: intact overworld den spawned before=1 after=1
+ok
+test tests::gameplay::gameplay_belt_depot_preserves_unaccepted_cargo ... PROOF belt depot: before staged=63 cargo=2; after staged=64 dropped=1 riding=0
+ok
+test tests::gameplay::gameplay_depot_transfer_is_atomic_for_accepted_and_refused_goods ... ok
+test tests::multiplayer::gameplay_guest_depot_debits_only_the_accepted_held_goods ... PROOF guest depot: before other=7 held=16 staged=60; after other=7 held=12 staged=64 credited=Some(4)
+ok
+test tests::multiplayer::pre_entry_gameplay_is_ignored_until_terrain_is_acknowledged ... ok
+
+test result: ok. 7 passed; 0 failed; 1 ignored; 0 measured; 1037 filtered out; finished in 1.47s

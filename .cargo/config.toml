@@ -1,12 +1,5 @@
-# Compile with every core available; the machine has 16. Cargo defaults to
-# this, but pinning it documents the intent and guards against any CPU-count
-# misdetection on the Windows side.
-[build]
-jobs = 16
-# sccache is installed on the Windows side (WinGet). Wrapping rustc caches
-# codegen across runs, so repeat builds skip the slow per-crate compile and
-# only redo the (already /THREADS-parallel) link.
-rustc-wrapper = "sccache"
+# Use Cargo's host defaults. Optional local caching can be enabled with
+# RUSTC_WRAPPER=sccache on machines where sccache is installed.
 
 [target.x86_64-pc-windows-msvc]
 # link.exe is single-threaded by default. /THREADS lets it use all cores for

@@ -1111,7 +1111,14 @@ impl World {
         report.record(
             "world metadata",
             meta_path,
-            write_world_meta_full(&self.save_dir, self.seed, &self.mode, self.ire, self.day, &self.camera),
+            write_world_meta_full(
+                &self.save_dir,
+                self.seed,
+                &self.mode,
+                self.ire,
+                self.day,
+                &self.camera,
+            ),
         );
         if let (Some(atlas), Some(weather)) = (&self.planet_atlas, &self.planetary_weather) {
             report.record(

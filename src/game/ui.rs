@@ -768,13 +768,27 @@ impl Game {
                 let mode_y = h * 0.56;
                 let mode_label = format!("MODE: {}", modes[current_idx].to_uppercase());
                 let mlw = UiBatch::text_width(2.0, &mode_label);
-                ui.text_shadow((w - mlw) / 2.0, mode_y, 2.0, &mode_label, [0.85, 0.95, 0.85, 1.0]);
+                ui.text_shadow(
+                    (w - mlw) / 2.0,
+                    mode_y,
+                    2.0,
+                    &mode_label,
+                    [0.85, 0.95, 0.85, 1.0],
+                );
                 // Left/right arrows as clickable rects.
                 let arrow_w = 36.0;
                 let left_r = (w / 2.0 - 200.0, mode_y - 6.0, arrow_w, 30.0);
                 let right_r = (w / 2.0 + 164.0, mode_y - 6.0, arrow_w, 30.0);
-                let lc = if self.hit(left_r) { [1.0; 4] } else { [0.5, 0.6, 0.5, 1.0] };
-                let rc = if self.hit(right_r) { [1.0; 4] } else { [0.5, 0.6, 0.5, 1.0] };
+                let lc = if self.hit(left_r) {
+                    [1.0; 4]
+                } else {
+                    [0.5, 0.6, 0.5, 1.0]
+                };
+                let rc = if self.hit(right_r) {
+                    [1.0; 4]
+                } else {
+                    [0.5, 0.6, 0.5, 1.0]
+                };
                 ui.text_shadow(left_r.0 + 8.0, left_r.1 + 4.0, 2.5, "<", lc);
                 ui.text_shadow(right_r.0 + 8.0, right_r.1 + 4.0, 2.5, ">", rc);
 
@@ -2005,27 +2019,29 @@ impl Game {
             Screen::Workbench(pos) => {
                 ui.rect(0.0, 0.0, w, h, [0.0, 0.0, 0.0, 0.55]);
                 let reg = &self.content.reg;
-                let machine = self.server.world.block_entity_at(&pos).and_then(|e| {
-                    match e {
+                let machine = self
+                    .server
+                    .world
+                    .block_entity_at(&pos)
+                    .and_then(|e| match e {
                         world::BlockEntity::Multiblock(m) => {
                             reg.machine(m.kind).map(|def| def.label.clone())
                         }
                         _ => None,
-                    }
-                });
+                    });
                 let title = machine
                     .unwrap_or_else(|| "WORKBENCH".to_string())
                     .to_uppercase();
                 let tw = UiBatch::text_width(3.0, &title);
                 ui.text_shadow((w - tw) / 2.0, h / 2.0 - 310.0, 3.0, &title, [1.0; 4]);
-                let recipes = self.server.world.block_entity_at(&pos).and_then(|e| {
-                    match e {
-                        world::BlockEntity::Multiblock(m) => {
-                            Some(reg.machine_recipes_for(m.kind))
-                        }
+                let recipes = self
+                    .server
+                    .world
+                    .block_entity_at(&pos)
+                    .and_then(|e| match e {
+                        world::BlockEntity::Multiblock(m) => Some(reg.machine_recipes_for(m.kind)),
                         _ => None,
-                    }
-                });
+                    });
                 let recipes: Vec<&crate::registry::RecipeDef> = recipes.unwrap_or_default();
                 if recipes.is_empty() {
                     ui.text_shadow(
@@ -2064,14 +2080,18 @@ impl Game {
                         [0.35, 0.35, 0.35, 0.9]
                     };
                     ui.rect(rr.0, rr.1, rr.2, rr.3, border);
-                    ui.rect(rr.0 + 2.0, rr.1 + 2.0, rr.2 - 4.0, rr.3 - 4.0, [0.15, 0.15, 0.15, 0.95]);
+                    ui.rect(
+                        rr.0 + 2.0,
+                        rr.1 + 2.0,
+                        rr.2 - 4.0,
+                        rr.3 - 4.0,
+                        [0.15, 0.15, 0.15, 0.95],
+                    );
                     let mut x = rr.0 + 12.0;
                     for cell in r.pattern.iter().flatten() {
                         let show = match cell {
                             crate::registry::Ingredient::One(item) => *item,
-                            crate::registry::Ingredient::Any(items) => {
-                                items[cycle % items.len()]
-                            }
+                            crate::registry::Ingredient::Any(items) => items[cycle % items.len()],
                         };
                         let icon = reg.item(show).icon;
                         ui.tile(x, rr.1 + 10.0, 34.0, 34.0, icon, [1.0; 4]);
@@ -2081,13 +2101,37 @@ impl Game {
                     let oc = reg.item(r.output).icon;
                     ui.tile(x + 24.0, rr.1 + 10.0, 34.0, 34.0, oc, [1.0; 4]);
                     if r.count > 1 {
-                        ui.text_shadow(x + 44.0, rr.1 + 32.0, 2.0, &format!("{}", r.count), [1.0; 4]);
+                        ui.text_shadow(
+                            x + 44.0,
+                            rr.1 + 32.0,
+                            2.0,
+                            &format!("{}", r.count),
+                            [1.0; 4],
+                        );
                     }
-                    ui.text_shadow(x + 70.0, rr.1 + 20.0, 1.6, &reg.item(r.output).label, [1.0; 4]);
+                    ui.text_shadow(
+                        x + 70.0,
+                        rr.1 + 20.0,
+                        1.6,
+                        &reg.item(r.output).label,
+                        [1.0; 4],
+                    );
                     if locked {
-                        ui.text_shadow(rr.0 + rr.2 - 90.0, rr.1 + 20.0, 1.5, "LOCKED", [1.0, 0.35, 0.35, 1.0]);
+                        ui.text_shadow(
+                            rr.0 + rr.2 - 90.0,
+                            rr.1 + 20.0,
+                            1.5,
+                            "LOCKED",
+                            [1.0, 0.35, 0.35, 1.0],
+                        );
                     } else if !craftable {
-                        ui.text_shadow(rr.0 + rr.2 - 90.0, rr.1 + 20.0, 1.5, "MISSING", [0.8, 0.6, 0.3, 1.0]);
+                        ui.text_shadow(
+                            rr.0 + rr.2 - 90.0,
+                            rr.1 + 20.0,
+                            1.5,
+                            "MISSING",
+                            [0.8, 0.6, 0.3, 1.0],
+                        );
                     }
                 }
                 for i in 0..TOTAL_SLOTS {
@@ -2140,8 +2184,7 @@ impl Game {
                                 );
                             }
                             crate::screens::ScreenWidget::KvLabel { key, prefix } => {
-                                let value =
-                                    self.read_player_kv(key).unwrap_or_else(|| "-".into());
+                                let value = self.read_player_kv(key).unwrap_or_else(|| "-".into());
                                 ui.text_shadow(
                                     rr.0 + 12.0,
                                     rr.1 + rr.3 / 2.0 - 10.0,
@@ -2178,7 +2221,13 @@ impl Game {
                                 } else {
                                     [0.6, 0.6, 0.6, 1.0]
                                 };
-                                ui.text_shadow(rr.0 + rr.2 - 70.0, rr.1 + rr.3 / 2.0 - 10.0, 2.0, state, color);
+                                ui.text_shadow(
+                                    rr.0 + rr.2 - 70.0,
+                                    rr.1 + rr.3 / 2.0 - 10.0,
+                                    2.0,
+                                    state,
+                                    color,
+                                );
                             }
                             crate::screens::ScreenWidget::Button { label, .. } => {
                                 let border = if self.hit(rr) {
@@ -2535,10 +2584,21 @@ impl Game {
                 );
                 let choices = self.visible_choices(mob_id, &node_id);
                 if choices.is_empty() {
-                    ui.text_shadow(w / 2.0 - 150.0, h / 2.0 + 40.0, 1.5, "—", [0.8, 0.8, 0.8, 1.0]);
+                    ui.text_shadow(
+                        w / 2.0 - 150.0,
+                        h / 2.0 + 40.0,
+                        1.5,
+                        "—",
+                        [0.8, 0.8, 0.8, 1.0],
+                    );
                 }
                 for (i, c) in choices.iter().enumerate() {
-                    let r = (w / 2.0 - 300.0, h / 2.0 + 60.0 + i as f32 * 40.0, 600.0, 32.0);
+                    let r = (
+                        w / 2.0 - 300.0,
+                        h / 2.0 + 60.0 + i as f32 * 40.0,
+                        600.0,
+                        32.0,
+                    );
                     let hover = self.hit(r);
                     let bg = if hover {
                         [0.45, 0.45, 0.45, 0.95]
@@ -2575,16 +2635,26 @@ impl Game {
                     let (tx, ty) = (w / 2.0 - 380.0, h / 2.0 - 240.0 + row as f32 * 96.0);
                     ui.text_shadow(tx, ty, 2.0, &quest.title, [1.0; 4]);
                     for (j, obj) in quest.objectives.iter().enumerate() {
-                        let got = self
-                            .quest_progress(&quest.id, &obj.key)
-                            .min(obj.count);
+                        let got = self.quest_progress(&quest.id, &obj.key).min(obj.count);
                         let line = format!("   {}: {} / {}", obj.description, got, obj.count);
-                        ui.text_shadow(tx + 12.0, ty + 30.0 + j as f32 * 22.0, 1.3, &line, [0.9, 0.9, 0.9, 1.0]);
+                        ui.text_shadow(
+                            tx + 12.0,
+                            ty + 30.0 + j as f32 * 22.0,
+                            1.3,
+                            &line,
+                            [0.9, 0.9, 0.9, 1.0],
+                        );
                     }
                     row += 1;
                 }
                 if row == 0 {
-                    ui.text_shadow(w / 2.0 - 220.0, h / 2.0 - 40.0, 1.8, "No quests accepted yet.", [0.8, 0.8, 0.8, 1.0]);
+                    ui.text_shadow(
+                        w / 2.0 - 220.0,
+                        h / 2.0 - 40.0,
+                        1.8,
+                        "No quests accepted yet.",
+                        [0.8, 0.8, 0.8, 1.0],
+                    );
                 }
             }
             Screen::Loadout => {
@@ -2614,26 +2684,40 @@ impl Game {
                         let (name, status) = match &self.survival.armor[i] {
                             Some(frame) => {
                                 let def = reg.item(frame.item);
-                                let disabled =
-                                    super::equipment::equipment_enabled(self)
-                                        && def.frame.is_some()
-                                        && frame.durability == 0;
+                                let disabled = super::equipment::equipment_enabled(self)
+                                    && def.frame.is_some()
+                                    && frame.durability == 0;
                                 let label = if disabled {
                                     format!("{} (BROKEN)", def.label)
                                 } else {
                                     def.label.clone()
                                 };
-                                (label, format!("durability {} / {}", frame.durability, def.durability))
+                                (
+                                    label,
+                                    format!("durability {} / {}", frame.durability, def.durability),
+                                )
                             }
                             None => ("(empty)".into(), String::new()),
                         };
                         ui.text_shadow(r.0 + 10.0, r.1 + 10.0, 1.4, &name, [1.0; 4]);
                         if !status.is_empty() {
-                            ui.text_shadow(r.0 + 10.0, r.1 + 40.0, 1.1, &status, [0.8, 0.8, 0.8, 1.0]);
+                            ui.text_shadow(
+                                r.0 + 10.0,
+                                r.1 + 40.0,
+                                1.1,
+                                &status,
+                                [0.8, 0.8, 0.8, 1.0],
+                            );
                         }
                         let slot_name = ["HEAD", "CHEST", "LEGS", "FEET"][i];
                         let sw = UiBatch::text_width(1.2, slot_name);
-                        ui.text_shadow(r.0 + r.2 - sw - 10.0, r.1 + 10.0, 1.2, slot_name, [0.6, 0.7, 0.85, 1.0]);
+                        ui.text_shadow(
+                            r.0 + r.2 - sw - 10.0,
+                            r.1 + 10.0,
+                            1.2,
+                            slot_name,
+                            [0.6, 0.7, 0.85, 1.0],
+                        );
                         // Component sub-slots drawn beside the frame box.
                         let def = self.survival.armor[i].as_ref().map(|f| reg.item(f.item));
                         let frame_def = def.and_then(|d| d.frame.as_ref());
@@ -2642,22 +2726,12 @@ impl Game {
                             for slot in &frame_def.slots {
                                 for _ in 0..slot.max {
                                     let sr = self.loadout_component_rect(i, sub);
-                                    let stack = self
-                                        .survival
-                                        .loadouts[i]
+                                    let stack = self.survival.loadouts[i]
                                         .components
                                         .get(sub)
                                         .map(|c| c.stack);
-                                    let label = stack
-                                        .map(|s| reg.item(s.item).label.clone());
-                                    Self::draw_slot(
-                                        reg,
-                                        &mut ui,
-                                        sr,
-                                        stack,
-                                        false,
-                                        self.hit(sr),
-                                    );
+                                    let label = stack.map(|s| reg.item(s.item).label.clone());
+                                    Self::draw_slot(reg, &mut ui, sr, stack, false, self.hit(sr));
                                     if let Some(label) = &label {
                                         let lw = UiBatch::text_width(0.8, label);
                                         ui.text_shadow(
@@ -2683,7 +2757,13 @@ impl Game {
                     };
                     ui.rect(repair.0, repair.1, repair.2, repair.3, bg);
                     let lw = UiBatch::text_width(1.4, "REPAIR");
-                    ui.text_shadow(repair.0 + (repair.2 - lw) / 2.0, repair.1 + 8.0, 1.4, "REPAIR", [1.0; 4]);
+                    ui.text_shadow(
+                        repair.0 + (repair.2 - lw) / 2.0,
+                        repair.1 + 8.0,
+                        1.4,
+                        "REPAIR",
+                        [1.0; 4],
+                    );
                     for index in 0..4 {
                         let r = self.loadout_preset_rect(index);
                         let active = self.ui_state.loadout_preset_sel == index;
@@ -2723,7 +2803,13 @@ impl Game {
                             self.hit(r),
                         );
                     }
-                    ui.text_shadow(w / 2.0 + 180.0, h / 2.0 - 245.0, 1.3, "INVENTORY", [0.72, 0.75, 0.78, 1.0]);
+                    ui.text_shadow(
+                        w / 2.0 + 180.0,
+                        h / 2.0 - 245.0,
+                        1.3,
+                        "INVENTORY",
+                        [0.72, 0.75, 0.78, 1.0],
+                    );
                 }
             }
             Screen::Skills => {
@@ -2746,7 +2832,13 @@ impl Game {
                         "LEVEL {}   POINTS {}   RESPECS {}",
                         self.skills.level, self.skills.points, self.skills.respecs
                     );
-                    ui.text_shadow(w / 2.0 - 240.0, h / 2.0 - 300.0, 2.0, &header, [1.0, 0.9, 0.6, 1.0]);
+                    ui.text_shadow(
+                        w / 2.0 - 240.0,
+                        h / 2.0 - 300.0,
+                        2.0,
+                        &header,
+                        [1.0, 0.9, 0.6, 1.0],
+                    );
                     let needed = tree.xp_for_level(self.skills.level);
                     let frac = (self.skills.xp / needed).clamp(0.0, 1.0) as f32;
                     let (bx, by, bw) = (w / 2.0 - 220.0, h / 2.0 - 272.0, 440.0);
@@ -2762,10 +2854,7 @@ impl Game {
                     );
                     let branches = &tree.branches;
                     if !branches.is_empty() {
-                        let branch_idx = self
-                            .ui_state
-                            .skills_branch
-                            .min(branches.len() - 1);
+                        let branch_idx = self.ui_state.skills_branch.min(branches.len() - 1);
                         for (i, b) in branches.iter().enumerate() {
                             let r = self.skill_branch_tab_rect(i);
                             let active = i == branch_idx;
@@ -2776,7 +2865,13 @@ impl Game {
                             };
                             ui.rect(r.0, r.1, r.2, r.3, bg);
                             let lw = UiBatch::text_width(1.6, &b.name);
-                            ui.text_shadow(r.0 + (r.2 - lw) / 2.0, r.1 + 8.0, 1.6, &b.name, [1.0; 4]);
+                            ui.text_shadow(
+                                r.0 + (r.2 - lw) / 2.0,
+                                r.1 + 8.0,
+                                1.6,
+                                &b.name,
+                                [1.0; 4],
+                            );
                         }
                         let nodes: Vec<_> = tree
                             .nodes
@@ -2785,8 +2880,7 @@ impl Game {
                             .collect();
                         for (i, node) in nodes.iter().enumerate() {
                             let r = self.skill_node_rect(i);
-                            let allocated =
-                                self.skills.allocated.iter().any(|a| a == &node.id);
+                            let allocated = self.skills.allocated.iter().any(|a| a == &node.id);
                             let unlockable = tree.unlockable(&self.skills, node);
                             let bg = if allocated {
                                 [0.25, 0.55, 0.3, 0.95]
@@ -2798,7 +2892,13 @@ impl Game {
                             ui.rect(r.0, r.1, r.2, r.3, [0.05, 0.05, 0.06, 0.95]);
                             ui.rect(r.0 + 2.0, r.1 + 2.0, r.2 - 4.0, r.3 - 4.0, bg);
                             let lw = UiBatch::text_width(1.5, &node.name);
-                            ui.text_shadow(r.0 + (r.2 - lw) / 2.0, r.1 + 10.0, 1.5, &node.name, [1.0; 4]);
+                            ui.text_shadow(
+                                r.0 + (r.2 - lw) / 2.0,
+                                r.1 + 10.0,
+                                1.5,
+                                &node.name,
+                                [1.0; 4],
+                            );
                             let cost = format!("T{}  {} PT", node.tier, node.cost);
                             let cw = UiBatch::text_width(1.1, &cost);
                             ui.text_shadow(

@@ -158,14 +158,14 @@ mod tests {
         let mut npc = NpcInstance::new(&def, anchor(), 7);
         // Start offset from the anchor (whose first waypoint is the anchor
         // itself) so the walker is mid-leg and should be walking.
-        let start = anchor().translated(glam::Vec3::new(1.0, 0.0, 0.0)).unwrap().pos;
+        let start = anchor()
+            .translated(glam::Vec3::new(1.0, 0.0, 0.0))
+            .unwrap()
+            .pos;
         let mut m = mob_at(start);
         npc.tick(&mut m, 0.05);
         assert_eq!(m.state, crate::mobs::MobState::Wander);
-        let expected = anchor()
-            .translated(glam::Vec3::ZERO)
-            .unwrap()
-            .pos;
+        let expected = anchor().translated(glam::Vec3::ZERO).unwrap().pos;
         assert_eq!(m.target, expected);
     }
 
@@ -191,6 +191,9 @@ mod tests {
                 legs += 1;
             }
         }
-        assert!(legs >= last_waypoint as u32, "walked the whole loop, got {legs} legs");
+        assert!(
+            legs >= last_waypoint as u32,
+            "walked the whole loop, got {legs} legs"
+        );
     }
 }

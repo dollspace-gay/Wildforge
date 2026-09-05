@@ -42,7 +42,11 @@ fn storage_of(scripts: &crate::script::ScriptHost, key: &str) -> Option<String> 
 }
 
 /// Dispatch a no-arg event and drain the command queue.
-fn fire(scripts: &mut crate::script::ScriptHost, w: &World, event: &str) -> Vec<crate::script::Cmd> {
+fn fire(
+    scripts: &mut crate::script::ScriptHost,
+    w: &World,
+    event: &str,
+) -> Vec<crate::script::Cmd> {
     if scripts.wants(event) {
         scripts.dispatch(w, event, ());
     }
@@ -117,7 +121,10 @@ fn haven_stamps_and_its_people_show_up() {
                 .filter_map(|n| reg.npcs.get(n.def).map(|d| d.name.clone())),
         );
         let all = ["Elder Marek", "Tinkerer Sal", "Ava", "Jonas"];
-        if all.iter().all(|want| npc_names.iter().any(|n| n.contains(want))) {
+        if all
+            .iter()
+            .all(|want| npc_names.iter().any(|n| n.contains(want)))
+        {
             break;
         }
     }
@@ -200,7 +207,8 @@ fn quest_arc_callbacks_behave() {
         }
     }
     assert!(
-        cmds.iter().any(|c| matches!(c, crate::script::Cmd::Give(name, _) if name == "base:firebrick")),
+        cmds.iter()
+            .any(|c| matches!(c, crate::script::Cmd::Give(name, _) if name == "base:firebrick")),
         "Sal hands over smelter materials"
     );
 }
@@ -287,8 +295,11 @@ fn brood_gallery_opens_and_the_den_populates() {
     for attempt in 0..8u32 {
         // Vary the world seed: a fresh world otherwise replays the exact
         // same deterministic walk (same seed, same run_seed reset).
-        let mut attempt_w =
-            test_world_seeded(&format!("bq-gallery-{attempt}"), reg.clone(), 42 + attempt * 977);
+        let mut attempt_w = test_world_seeded(
+            &format!("bq-gallery-{attempt}"),
+            reg.clone(),
+            42 + attempt * 977,
+        );
         for x in -2..=2 {
             for z in -2..=2 {
                 attempt_w.ensure_chunk(tchunk(x, z));
@@ -300,9 +311,8 @@ fn brood_gallery_opens_and_the_den_populates() {
             .expect("the gallery opens");
         assert_eq!(spawn.block().expect("canonical").face(), Face::Deep);
         let mother_home = attempt_w.nests().any(|(_, i)| {
-            reg.nest(i).is_some_and(|n| {
-                n.species == reg.animal_id("belt_quest:brood_mother").unwrap()
-            })
+            reg.nest(i)
+                .is_some_and(|n| n.species == reg.animal_id("belt_quest:brood_mother").unwrap())
         });
         if mother_home {
             picked = Some((attempt_w, spawn));

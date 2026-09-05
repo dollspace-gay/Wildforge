@@ -154,10 +154,7 @@ impl Server {
         // the Deep, the overworld holds its breath — the sleep-consensus
         // rule. Industry and dungeon creatures keep ticking; the sun,
         // weather, fluids, ire, and crops do not.
-        let players_deep = players
-            .iter()
-            .filter(|p| p.pos.face().is_deep())
-            .count();
+        let players_deep = players.iter().filter(|p| p.pos.face().is_deep()).count();
         let all_deep = !players.is_empty() && players_deep == players.len();
         self.world.tick_dungeon_runs(dt, players_deep);
         // The clock, the wild's ire, and dawn. A frozen clock holds the sun
@@ -242,7 +239,11 @@ impl Server {
                     self.world.spawn_projectile(proj);
                     events.push(SimEvent::BoltCast);
                 }
-                MobEvent::HealPulse { origin, radius, heal } => {
+                MobEvent::HealPulse {
+                    origin,
+                    radius,
+                    heal,
+                } => {
                     let reg = self.world.reg.clone();
                     self.world.for_each_mob_mut(|m| {
                         let Some(def) = reg.animals.get(m.species) else {
@@ -253,7 +254,11 @@ impl Server {
                         }
                     });
                 }
-                MobEvent::SpawnMinions { pos, species, count } => {
+                MobEvent::SpawnMinions {
+                    pos,
+                    species,
+                    count,
+                } => {
                     if self.world.mobs().len() >= crate::world::MOB_CAP {
                         break;
                     }
@@ -284,10 +289,18 @@ impl Server {
                     }
                     events.push(SimEvent::BoltCast);
                 }
-                MobEvent::HitMob { id, dmg, dmg_type, from } => {
-                    let td = self.world.reg.animals.get(
-                        self.world.mob_by_id(id).map_or(usize::MAX, |m| m.species),
-                    ).cloned();
+                MobEvent::HitMob {
+                    id,
+                    dmg,
+                    dmg_type,
+                    from,
+                } => {
+                    let td = self
+                        .world
+                        .reg
+                        .animals
+                        .get(self.world.mob_by_id(id).map_or(usize::MAX, |m| m.species))
+                        .cloned();
                     if let Some(td) = td
                         && let Some(target) = self.world.mob_by_id_mut(id)
                     {

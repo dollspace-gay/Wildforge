@@ -197,7 +197,10 @@ impl World {
     fn belt_next(&self, pos: BlockPos, exit: Direction4) -> Option<BlockPos> {
         use Direction4::{North, South};
         let (du, dv) = crate::world::rail::direction_offset(exit);
-        let dy = match (BeltKind::from_block(&self.reg, self.get_block_at(pos)), exit) {
+        let dy = match (
+            BeltKind::from_block(&self.reg, self.get_block_at(pos)),
+            exit,
+        ) {
             (Some(BeltKind::Incline), North) => 1,
             _ => 0,
         };
@@ -243,10 +246,7 @@ impl World {
         use Direction4::{East, North};
         match kind {
             BeltKind::Splitter => {
-                let prefer = if states
-                    .get(&pos)
-                    .is_some_and(|state| state.split_phase)
-                {
+                let prefer = if states.get(&pos).is_some_and(|state| state.split_phase) {
                     East
                 } else {
                     North
@@ -373,8 +373,7 @@ impl World {
                     .sum::<f32>();
                 crate::world::power_draw::load_tier_for_mass(mass)
             };
-            let climbing =
-                kind == BeltKind::Incline && exit == Direction4::North;
+            let climbing = kind == BeltKind::Incline && exit == Direction4::North;
             let draw = crate::world::power_draw::incline_multiplier(
                 if kind == BeltKind::Incline {
                     Some(crate::world::rail::RailKind::Incline)
@@ -416,20 +415,23 @@ impl World {
                     let next_state = states.entry(next).or_insert_with(BeltState::new);
                     next_state.cargo.push_back(stack);
                     next_state.entry_dir = exit;
-                } else if self.depot_accept(next, &stack) > 0 {
-                    // The mouth: a settlement depot takes what its
-                    // settlement needs (capability E13); belt-fed stock
-                    // counts toward needs without player attribution. The
-                    // depot's staging is the delivery — surplus rides on.
-                } else if let Some(leftover) = self.machine_insert_at(next, stack) {
-                    // The mouth: a machine that accepts the stack takes it;
-                    // otherwise the item leaves the belt as a loose item.
-                    drops.push((next, leftover));
+                } else {
+                    let accepted = self.depot_accept(next, &stack);
+                    let remainder = ItemStack {
+                        count: stack.count - accepted,
+                        ..stack
+                    };
+                    // A depot may accept only part of the cargo. Every
+                    // remaining physical item must leave as cargo/loot,
+                    // just as it does at an ordinary machine mouth.
+                    if remainder.count > 0
+                        && let Some(leftover) = self.machine_insert_at(next, remainder)
+                    {
+                        drops.push((next, leftover));
+                    }
                 }
             }
-            if used_split
-                && let Some(state) = states.get_mut(&pos)
-            {
+            if used_split && let Some(state) = states.get_mut(&pos) {
                 state.split_phase = !state.split_phase;
             }
         }

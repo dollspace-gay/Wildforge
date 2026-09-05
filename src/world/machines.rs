@@ -47,7 +47,11 @@ impl World {
         &self,
         pos: BlockPos,
     ) -> Option<(MachineKind, &crate::machines::MachineDef)> {
-        let interaction = self.reg.block(self.get_block_at(pos)).interaction.as_deref()?;
+        let interaction = self
+            .reg
+            .block(self.get_block_at(pos))
+            .interaction
+            .as_deref()?;
         let kind = self.reg.machine_by_interaction(interaction)?;
         let def = self.reg.machine(kind)?;
         if !def.handler.has_fire() || def.charge_slots == 0 {
@@ -64,9 +68,11 @@ impl World {
             return false;
         };
         match self.block_entity_at(&pos) {
-            Some(BlockEntity::Multiblock(machine)) => {
-                !machine.charge.iter().take(def.charge_slots as usize).any(Option::is_none)
-            }
+            Some(BlockEntity::Multiblock(machine)) => !machine
+                .charge
+                .iter()
+                .take(def.charge_slots as usize)
+                .any(Option::is_none),
             // A built shell with no instance yet: the first belt feed gives
             // it one, and a fresh machine has empty charge slots.
             _ => false,
@@ -114,7 +120,10 @@ impl World {
                     return if left == 0 {
                         None
                     } else {
-                        Some(ItemStack { count: left, ..stack })
+                        Some(ItemStack {
+                            count: left,
+                            ..stack
+                        })
                     };
                 }
             }
@@ -289,18 +298,14 @@ impl World {
     /// Light a charged bloomery. Errors name what's missing.
     pub fn light_bloomery_at(&mut self, pos: BlockPos) -> Result<(), &'static str> {
         let kind = self.machine_kind("base:bloomery");
-        let matched = kind
-            .validate(self, pos)
-            .ok_or("the stack is breached")?;
+        let matched = kind.validate(self, pos).ok_or("the stack is breached")?;
         light_machine_at(self, pos, kind, matched)
     }
 
     /// Light a charged kiln. Errors name what's missing.
     pub fn light_kiln_at(&mut self, pos: BlockPos) -> Result<(), &'static str> {
         let kind = self.machine_kind("base:kiln");
-        let matched = kind
-            .validate(self, pos)
-            .ok_or("the stack is breached")?;
+        let matched = kind.validate(self, pos).ok_or("the stack is breached")?;
         light_machine_at(self, pos, kind, matched)
     }
 
@@ -931,9 +936,7 @@ pub(super) fn revalidate_machine_at<B: BlockStore>(store: &mut B, anchor: B::Pos
     let was_lit = m.lit;
     let def = store.reg().machine(kind).cloned();
     let Some(matched) = kind.validate(store, anchor) else {
-        if was_lit
-            && def.as_ref().is_some_and(|def| !def.handler.hand_fed())
-        {
+        if was_lit && def.as_ref().is_some_and(|def| !def.handler.hand_fed()) {
             m.lit = false;
             m.progress = 0.0;
             let unlit = def

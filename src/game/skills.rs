@@ -82,7 +82,10 @@ impl Game {
     /// A skill node's box on the skill screen, by index within the current
     /// branch. Rows are tiers; columns spread nodes left to right.
     pub(super) fn skill_node_rect(&self, index: usize) -> (f32, f32, f32, f32) {
-        let (w, h) = (self.window.inner_size().width as f32, self.window.inner_size().height as f32);
+        let (w, h) = (
+            self.window.inner_size().width as f32,
+            self.window.inner_size().height as f32,
+        );
         let cols = 4usize;
         let (col, tier) = (index % cols, index / cols);
         let bw = 170.0;
@@ -96,7 +99,10 @@ impl Game {
 
     /// Branch tab rect on the skill screen.
     pub(super) fn skill_branch_tab_rect(&self, index: usize) -> (f32, f32, f32, f32) {
-        let (w, _h) = (self.window.inner_size().width as f32, self.window.inner_size().height as f32);
+        let (w, _h) = (
+            self.window.inner_size().width as f32,
+            self.window.inner_size().height as f32,
+        );
         let tw = 180.0;
         let x = w / 2.0 - 320.0 + index as f32 * 200.0;
         (x, 160.0, tw, 34.0)
@@ -104,7 +110,10 @@ impl Game {
 
     /// The respec button rect on the skill screen.
     pub(super) fn skill_respec_rect(&self) -> (f32, f32, f32, f32) {
-        let (w, h) = (self.window.inner_size().width as f32, self.window.inner_size().height as f32);
+        let (w, h) = (
+            self.window.inner_size().width as f32,
+            self.window.inner_size().height as f32,
+        );
         (w / 2.0 - 75.0, h / 2.0 + 200.0, 150.0, 34.0)
     }
 }

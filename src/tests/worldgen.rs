@@ -2257,9 +2257,7 @@ fn npc_marker_spawns_elder_and_never_via_wildlife() {
         }
     }
     assert!(
-        w.mobs()
-            .iter()
-            .any(|m| m.species == elder_species),
+        w.mobs().iter().any(|m| m.species == elder_species),
         "elder companion mob spawned"
     );
     // Companion species is not wildlife: it must never come from the
@@ -2370,7 +2368,8 @@ fn feature_marker_unknown_gate_places_nothing() {
 }
 
 #[test]
-fn assembly_walk_is_deterministic() {    let reg = base_reg();
+fn assembly_walk_is_deterministic() {
+    let reg = base_reg();
     let asm = piece_assembly();
     let mut a = test_world_with("asmdet-a", reg.clone());
     let mut b2 = test_world_with("asmdet-b", reg.clone());
@@ -2608,10 +2607,7 @@ fn settlement_hidden_cells_are_non_colliding_and_aimable_through() {
     // pass, revealed => stop.
     let open_chunk = tchunk(40, 40);
     w.ensure_chunk(open_chunk);
-    let (ou, ov) = (
-        open_chunk.u() * 16 + 8,
-        open_chunk.v() * 16 + 8,
-    );
+    let (ou, ov) = (open_chunk.u() * 16 + 8, open_chunk.v() * 16 + 8);
     let open = crate::planet::BlockPos::new(
         open_chunk.face(),
         ou,
@@ -2626,7 +2622,8 @@ fn settlement_hidden_cells_are_non_colliding_and_aimable_through() {
     .expect("open cell is inside world");
     w.set_block_at(
         open,
-        reg.block_id("base:cobblestone").expect("cobblestone registers"),
+        reg.block_id("base:cobblestone")
+            .expect("cobblestone registers"),
     );
     let reveal_key = crate::world::RevealKey {
         settlement: settlement_idx,
@@ -2642,10 +2639,7 @@ fn settlement_hidden_cells_are_non_colliding_and_aimable_through() {
     )
     .expect("center of an open cell is canonical");
     let player = crate::physics::Player::new_at(center);
-    assert!(
-        !player.collides(&w, center),
-        "hidden cell does not collide"
-    );
+    assert!(!player.collides(&w, center), "hidden cell does not collide");
     // A ray straight up through the hidden cell passes through it too: the
     // cast stops at the open sky, not at the hidden cell's stamped block.
     let origin = crate::planet::EntityPos::new(
@@ -2662,10 +2656,7 @@ fn settlement_hidden_cells_are_non_colliding_and_aimable_through() {
     );
     // The same body, after a reveal, is stopped by the now-visible block.
     w.reveal_settlement(settlement_idx, 2);
-    assert!(
-        player.collides(&w, center),
-        "revealed cell collides again"
-    );
+    assert!(player.collides(&w, center), "revealed cell collides again");
     let hit_after = crate::raycast::raycast_at(&w, origin, Vec3::new(0.0, 1.0, 0.0), 6.0);
     assert!(
         hit_after.is_some_and(|h| h.block == open),
@@ -2703,7 +2694,11 @@ fn settlement_reveal_drops_hidden_cells_when_rep_crosses_threshold() {
     let remaining = w.hidden_positions_for_test(settlement_idx);
     assert!(remaining.is_empty(), "no hidden cells remain after reveal");
     // Reveal is one-way: re-revealing is a no-op.
-    assert_eq!(w.reveal_settlement(settlement_idx, 2), 0, "no-op second time");
+    assert_eq!(
+        w.reveal_settlement(settlement_idx, 2),
+        0,
+        "no-op second time"
+    );
 }
 
 #[test]
@@ -2750,7 +2745,11 @@ fn settlement_hidden_cells_persist_across_save_reload() {
         w2.break_block_at(hidden_pos, None, true, false).is_none(),
         "hidden cell stays unbreakable across reload"
     );
-    assert_eq!(w2.reveal_settlement(settlement_idx, 2), 1, "reveals after reload");
+    assert_eq!(
+        w2.reveal_settlement(settlement_idx, 2),
+        1,
+        "reveals after reload"
+    );
 }
 
 #[test]
@@ -2800,21 +2799,18 @@ fn settlement_rep_reward_writes_kv_and_reveals_when_quest_completes() {
         w.hidden_count_for(settlement_idx) >= 1,
         "tier-2 cells hidden before the reward"
     );
-    let kv: std::rc::Rc<std::cell::RefCell<std::collections::HashMap<String, std::collections::HashMap<String, String>>>> =
-        std::rc::Rc::new(std::cell::RefCell::new(std::collections::HashMap::new()));
+    let kv: std::rc::Rc<
+        std::cell::RefCell<
+            std::collections::HashMap<String, std::collections::HashMap<String, String>>,
+        >,
+    > = std::rc::Rc::new(std::cell::RefCell::new(std::collections::HashMap::new()));
     // The quest is accepted; the `elder_honor` quest grants rep 3, crossing
     // the tier-2 threshold of 2 (and leaving tier 3 at 5 unmet).
-    crate::game::apply_reputation_reward(
-        &kv,
-        "player_test",
-        &reg,
-        &mut w,
-        "base:elder_haven",
-        3,
-    );
+    crate::game::apply_reputation_reward(&kv, "player_test", &reg, &mut w, "base:elder_haven", 3);
     let ns = kv.borrow();
     assert_eq!(
-        ns.get("player_test").and_then(|m| m.get("rep_base:elder_haven")),
+        ns.get("player_test")
+            .and_then(|m| m.get("rep_base:elder_haven")),
         Some(&"3".to_string()),
         "reward increments the rep_key KV"
     );
@@ -2857,8 +2853,11 @@ fn settlement_reveal_makes_cells_breakable_again() {
 
 #[test]
 fn recipe_unlock_reward_writes_the_learned_flag() {
-    let kv: std::rc::Rc<std::cell::RefCell<std::collections::HashMap<String, std::collections::HashMap<String, String>>>> =
-        std::rc::Rc::new(std::cell::RefCell::new(std::collections::HashMap::new()));
+    let kv: std::rc::Rc<
+        std::cell::RefCell<
+            std::collections::HashMap<String, std::collections::HashMap<String, String>>,
+        >,
+    > = std::rc::Rc::new(std::cell::RefCell::new(std::collections::HashMap::new()));
     crate::game::apply_recipe_unlock_reward(&kv, "player_test", "base:etched_tablet");
     let ns = kv.borrow();
     assert_eq!(
@@ -2912,4 +2911,3 @@ fn recipe_gate_seam_returns_unmet_gate_kind() {
         .expect("base planks recipe");
     assert_eq!(recipe_gates_met(None, &inv, planks), None);
 }
-

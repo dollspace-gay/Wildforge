@@ -159,14 +159,28 @@ fn wrathful_country_frays_the_wilds_nerves() {
     // Calm country: the deer bolts.
     let w = test_world("e12-calm");
     let mut deer = crate::mobs::Mob::new(deer_i, pos, 0.0);
-    deer.tick(&w, &deer_def, &[player_ctx], 1.0 / 60.0, &mut rng, &mut Vec::new());
+    deer.tick(
+        &w,
+        &deer_def,
+        &[player_ctx],
+        1.0 / 60.0,
+        &mut rng,
+        &mut Vec::new(),
+    );
     assert_eq!(deer.state, crate::mobs::MobState::Flee);
     // Wrathful country: same geometry, frayed nerves hold.
     let mut w = test_world("e12-wrath");
     w.ire = 100.0;
     assert_eq!(w.ire_tier(), 3);
     let mut deer = crate::mobs::Mob::new(deer_i, pos, 0.0);
-    deer.tick(&w, &deer_def, &[player_ctx], 1.0 / 60.0, &mut rng, &mut Vec::new());
+    deer.tick(
+        &w,
+        &deer_def,
+        &[player_ctx],
+        1.0 / 60.0,
+        &mut rng,
+        &mut Vec::new(),
+    );
     assert_ne!(
         deer.state,
         crate::mobs::MobState::Flee,
@@ -267,13 +281,19 @@ fn npc_companion_persistence_round_trips() {
     let def_idx = reg.npc_id("base:elder").expect("base elder registers");
     let at = ep(Vec3::new(3.5, 90.0, -2.5));
     let mob_id = w.spawn_npc_at(def_idx, at).expect("npc fits caps");
-    assert!(w.npc_by_mob(mob_id).is_some(), "instance exists after spawn");
+    assert!(
+        w.npc_by_mob(mob_id).is_some(),
+        "instance exists after spawn"
+    );
     save_world(&mut w);
 
     let w2 = World::load_or_create(dir, reg.clone()).unwrap();
     assert_eq!(w2.npc_count(), 1, "npc instance restored on load");
     let npc = w2.npcs().first().expect("restored instance");
-    assert_eq!(npc.mob_id, mob_id, "instance links to the same companion mob");
+    assert_eq!(
+        npc.mob_id, mob_id,
+        "instance links to the same companion mob"
+    );
     assert_eq!(npc.def, def_idx);
     assert_eq!(npc.dialogue.as_deref(), Some("base:elder"));
     let companion = w2

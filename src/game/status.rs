@@ -456,7 +456,11 @@ impl Game {
         // Carry weight: an over-burdened survivor cannot lift another stack
         // off the ground. Creative ignores the ledger entirely.
         let capacity = self.carry_capacity();
-        let mut weight = if self.creative { 0.0 } else { self.carried_weight() };
+        let mut weight = if self.creative {
+            0.0
+        } else {
+            self.carried_weight()
+        };
         let mut i = 0;
         while i < items.len() {
             let it = &items[i];

@@ -354,10 +354,9 @@ fn the_polar_bear_needs_no_reason() {
     let mut mauled = false;
     for _ in 0..3000 {
         let evs = w.tick_mobs(&[ctx(player)], 1.0, 0.05, &mut rng);
-        if evs
-            .iter()
-            .any(|e| matches!(e, crate::mobs::MobEvent::HitPlayer { who: 0, dmg: d, .. } if *d >= 6.0))
-        {
+        if evs.iter().any(
+            |e| matches!(e, crate::mobs::MobEvent::HitPlayer { who: 0, dmg: d, .. } if *d >= 6.0),
+        ) {
             mauled = true;
             break;
         }
@@ -642,10 +641,9 @@ fn the_crab_pinches_what_bothers_it() {
     let mut pinched = false;
     for _ in 0..1200 {
         let evs = w.tick_mobs(&[ctx(player)], 1.0, 0.05, &mut rng);
-        if evs
-            .iter()
-            .any(|e| matches!(e, crate::mobs::MobEvent::HitPlayer { who: 0, dmg: d, .. } if *d <= 1.5))
-        {
+        if evs.iter().any(
+            |e| matches!(e, crate::mobs::MobEvent::HitPlayer { who: 0, dmg: d, .. } if *d <= 1.5),
+        ) {
             pinched = true;
             break;
         }

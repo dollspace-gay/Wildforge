@@ -64,15 +64,24 @@ fn the_generic_matcher_recognizes_machines_inside_a_structure() {
         capture_region(&w, bp(0, MY, 0), bp(3, MY + 2, 2), "bloomery").expect("bloomery captures");
     let bloom = from_template(&bloom_tpl, &rc);
     assert!(
-        rc.machine_kind("base:bloomery").unwrap_or_default().validate(&bloom, MOUTH).is_some(),
+        rc.machine_kind("base:bloomery")
+            .unwrap_or_default()
+            .validate(&bloom, MOUTH)
+            .is_some(),
         "a bloomery shell inside a structure validates via the generic matcher"
     );
     assert!(
-        rc.machine_kind("base:forge").unwrap_or_default().validate(&bloom, MOUTH).is_none(),
+        rc.machine_kind("base:forge")
+            .unwrap_or_default()
+            .validate(&bloom, MOUTH)
+            .is_none(),
         "the bloomery mouth never reads as a forge"
     );
     assert!(
-        rc.machine_kind("base:bloomery").unwrap_or_default().validate(&bloom, (5, 5, 5)).is_none(),
+        rc.machine_kind("base:bloomery")
+            .unwrap_or_default()
+            .validate(&bloom, (5, 5, 5))
+            .is_none(),
         "an empty corner of the store has no machine"
     );
 
@@ -82,7 +91,10 @@ fn the_generic_matcher_recognizes_machines_inside_a_structure() {
         capture_region(&w, bp(7, MY, 7), bp(10, MY + 5, 9), "forge").expect("forge captures");
     let forge = from_template(&forge_tpl, &rc);
     assert!(
-        rc.machine_kind("base:forge").unwrap_or_default().validate(&forge, MOUTH).is_some(),
+        rc.machine_kind("base:forge")
+            .unwrap_or_default()
+            .validate(&forge, MOUTH)
+            .is_some(),
         "a full forge workshop in a structure validates (stack + chimney + anvil)"
     );
 }
@@ -102,7 +114,8 @@ fn interior_forge_lights_ticks_and_completes_in_any_weather() {
     // kept in separate scopes so Rust's borrow checker is satisfied.
     let matched = {
         let s = w.local_structure(id).expect("structure present");
-        rc.machine_kind("base:forge").unwrap_or_default()
+        rc.machine_kind("base:forge")
+            .unwrap_or_default()
             .validate(s, MOUTH)
             .expect("the spawned shell validates")
     };
@@ -110,8 +123,13 @@ fn interior_forge_lights_ticks_and_completes_in_any_weather() {
         let s = w.local_structure_mut(id).expect("structure present");
         s.block_entities_mut()
             .insert(MOUTH, BlockEntity::Multiblock(charged_forge(&rc)));
-        light_machine_at(s, MOUTH, rc.machine_kind("base:forge").unwrap_or_default(), matched)
-            .expect("a charged in-structure forge lights");
+        light_machine_at(
+            s,
+            MOUTH,
+            rc.machine_kind("base:forge").unwrap_or_default(),
+            matched,
+        )
+        .expect("a charged in-structure forge lights");
     }
     let s = w.local_structure(id).expect("structure present");
     assert_eq!(
@@ -185,7 +203,8 @@ fn structure_shell_edits_are_scoped_from_the_main_world() {
         .expect("spawns");
     let matched = {
         let s = w.local_structure(id).expect("structure present");
-        rc.machine_kind("base:forge").unwrap_or_default()
+        rc.machine_kind("base:forge")
+            .unwrap_or_default()
             .validate(s, MOUTH)
             .expect("shell validates")
     };
@@ -193,7 +212,13 @@ fn structure_shell_edits_are_scoped_from_the_main_world() {
         let s = w.local_structure_mut(id).expect("structure present");
         s.block_entities_mut()
             .insert(MOUTH, BlockEntity::Multiblock(charged_forge(&rc)));
-        light_machine_at(s, MOUTH, rc.machine_kind("base:forge").unwrap_or_default(), matched).expect("structure forge lights");
+        light_machine_at(
+            s,
+            MOUTH,
+            rc.machine_kind("base:forge").unwrap_or_default(),
+            matched,
+        )
+        .expect("structure forge lights");
     }
 
     // A main-world block placed where the structure footprints doesn't
@@ -266,7 +291,10 @@ fn structure_shell_edits_are_scoped_from_the_main_world() {
         .set_block((1, 0, 0), b(&rc, "base:firebrick"));
     let structure = w.local_structure(id).expect("structure present");
     assert!(
-        rc.machine_kind("base:forge").unwrap_or_default().validate(structure, MOUTH).is_some(),
+        rc.machine_kind("base:forge")
+            .unwrap_or_default()
+            .validate(structure, MOUTH)
+            .is_some(),
         "repair re-validates"
     );
     let Some(BlockEntity::Multiblock(m)) = structure.block_entities().get(&MOUTH) else {
@@ -287,7 +315,8 @@ fn structure_hosted_machine_survives_save_and_reload() {
 
     let matched = {
         let s = w.local_structure(id).expect("structure present");
-        rc.machine_kind("base:forge").unwrap_or_default()
+        rc.machine_kind("base:forge")
+            .unwrap_or_default()
             .validate(s, MOUTH)
             .expect("shell validates")
     };
@@ -295,7 +324,13 @@ fn structure_hosted_machine_survives_save_and_reload() {
         let s = w.local_structure_mut(id).expect("structure present");
         s.block_entities_mut()
             .insert(MOUTH, BlockEntity::Multiblock(charged_forge(&rc)));
-        light_machine_at(s, MOUTH, rc.machine_kind("base:forge").unwrap_or_default(), matched).expect("charges and lights");
+        light_machine_at(
+            s,
+            MOUTH,
+            rc.machine_kind("base:forge").unwrap_or_default(),
+            matched,
+        )
+        .expect("charges and lights");
     }
     for _ in 0..6 {
         w.tick_entities(0.5);
@@ -504,16 +539,27 @@ fn structure_break_and_place_round_trip() {
 
         let s = w.local_structure_mut(id).unwrap();
         assert!(
-            rc.machine_kind("base:forge").unwrap_or_default().validate(s, MOUTH).is_some(),
+            rc.machine_kind("base:forge")
+                .unwrap_or_default()
+                .validate(s, MOUTH)
+                .is_some(),
             "shell validates fresh from spawn"
         );
 
         s.block_entities_mut()
             .insert(MOUTH, BlockEntity::Multiblock(charged_forge(&rc)));
-        let matched = rc.machine_kind("base:forge").unwrap_or_default()
+        let matched = rc
+            .machine_kind("base:forge")
+            .unwrap_or_default()
             .validate(s, MOUTH)
             .expect("still validates");
-        light_machine_at(s, MOUTH, rc.machine_kind("base:forge").unwrap_or_default(), matched).expect("lights");
+        light_machine_at(
+            s,
+            MOUTH,
+            rc.machine_kind("base:forge").unwrap_or_default(),
+            matched,
+        )
+        .expect("lights");
         assert_eq!(s.get_block(MOUTH), b(&rc, "base:forge_lit"));
 
         s.break_block((1, 0, 0), None);
@@ -531,7 +577,10 @@ fn structure_break_and_place_round_trip() {
 
         s.place_block((1, 0, 0), b(&rc, "base:firebrick"));
         assert!(
-            rc.machine_kind("base:forge").unwrap_or_default().validate(s, MOUTH).is_some(),
+            rc.machine_kind("base:forge")
+                .unwrap_or_default()
+                .validate(s, MOUTH)
+                .is_some(),
             "repair re-validates"
         );
         let Some(BlockEntity::Multiblock(m)) = s.block_entities().get(&MOUTH) else {

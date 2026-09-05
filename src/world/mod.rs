@@ -31,12 +31,12 @@ mod dross;
 mod ecology;
 pub use ecology::SettledMobDeath;
 pub(crate) mod belt;
+pub(crate) mod dungeon;
 mod entities;
 mod fire;
 mod fluids;
 mod hearts;
 mod implements;
-pub(crate) mod dungeon;
 mod lighting;
 mod machine_tick;
 pub(crate) mod machines;
@@ -633,20 +633,8 @@ pub fn read_world_meta(dir: &std::path::Path) -> (Option<u32>, String, f32) {
 /// lives in the atlas snapshot, never in a world-wide metadata field.
 pub fn read_world_meta_full(dir: &std::path::Path) -> (Option<u32>, String, f32, u32, String) {
     match load_world_meta(dir) {
-        Ok(Some(meta)) => (
-            Some(meta.seed),
-            meta.mode,
-            meta.ire,
-            meta.day,
-            meta.camera,
-        ),
-        Ok(None) | Err(_) => (
-            None,
-            "survival".to_string(),
-            0.0,
-            0,
-            "first".to_string(),
-        ),
+        Ok(Some(meta)) => (Some(meta.seed), meta.mode, meta.ire, meta.day, meta.camera),
+        Ok(None) | Err(_) => (None, "survival".to_string(), 0.0, 0, "first".to_string()),
     }
 }
 
@@ -1003,7 +991,8 @@ pub struct RevealKey {
 }
 
 pub struct World {
-    chunks: HashMap<ChunkPos, Chunk>,    pub generator: Generator,
+    chunks: HashMap<ChunkPos, Chunk>,
+    pub generator: Generator,
     planet_atlas: Option<Arc<crate::planet_atlas::PlanetAtlas>>,
     planetary_weather: Option<crate::planet_atlas::PlanetaryWeather>,
     /// Persisted qualified doorstep, populated only after preparation or
@@ -1641,7 +1630,14 @@ impl World {
             return Ok(());
         }
         self.camera = camera.to_string();
-        write_world_meta_full(&self.save_dir, self.seed, &self.mode, self.ire, self.day, camera)
+        write_world_meta_full(
+            &self.save_dir,
+            self.seed,
+            &self.mode,
+            self.ire,
+            self.day,
+            camera,
+        )
     }
 
     pub fn set_remote_weather(

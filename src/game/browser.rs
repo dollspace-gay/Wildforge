@@ -179,10 +179,7 @@ impl Game {
                     );
                 }
                 let gate_hint = {
-                    let tech_value = r
-                        .tech
-                        .as_deref()
-                        .and_then(|key| self.read_player_kv(key));
+                    let tech_value = r.tech.as_deref().and_then(|key| self.read_player_kv(key));
                     match crate::game::containers::recipe_gates_met(
                         tech_value.as_deref(),
                         &self.inventory,

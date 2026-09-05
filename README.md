@@ -26,6 +26,8 @@ The minimum Rust version is 1.95. A checkout pins Rust 1.96 with Rustfmt and
 Clippy through `rust-toolchain.toml`, so [rustup](https://rustup.rs/) selects
 the tested toolchain automatically. Install the optional local advisory
 runner with `cargo install cargo-deny --locked`; CI supplies it independently.
+The optional compiler cache is enabled with `RUSTC_WRAPPER=sccache` only on
+machines where it is installed; ordinary builds need no wrapper.
 
 On Ubuntu 24.04/Debian, install the native audio/build discovery packages:
 
@@ -33,11 +35,22 @@ On Ubuntu 24.04/Debian, install the native audio/build discovery packages:
 sudo apt-get install libasound2-dev pkg-config
 ```
 
+Install the external integration-test content once after cloning:
+
+```sh
+python3 tools/install_test_mods.py
+```
+
+The installer pins the public `eternaldensity/belt-quest` repository to an exact
+revision and refuses to overwrite an existing `mods/belt_quest` installation.
+That directory remains ignored local content. CI runs the same installer.
+
 The repository checks are:
 
 ```sh
 cargo fmt --all -- --check
 cargo clippy --locked --all-targets -- -D warnings
+cargo +1.95.0 check --locked --all-targets
 cargo test --locked --all-targets
 cargo build --locked --release
 cargo deny check advisories

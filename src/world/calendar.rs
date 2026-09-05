@@ -643,11 +643,7 @@ impl World {
         let Some(BlockEntity::Depot(d)) = self.block_entity_at(&pos) else {
             return None;
         };
-        let def = self
-            .reg
-            .settlements
-            .iter()
-            .find(|s| s.id == d.settlement)?;
+        let def = self.reg.settlements.iter().find(|s| s.id == d.settlement)?;
         let need = def.needs.iter().find(|need| need.item == item)?;
         // Staged stock counts against the appetite: a depot full of iron
         // has no more use for iron.
@@ -665,46 +661,79 @@ impl World {
     /// A belt's offer to the depot at `pos`: how many units of this stack
     /// the settlement currently needs (capability E13 belt port).
     pub fn depot_accept(&mut self, pos: BlockPos, stack: &crate::inventory::ItemStack) -> u32 {
-        let Some((wanted, _rep)) = self.depot_need_at(pos, stack.item) else {
-            return 0;
-        };
-        let take = stack.count.min(wanted);
-        self.depot_deposit(pos, &crate::inventory::ItemStack {
-            count: take,
-            ..*stack
-        })
+        self.depot_deposit(pos, stack)
     }
 
-    /// Deposit up to `count` units of `stack` into the depot at `pos`,
-    /// filling its staging slots. Returns how many units were accepted.
+    /// Transfer a player's held goods into a depot. Solo and networked play
+    /// share this boundary: refused goods leave both inventories unchanged,
+    /// and the accepted physical stack is debited from its exact source slot.
+    pub(crate) fn deliver_to_depot(
+        &mut self,
+        pos: BlockPos,
+        inventory: &mut crate::inventory::Inventory,
+        slot: usize,
+    ) -> Option<(String, crate::registry::ItemId, u32, u32)> {
+        let held = inventory.slots.get(slot).copied().flatten()?;
+        let (_, rep_per_unit) = self.depot_need_at(pos, held.item)?;
+        let Some(BlockEntity::Depot(depot)) = self.block_entity_at(&pos) else {
+            return None;
+        };
+        let settlement = depot.settlement.clone();
+        let accepted = self.depot_deposit(pos, &held);
+        if accepted == 0 {
+            return None;
+        }
+        inventory.slots[slot] = (held.count > accepted).then_some(crate::inventory::ItemStack {
+            count: held.count - accepted,
+            ..held
+        });
+        Some((settlement, held.item, accepted, rep_per_unit))
+    }
+
+    /// Deposit the needed portion of `stack` into the depot at `pos`,
+    /// respecting staging capacity. Returns how many units were accepted.
     pub fn depot_deposit(&mut self, pos: BlockPos, stack: &crate::inventory::ItemStack) -> u32 {
+        let Some((wanted, _)) = self.depot_need_at(pos, stack.item) else {
+            return 0;
+        };
         let max_stack = self.reg.item(stack.item).max_stack;
         let Some(BlockEntity::Depot(d)) = self.block_entity_mut_at(&pos) else {
             return 0;
         };
-        let mut left = stack.count;
+        let offered = stack.count.min(wanted);
+        let mut left = offered;
         // Top up part-stacks first.
         for slot in d.storage.iter_mut().flatten() {
             if slot.item == stack.item
                 && slot.arcane_id == stack.arcane_id
                 && slot.durability == stack.durability
-                && u64::from(slot.count) + u64::from(left) <= u64::from(max_stack)
             {
-                slot.count += left;
-                left = 0;
-                break;
+                let take = left.min(max_stack.saturating_sub(slot.count));
+                slot.count += take;
+                left -= take;
+                if left == 0 {
+                    break;
+                }
             }
         }
         if left > 0 {
             for slot in d.storage.iter_mut() {
                 if slot.is_none() {
-                    *slot = Some(crate::inventory::ItemStack { count: left, ..*stack });
-                    left = 0;
-                    break;
+                    let take = left.min(max_stack);
+                    if take > 0 {
+                        *slot = Some(crate::inventory::ItemStack {
+                            count: take,
+                            ..*stack
+                        });
+                        left -= take;
+                    }
+                    if left == 0 {
+                        break;
+                    }
                 }
             }
         }
-        stack.count - left
+        offered - left
     }
 
     /// Charge the region for every lit fire machine on a one-second beat.
@@ -725,19 +754,16 @@ impl World {
                     return None;
                 };
                 let handler = m.kind.handler(&self.reg)?;
-                (handler.has_fire() && m.lit)
-                    .then(|| pos.surface())
+                (handler.has_fire() && m.lit).then(|| pos.surface())
             })
             .collect();
-        let amt =
-            step * Self::INDUSTRIAL_IRE_PER_SEC * lit.len() as f32;
+        let amt = step * Self::INDUSTRIAL_IRE_PER_SEC * lit.len() as f32;
         if amt <= 0.0 {
             return;
         }
         // One charge per distinct region cell: a workshop row smokes as
         // one chimney, not four.
-        let mut cells: std::collections::HashSet<RegionCell> =
-            std::collections::HashSet::new();
+        let mut cells: std::collections::HashSet<RegionCell> = std::collections::HashSet::new();
         for surface in &lit {
             cells.insert(RegionCell::from_surface(*surface));
         }

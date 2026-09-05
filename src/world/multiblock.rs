@@ -290,10 +290,7 @@ impl MachineKind {
     }
 
     /// The closed native handler this kind runs, if the pack declares it.
-    pub fn handler(
-        self,
-        reg: &Registry,
-    ) -> Option<crate::machines::MachineHandler> {
+    pub fn handler(self, reg: &Registry) -> Option<crate::machines::MachineHandler> {
         reg.machine(self).map(|m| m.handler)
     }
 

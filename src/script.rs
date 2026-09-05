@@ -322,13 +322,16 @@ impl ScriptHost {
         // Quest progression (spec 3.3): queue an increment; the game loop
         // applies it (never write KV from inside the script).
         let q = queue.clone();
-        engine.register_fn("quest_progress", move |quest_id: &str, objective: &str, n: i64| {
-            q.borrow_mut().push(Cmd::QuestProgress {
-                quest_id: quest_id.into(),
-                objective: objective.into(),
-                n: n.max(1) as u32,
-            });
-        });
+        engine.register_fn(
+            "quest_progress",
+            move |quest_id: &str, objective: &str, n: i64| {
+                q.borrow_mut().push(Cmd::QuestProgress {
+                    quest_id: quest_id.into(),
+                    objective: objective.into(),
+                    n: n.max(1) as u32,
+                });
+            },
+        );
         // Accept a quest by id (gated on prereq by the apply side).
         let q = queue.clone();
         engine.register_fn("quest_accept", move |quest_id: &str| {
@@ -453,10 +456,7 @@ impl ScriptHost {
             }
             *self.current.borrow_mut() = m.id.clone();
             let mut scope = Scope::new();
-            let dyn_args: Vec<Dynamic> = args
-                .iter()
-                .map(|s| Dynamic::from(s.clone()))
-                .collect();
+            let dyn_args: Vec<Dynamic> = args.iter().map(|s| Dynamic::from(s.clone())).collect();
             match self
                 .engine
                 .call_fn::<Dynamic>(&mut scope, ast, &hook.fn_name, dyn_args)
