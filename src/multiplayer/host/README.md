@@ -2,7 +2,7 @@
 
 # Host streaming
 
-streaming.rs schedules guest terrain delivery, wire encoding, snapshots, and residency around active and pending players.
+streaming.rs schedules guest interest and snapshot delivery. chunk_jobs.rs owns terrain preparation, wire encoding, revisions, and cache state behind bounded methods.
 
 Start with `streaming.rs`. See the [repository overview](../../../README.md) for
 build prerequisites and complete checks. Commands below run from the repository root.
