@@ -7,7 +7,7 @@ use super::{Agent, TestHost, pump_until};
 use crate::net::{C2S, HostEvent, PlayerStateSnap, S2C};
 use crate::planet::EntityPos;
 
-fn paused_host(tag: &str) -> (TestHost, Agent) {
+pub(super) fn paused_host(tag: &str) -> (TestHost, Agent) {
     let mut host = TestHost::start(tag);
     let agent = Agent::connect_for_test(host.addr, tag).expect("fixture guest joins");
     host.stop.store(true, Ordering::Relaxed);

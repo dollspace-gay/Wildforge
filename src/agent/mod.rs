@@ -429,6 +429,8 @@ impl Agent {
                         let mut m = crate::mobs::Mob::new_at(s.species as usize, s.pos, s.yaw);
                         m.id = s.id;
                         m.growth = s.growth;
+                        m.health = s.health;
+                        m.hurt_flash = s.hurt;
                         m.fed = s.fed;
                         m
                     })

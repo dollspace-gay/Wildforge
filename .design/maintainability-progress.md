@@ -875,3 +875,15 @@ session tests (30 total), 18 serial agent tests, 25 multiplayer tests, strict
 Clippy, Rust 1.95 checking, format, advisory analysis, and folder guidance.
 Logs use `target/maintainability/client-session-terrain-order-*`. Full subsystem,
 release, and new native guest/GPU evidence remain outstanding for this source.
+
+## Agent mob snapshot field correction
+
+Category B (local correctness): the agent's mob reconstruction now preserves the
+host's health and hurt fields, matching the graphical guest. The real QUIC
+regression failed first with local health `0.0` for host health `7.25`; the
+constructor default had never been replaced. Its failing log is
+`client-session-entity-fields-before.log`. All 19 serial agent scenarios and
+strict all-target/all-feature Clippy pass after the two-field correction
+(`client-session-entity-fields-{agent,clippy}.log`). This fix is separate from
+the forthcoming entity receiver/conversion extraction; broader source and GPU
+qualification remain outstanding.

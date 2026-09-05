@@ -7,6 +7,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
 mod admission;
+mod replication;
 
 /// A host running on a thread, shared so tests can reach into the
 /// authoritative world between pumps.
