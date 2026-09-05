@@ -36,7 +36,7 @@ runtime comparisons. Cold/warm runtime measurements remain outstanding.
 | AC-4 common client | Shared admission, mappings, entity reconstruction, terrain ordering, roster, content publication, and domain updates implemented; earlier source has focused/QUIC evidence | Finish request and replica ownership; final transfer/reconnect/native qualification |
 | AC-5 player operations | Shared stall, craft/repair, conservation effects, and armor exchange implemented | Remaining action domains; final rejection/conservation/adapter parity tests |
 | AC-6 world domains | Domain fields/methods inventoried | Encapsulation, explicit transaction coordination |
-| AC-7 generation stages | Explicit chunk stages, intermediate maps, independent queries, and atlas climate/weather modules implemented | Remaining atlas decomposition; final pinned output and worker-order checks |
+| AC-7 generation stages | Explicit chunk stages, intermediate maps, independent queries, and atlas climate/weather/geology modules implemented | Remaining atlas decomposition; final pinned output and worker-order checks |
 | AC-8 app/content/render/tools | Registry definitions, schemas, linker, graph validation, runtime publication gate, and script preparation implemented | App/UI/render/tool owners; final publication/runtime/codec checks |
 | AC-9 source size | Advisory 400/500 report and baseline | Reduce migrated debt; explain any real exceptions |
 | AC-10 clone analyzer | 18 tests passed in planning; complete JSON snapshot | Maintain analyzer coverage as tooling evolves |
@@ -44,7 +44,7 @@ runtime comparisons. Cold/warm runtime measurements remain outstanding.
 | AC-12 tests/performance | Baseline suite passed; extraction focused gates passed | Full slice gates and reproducible measurements for affected paths |
 | AC-13 shutdown | Terrain, mesh, encoding, creation, entry, and homeland work have joined owners and failure tests | Dedicated shutdown; graphical close/capture and save-failure runtime proof |
 | AC-14 migration record | This file and separate baseline commits | Add implementation/result entries after each slice |
-| Folder guidance | 64 directories previously verified; new player_ops, worldgen, registry/schema, registry/linking, script, and planet_atlas/climate directories include guides | Final coverage and content identity checks after coding |
+| Folder guidance | 64 directories previously verified; new player_ops, worldgen, registry/schema, registry/linking, script, planet_atlas/climate, and planet_atlas/geology directories include guides | Final coverage and content identity checks after coding |
 
 ## Compatibility observations requiring explicit treatment
 
@@ -1218,3 +1218,20 @@ cases must compare pinned atlas output, varied slice budgets, failed-hour rollba
 external transfers during a partial hour, water/salt conservation, and seam-aware
 weather observations. Geology, hydrology, and remaining atlas infrastructure are
 still outstanding. The new climate directory has local guides.
+
+
+## Atlas geological genesis modules (implementation, unverified)
+
+Geology now separates stable classifications/records, spherical site math,
+plate/craton motion, tectonic fields, volcanism, relief, strata, provinces,
+finite deposits, validation, and sampling. The parent retains the persisted
+model and bounded deterministic attempt selection. One attempt still executes
+the same stages and acceptance constraints; the original compact-fixture policy
+and cancellation points remain intact. Decoder and validation visibility retains
+the atlas boundary, and the existing rotation probe keeps its public test path.
+
+No validation gates run under the coding-first schedule. Final evidence must
+compare atlas bytes/hashes, rejected-attempt histories, site IDs and finite
+budgets, read-only samples, rotated/seam boundaries, and codec compatibility.
+The new geology directory includes guides. Hydrology and the remaining atlas
+infrastructure still need implementation; this checkpoint is not acceptance.
