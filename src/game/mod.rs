@@ -563,7 +563,6 @@ struct Remote {
     player_implement: std::collections::HashMap<u32, crate::implements::ImplementVisual>,
     /// Packed Style per player (from Players snapshots).
     player_style: std::collections::HashMap<u32, u32>,
-    names: std::collections::HashMap<u32, String>,
     sleeping: bool,
     /// Interpolation spans keyed by player / mob id, plus the shared
     /// clocks (age since last snapshot, measured snapshot interval).

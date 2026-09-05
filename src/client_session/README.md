@@ -36,8 +36,20 @@ requires decoded terrain; graphics additionally supplies its first-frame
 milestone. Residency is acknowledged only after the real chunk decoder inserts
 the chunk. Welcome starts a new admission epoch, and invalid transitions close it.
 
-World-domain replica ownership and content renegotiation are still being
-migrated from the two adapters under the maintainability plan. Guests receive
+`events.rs` applies shared time, weather, arcane, sign, and switch updates in
+wire order. Each message is consumed synchronously; UI/control responses remain
+with the relevant adapter. The session owns presence records and clears them on
+Welcome and closure. Render poses and navigation trails clear with the world.
+
+`transfer.rs` validates portable relative data paths, writes into an exclusively
+owned staging directory, rejects registry errors, and publishes the cache only
+after loading succeeds. Publication keeps the established cache path and content
+hash convention. Failed replacement restores the prior cache; a failed restore
+retains its recovery directory and reports it. Stale transfer workspaces are
+reported instead of automatically removed. Host scripts remain host-owned.
+
+Distinct world authority types and the remaining request ownership are still
+being migrated under the maintainability plan. Guests receive
 authoritative data; this layer must not acquire generation or persistence
 capabilities.
 

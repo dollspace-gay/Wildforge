@@ -75,7 +75,6 @@ pub struct Agent {
     session: GuestSession,
     /// id -> (label, pos, yaw) for every other player on the wire.
     pub players: HashMap<u32, (String, crate::planet::EntityPos, f32)>,
-    names: HashMap<u32, String>,
     /// Breadcrumbs per player: the trail follow() chases.
     trail: HashMap<u32, VecDeque<crate::planet::EntityPos>>,
     /// Walkable waypoints are separate from observations of the leader.
@@ -161,7 +160,6 @@ impl Agent {
             in_world: false,
             echoes: 0,
             players: HashMap::new(),
-            names: HashMap::new(),
             trail: HashMap::new(),
             follow_path: None,
             events: VecDeque::new(),
@@ -262,6 +260,9 @@ impl Agent {
         }
         for msg in messages {
             self.apply(msg);
+            if self.session.admission().is_closed() {
+                break;
+            }
         }
         self.apply_pending_chunks();
         if self.in_world {
@@ -297,24 +298,21 @@ impl Agent {
     }
 
     fn apply(&mut self, msg: net::S2C) {
+        let Some(msg) = self.session.apply_world_message(msg, &mut self.world, &mut self.time_of_day) else {
+            return;
+        };
         match msg {
             net::S2C::Challenge { .. } => {}
             net::S2C::ModFiles(files) => {
-                // The host's content becomes ours, same as a windowed
-                // guest: cached, loaded, remapped on Welcome.
                 let cache = PathBuf::from("saves/.agents/.remote-mods");
-                let _ = std::fs::remove_dir_all(&cache);
-                for (rel, bytes) in files {
-                    if rel.contains("..") {
-                        continue;
+                match self.session.install_content(&cache, files) {
+                    Ok(registry) => self.reg = registry,
+                    Err(error) => {
+                        self.in_world = false;
+                        self.event(format!("refused: {error}"));
+                        return;
                     }
-                    let p = cache.join(rel);
-                    if let Some(parent) = p.parent() {
-                        let _ = std::fs::create_dir_all(parent);
-                    }
-                    let _ = std::fs::write(p, bytes);
                 }
-                self.reg = Arc::new(registry::load(&cache));
                 self.mods_dir = cache;
                 self.event("synced the host's mods".into());
             }
@@ -337,13 +335,16 @@ impl Agent {
                 world.mode = mode;
                 world.ire = ire;
                 self.my_id = your_id;
-                self.names = roster.into_iter().map(|p| (p.id, p.display_name)).collect();
                 self.session.begin(
                     ContentMap::new(Arc::clone(&self.reg), palette, items),
                     world_name,
                     player_state.pos,
                     std::time::Instant::now(),
                 );
+                self.session.set_roster(roster);
+                self.players.clear();
+                self.trail.clear();
+                self.follow_path = None;
                 self.world = world;
                 self.time_of_day = time;
                 self.apply_player_state(player_state, true);
@@ -402,9 +403,9 @@ impl Agent {
                         continue;
                     }
                     let name = self
-                        .names
+                        .session.roster()
                         .get(&id)
-                        .cloned()
+                        .map(|presence| presence.display_name.clone())
                         .unwrap_or_else(|| format!("P{id}"));
                     self.players.insert(id, (name, pos, yaw));
                     // Breadcrumbs: a new crumb each ~0.75 blocks of
@@ -422,34 +423,6 @@ impl Agent {
                 if let Some(mobs) = self.session.mobs(part) {
                     self.world.replace_mobs(mobs);
                 }
-            }
-            net::S2C::TimeIre { time, ire, day } => {
-                self.time_of_day = time;
-                self.world.ire = ire;
-                self.world.day = day;
-            }
-            net::S2C::WeatherCells { side, cells } => {
-                self.world.set_remote_weather(side, cells);
-            }
-            net::S2C::ArcaneCue {
-                bands,
-                dominant,
-                ecology,
-            } => {
-                self.world.set_remote_arcane_cue(bands, dominant, ecology);
-            }
-            net::S2C::ArcaneItems {
-                reset,
-                charges,
-                implements,
-                apparatus,
-            } => {
-                if reset {
-                    self.world.clear_remote_implement_snapshot();
-                }
-                self.world.extend_remote_arcane_items(charges);
-                self.world.extend_remote_implements(implements);
-                self.world.extend_remote_apparatus(apparatus);
             }
             net::S2C::DiscoveryReport(record) => {
                 self.event(format!(
@@ -550,20 +523,14 @@ impl Agent {
                 if presence.id != self.my_id {
                     self.event(format!("{} joined", presence.display_name));
                 }
-                self.names.insert(presence.id, presence.display_name);
+                self.session.joined(presence);
             }
             net::S2C::Left { id } => {
                 self.players.remove(&id);
                 self.trail.remove(&id);
-                if let Some(n) = self.names.remove(&id) {
-                    self.event(format!("{n} left"));
+                if let Some(presence) = self.session.left(id) {
+                    self.event(format!("{} left", presence.display_name));
                 }
-            }
-            net::S2C::SignText { pos, lines } => {
-                self.world.insert_block_entity_at(
-                    pos,
-                    crate::world::BlockEntity::Sign(crate::world::SignState { lines }),
-                );
             }
             net::S2C::SettlementDelivery {
                 settlement,
@@ -573,18 +540,6 @@ impl Agent {
             } => {
                 // Capability E13: standing pays locally, like quest rewards.
                 let _ = (settlement, item, units, rep_per_unit);
-            }
-            net::S2C::SwitchState { pos, selected } => {
-                let selected = match selected & 3 {
-                    0 => crate::planet::Direction4::East,
-                    1 => crate::planet::Direction4::North,
-                    2 => crate::planet::Direction4::West,
-                    _ => crate::planet::Direction4::South,
-                };
-                self.world.insert_block_entity_at(
-                    pos,
-                    crate::world::BlockEntity::Switch(crate::world::SwitchState { selected }),
-                );
             }
             net::S2C::HeldResult(held) => {
                 self.cursor = held

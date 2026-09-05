@@ -982,3 +982,28 @@ verification stage. A targeted check may be needed to unblock implementation;
 any such exception will be recorded. Existing evidence retains its original
 source scope. Unverified implementation is not an accepted phase or passing
 campaign, and outstanding acceptance criteria stay open.
+
+
+## Remaining guest state consolidation (implementation, unverified)
+
+The shared session now owns presence records and synchronous time, weather,
+arcane, sign, and switch replication. Both adapters retain their presentation
+policies while using the same mutation bodies. Welcome clears roster state,
+render interpolation/held models, and agent breadcrumbs together with terrain
+and stream generations; departure retires all graphical player maps.
+
+Category A corrections: transferred mod files previously ignored write/load
+failures and accepted absolute path escapes. Both consumers now use one staged
+content publication operation with portable relative path and duplicate checks,
+host-script rejection, registry validation, an exclusive writer workspace,
+rollback, and observable recovery failures. Cache paths and legacy hash inputs
+are preserved. Invalid transfer or out-of-phase transfer closes admission, and
+the agent stops processing that poll rather than accepting a later Welcome.
+Partial content is never assigned to the live registry. Stale workspace cleanup
+and concurrent readers of the legacy shared agent cache remain review items.
+
+No new checks have run for this checkpoint under the requested coding-first
+schedule. Final verification must cover valid/invalid transfer, rollback and
+path remapping, entry failure, repeated Welcome, roster departure, both replica
+consumers, and the full applicable Rust/native/GPU gates. This checkpoint does
+not close Phase 3 or its acceptance criterion.

@@ -8,10 +8,9 @@ impl Game {
             return;
         }
         let mut rows = if let Some(remote) = &self.multiplayer.remote {
-            remote
-                .names
-                .iter()
-                .map(|(id, label)| {
+            remote.session.roster().iter()
+                .map(|(id, presence)| {
+                    let label = super::remote::presence_label(presence);
                     let suffix = if *id == remote.my_id {
                         if remote.role == identity::Role::Player {
                             "  (YOU)".to_string()

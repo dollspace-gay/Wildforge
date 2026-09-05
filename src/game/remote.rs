@@ -116,7 +116,6 @@ impl Game {
                     player_held: Default::default(),
                     player_implement: Default::default(),
                     player_style: Default::default(),
-                    names: Default::default(),
                     sleeping: false,
                     player_lerp: Default::default(),
                     player_age: 0.0,
@@ -203,23 +202,26 @@ impl Game {
             return;
         }
         for msg in msgs {
+            let Some(msg) = r.session.apply_world_message(
+                msg, &mut self.server.world, &mut self.server.time_of_day,
+            ) else {
+                continue;
+            };
             match msg {
+                // Consumed by the shared replica-domain dispatch above.
+                net::S2C::TimeIre { .. } | net::S2C::WeatherCells { .. }
+                | net::S2C::ArcaneCue { .. } | net::S2C::ArcaneItems { .. }
+                | net::S2C::SignText { .. } | net::S2C::SwitchState { .. } => {}
                 net::S2C::Challenge { .. } => {}
                 net::S2C::ModFiles(files) => {
-                    // The host's content, cached and loaded as ours.
                     let cache = PathBuf::from("saves/.remote/mods");
-                    let _ = std::fs::remove_dir_all(&cache);
-                    for (rel, bytes) in files {
-                        if rel.contains("..") {
-                            continue; // no path escapes
+                    match r.session.install_content(&cache, files) {
+                        Ok(registry) => self.content.reg = registry,
+                        Err(error) => {
+                            self.multiplayer.join_status = format!("FAILED: {error}").to_uppercase();
+                            return;
                         }
-                        let p = cache.join(rel);
-                        if let Some(parent) = p.parent() {
-                            let _ = std::fs::create_dir_all(parent);
-                        }
-                        let _ = std::fs::write(p, bytes);
                     }
-                    self.content.reg = Arc::new(registry::load(&cache));
                     let mut atlas = atlas::build_atlas(
                         &self.content.reg.tex_files,
                         &atlas::pack_chain(&self.active_pack_id()),
@@ -288,10 +290,6 @@ impl Game {
                             "ATProto verified from the server's bounded outage cache.".into(),
                         );
                     }
-                    r.names = roster
-                        .into_iter()
-                        .map(|presence| (presence.id, presence_label(&presence)))
-                        .collect();
                     let content = ContentMap::new(Arc::clone(&self.content.reg), palette, items);
                     self.server = server::Server::new(world, time, 7);
                     self.renderer.clear_chunks();
@@ -304,6 +302,16 @@ impl Game {
                         self.player.pos,
                         std::time::Instant::now(),
                     );
+                    r.session.set_roster(roster);
+                    r.players.clear();
+                    r.player_positions.clear();
+                    r.player_held.clear();
+                    r.player_implement.clear();
+                    r.player_style.clear();
+                    r.player_lerp.clear();
+                    r.mob_lerp.clear();
+                    r.player_age = 0.0;
+                    r.mob_age = 0.0;
                     r.wants.clear();
                     self.multiplayer.join_status = "PREPARING SAFE WORLD ENTRY...".into();
                 }
@@ -440,9 +448,9 @@ impl Game {
                             },
                         );
                         let name = r
-                            .names
+                            .session.roster()
                             .get(&id)
-                            .cloned()
+                            .map(presence_label)
                             .unwrap_or_else(|| format!("P{id}"));
                         r.players.insert(id, (name, cur.0, cur.1));
                     }
@@ -495,36 +503,6 @@ impl Game {
                     if let Some(items) = r.session.loose_items(part) {
                         self.server.world.replace_loose_items(items);
                     }
-                }
-                net::S2C::TimeIre { time, ire, day } => {
-                    self.server.time_of_day = time;
-                    self.server.world.ire = ire;
-                    self.server.world.day = day;
-                }
-                net::S2C::WeatherCells { side, cells } => {
-                    self.server.world.set_remote_weather(side, cells);
-                }
-                net::S2C::ArcaneCue {
-                    bands,
-                    dominant,
-                    ecology,
-                } => {
-                    self.server
-                        .world
-                        .set_remote_arcane_cue(bands, dominant, ecology);
-                }
-                net::S2C::ArcaneItems {
-                    reset,
-                    charges,
-                    implements,
-                    apparatus,
-                } => {
-                    if reset {
-                        self.server.world.clear_remote_implement_snapshot();
-                    }
-                    self.server.world.extend_remote_arcane_items(charges);
-                    self.server.world.extend_remote_implements(implements);
-                    self.server.world.extend_remote_apparatus(apparatus);
                 }
                 net::S2C::DiscoveryReport(record) => {
                     self.present_discovery_record(&record);
@@ -666,12 +644,6 @@ impl Game {
                 net::S2C::PlayerState(state) => {
                     self.apply_remote_player_state(r.session.content(), state, false);
                 }
-                net::S2C::SignText { pos, lines } => {
-                    self.server.world.insert_block_entity_at(
-                        pos,
-                        world::BlockEntity::Sign(world::SignState { lines }),
-                    );
-                }
                 net::S2C::SettlementDelivery {
                     settlement,
                     item,
@@ -704,18 +676,6 @@ impl Game {
                     self.toast(format!(
                         "{settlement} appreciates the {item} (+{rep} standing)."
                     ));
-                }
-                net::S2C::SwitchState { pos, selected } => {
-                    let selected = match selected & 3 {
-                        0 => crate::planet::Direction4::East,
-                        1 => crate::planet::Direction4::North,
-                        2 => crate::planet::Direction4::West,
-                        _ => crate::planet::Direction4::South,
-                    };
-                    self.server.world.insert_block_entity_at(
-                        pos,
-                        world::BlockEntity::Switch(world::SwitchState { selected }),
-                    );
                 }
                 net::S2C::MobCargo { id, slots } => {
                     // The host's pack truth: mirror it onto the local
@@ -873,17 +833,20 @@ impl Game {
                 net::S2C::Toast(msg) => self.toast(msg),
                 net::S2C::Chat { from, msg } => self.toast(format!("{from}: {msg}")),
                 net::S2C::Joined { presence } => {
-                    r.names.insert(presence.id, presence_label(&presence));
                     if presence.id != r.my_id {
                         self.toast(format!("{} joined.", presence.display_name));
                     }
+                    r.session.joined(presence);
                 }
                 net::S2C::Left { id } => {
                     r.players.remove(&id);
                     r.player_positions.remove(&id);
                     r.player_lerp.remove(&id);
-                    if let Some(n) = r.names.remove(&id) {
-                        self.toast(format!("{n} left."));
+                    r.player_held.remove(&id);
+                    r.player_implement.remove(&id);
+                    r.player_style.remove(&id);
+                    if let Some(presence) = r.session.left(id) {
+                        self.toast(format!("{} left.", presence_label(&presence)));
                     }
                 }
                 net::S2C::RoleChanged { role } => {
@@ -983,7 +946,7 @@ impl Game {
     }
 }
 
-fn presence_label(presence: &net::PlayerPresence) -> String {
+pub(super) fn presence_label(presence: &net::PlayerPresence) -> String {
     let handle = presence
         .handle
         .as_deref()

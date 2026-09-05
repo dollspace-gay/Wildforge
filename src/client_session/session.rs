@@ -1,5 +1,6 @@
 //! One owner resets protocol interpretation and queued work at world boundaries.
 
+use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Instant;
 
@@ -7,6 +8,7 @@ use super::admission::{Admission, AdmissionError, PresentationRequirement};
 use super::palette::ContentMap;
 use super::replica::EntitySnapshots;
 use super::terrain::TerrainInbox;
+use super::transfer::{self, TransferError};
 use crate::chunk::ChunkPos;
 use crate::entity::ItemEntity;
 use crate::mobs::{Mob, Projectile};
@@ -20,6 +22,7 @@ pub(crate) struct GuestSession {
     entities: EntitySnapshots,
     admission: Admission,
     terrain: TerrainInbox,
+    roster: HashMap<u32, crate::net::PlayerPresence>,
 }
 
 impl GuestSession {
@@ -33,6 +36,7 @@ impl GuestSession {
             entities: EntitySnapshots::default(),
             admission: Admission::new(requirement, now),
             terrain: TerrainInbox::default(),
+            roster: HashMap::new(),
         }
     }
 
@@ -48,7 +52,44 @@ impl GuestSession {
         self.content = content;
         self.entities = EntitySnapshots::default();
         self.terrain = TerrainInbox::default();
+        self.roster.clear();
         self.admission.begin(world_name, spawn, now);
+    }
+
+    pub(crate) fn install_content(
+        &mut self,
+        cache: &std::path::Path,
+        files: Vec<(String, Vec<u8>)>,
+    ) -> Result<Arc<Registry>, TransferError> {
+        let result = if self.admission.accepts_content() {
+            transfer::install(cache, files)
+        } else {
+            Err(TransferError::UnexpectedPhase)
+        };
+        if result.is_err() {
+            self.close();
+        }
+        result
+    }
+
+    pub(crate) fn set_roster(&mut self, players: Vec<crate::net::PlayerPresence>) {
+        if self.admission.receives_world() {
+            self.roster = players.into_iter().map(|presence| (presence.id, presence)).collect();
+        }
+    }
+
+    pub(crate) fn roster(&self) -> &HashMap<u32, crate::net::PlayerPresence> {
+        &self.roster
+    }
+
+    pub(crate) fn joined(&mut self, presence: crate::net::PlayerPresence) {
+        if self.admission.receives_world() {
+            self.roster.insert(presence.id, presence);
+        }
+    }
+
+    pub(crate) fn left(&mut self, id: u32) -> Option<crate::net::PlayerPresence> {
+        self.roster.remove(&id)
     }
 
     pub(crate) fn content(&self) -> &ContentMap {
@@ -86,6 +127,17 @@ impl GuestSession {
     pub(crate) fn falling(&mut self, part: Snapshot<FallSnap>) -> Option<Vec<FallingBlock>> {
         let (entities, content) = self.entity_input()?;
         entities.falling(part, content)
+    }
+
+    /// Apply shared world-domain messages synchronously. The caller receives
+    /// only messages that still need its presentation or control policy.
+    pub(crate) fn apply_world_message(
+        &self,
+        message: crate::net::S2C,
+        world: &mut World,
+        time_of_day: &mut f32,
+    ) -> Option<crate::net::S2C> {
+        super::events::apply_world(message, world, time_of_day, self.admission.receives_world())
     }
 
     pub(crate) fn admission(&self) -> &Admission {
@@ -134,6 +186,7 @@ impl GuestSession {
     pub(crate) fn close(&mut self) {
         self.admission.close();
         self.terrain = TerrainInbox::default();
+        self.roster.clear();
         self.entities = EntitySnapshots::default();
     }
 

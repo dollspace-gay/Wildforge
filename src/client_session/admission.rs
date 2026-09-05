@@ -200,6 +200,10 @@ impl Admission {
         matches!(self.phase, Phase::Closed)
     }
 
+    pub(super) fn accepts_content(&self) -> bool {
+        matches!(self.phase, Phase::AwaitingWelcome)
+    }
+
     pub(super) fn receives_world(&self) -> bool {
         matches!(
             self.phase,

@@ -2,10 +2,12 @@
 
 mod admission;
 mod assembly;
+mod events;
 mod palette;
 mod replica;
 mod session;
 mod terrain;
+mod transfer;
 
 pub(crate) use admission::PresentationRequirement;
 #[cfg(test)]

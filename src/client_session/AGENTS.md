@@ -20,3 +20,9 @@ pumps. Do not apply an edit ahead of its chunk or replay it after a later
 snapshot. Preserve batched lighting for contiguous terrain and edit groups.
 Test malformed, partial, duplicate, out-of-order, and reconnect sequences for
 both consumers. Keep new modules near 400 lines and document new subdirectories.
+
+Content transfer must finish and validate before publishing a new registry.
+Keep the existing path/hash convention; do not silently skip malformed paths,
+failed file writes, or rejected definitions. A failed transfer closes admission.
+Presence records belong to the session; interpolation and breadcrumbs are
+adapter policies and must reset when their world changes.

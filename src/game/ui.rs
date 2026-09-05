@@ -159,10 +159,10 @@ impl Game {
         } else if let Some(r) = &self.multiplayer.remote
             && r.role.can_moderate()
         {
-            r.names
+            r.session.roster()
                 .iter()
                 .filter(|(id, _)| **id != 0 && **id != r.my_id)
-                .map(|(id, name)| (*id, name.clone()))
+                .map(|(id, presence)| (*id, super::remote::presence_label(presence)))
                 .collect()
         } else {
             Vec::new()
@@ -1008,10 +1008,8 @@ impl Game {
                     .and_then(|host| host.guest_identity_summary(id))
                     .or_else(|| {
                         let remote = self.multiplayer.remote.as_ref()?;
-                        remote
-                            .names
-                            .get(&id)
-                            .map(|name| format!("{name} | YOUR ROLE {:?}", remote.role))
+                        remote.session.roster().get(&id)
+                            .map(|presence| format!("{} | YOUR ROLE {:?}", super::remote::presence_label(presence), remote.role))
                     })
                     .unwrap_or_else(|| "PLAYER DISCONNECTED".into());
                 ui.text_shadow(
