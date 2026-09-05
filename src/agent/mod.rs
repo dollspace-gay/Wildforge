@@ -54,7 +54,6 @@ pub enum Behavior {
 }
 
 pub struct Agent {
-    client: net::Client,
     pub reg: Arc<Registry>,
     pub world: ReplicaWorld,
     pub my_id: u32,
@@ -138,11 +137,11 @@ impl Agent {
             crate::planet::EntityPos::new(crate::planet::Face::PosZ, half, 80.0, half)
                 .expect("agent default player position is canonical");
         let mut agent = Agent {
-            client,
-            session: GuestSession::new(
+            session: GuestSession::with_client(
                 Arc::clone(&reg),
                 PresentationRequirement::TerrainOnly,
                 std::time::Instant::now(),
+                client,
             ),
             reg,
             world,
@@ -203,7 +202,7 @@ impl Agent {
         // fixed ring of five chunks, which is eighty blocks — it could not
         // path to anywhere it had not already been standing, because the
         // ground under the goal had never been sent to it.
-        agent.client.send(&net::C2S::SetViewDistance {
+        agent.session.send(&net::C2S::SetViewDistance {
             chunks: view_distance,
         });
         Ok(agent)
@@ -217,7 +216,7 @@ impl Agent {
     }
 
     pub fn send(&self, msg: &net::C2S) {
-        self.client.send(msg);
+        self.session.send(msg);
     }
 
     fn apply_player_state(&mut self, state: net::PlayerStateSnap, initial: bool) {
@@ -239,7 +238,7 @@ impl Agent {
     /// One tick: apply the host's stream, advance the standing
     /// behavior, step physics, send our movement upstream.
     pub fn pump(&mut self, dt: f32) {
-        if !self.client.is_connected() {
+        if !self.session.is_connected() {
             if !self.session.admission().is_closed() {
                 self.session.close();
                 let message = if self.in_world {
@@ -252,7 +251,7 @@ impl Agent {
             }
             return;
         }
-        let messages = self.client.poll();
+        let messages = self.session.poll();
         if !messages.is_empty() {
             self.session.note_activity(std::time::Instant::now());
         }
@@ -268,7 +267,7 @@ impl Agent {
             self.move_timer += dt;
             if self.move_timer >= 0.05 {
                 self.move_timer = 0.0;
-                self.client.send_datagram(&net::C2S::Move {
+                self.session.send_datagram(&net::C2S::Move {
                     pos: self.player.pos,
                     yaw: self.yaw,
                     hotbar: self.hotbar as u8,
@@ -281,7 +280,7 @@ impl Agent {
     fn apply_pending_chunks(&mut self) {
         self.session.apply_terrain(&mut self.world, CHUNKS_PER_PUMP);
         if self.session.take_ready() {
-            self.client.send(&net::C2S::EntryReady);
+            self.session.send(&net::C2S::EntryReady);
         }
     }
 

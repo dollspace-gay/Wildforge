@@ -303,7 +303,7 @@ impl Game {
                             4 => net::ModerationAction::Allow,
                             _ => net::ModerationAction::CycleRole,
                         };
-                        remote.client.send(&net::C2S::Moderate {
+                        remote.session.send(&net::C2S::Moderate {
                             target: id,
                             action: moderation_action,
                         });
@@ -600,7 +600,7 @@ impl Game {
                 if self.hit(self.stall_buy_rect()) {
                     self.sfx(Sfx::Click);
                     if let Some(rc) = &self.multiplayer.remote {
-                        rc.client.send(&net::C2S::StallBuy { pos });
+                        rc.session.send(&net::C2S::StallBuy { pos });
                     } else {
                         self.stall_buy_local(pos);
                     }

@@ -154,7 +154,7 @@ impl Game {
             self.survival.health = 0.0;
             if let Some(channel) = self.interaction.working.take() {
                 if let Some(remote) = &self.multiplayer.remote {
-                    remote.client.send(&net::C2S::OperateWorking {
+                    remote.session.send(&net::C2S::OperateWorking {
                         working_id: channel.working_id,
                         held_instance: channel.wand_id,
                         target: channel.target,
@@ -256,7 +256,7 @@ impl Game {
 
     pub(super) fn respawn(&mut self) {
         if let Some(remote) = &self.multiplayer.remote {
-            remote.client.send(&net::C2S::Respawn);
+            remote.session.send(&net::C2S::Respawn);
         }
         // A dungeon death (capability E10) wakes at the party's checkpoint
         // with belongings intact. The host owns run state; a guest falls

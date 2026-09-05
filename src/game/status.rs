@@ -340,7 +340,7 @@ impl Game {
                 if self.survival.eating >= f.eat_time {
                     self.survival.eating = 0.0;
                     if let Some(remote) = &self.multiplayer.remote {
-                        remote.client.send(&net::C2S::EatSelected);
+                        remote.session.send(&net::C2S::EatSelected);
                     }
                     self.survival.hunger = (self.survival.hunger + f.hunger).min(20.0);
                     for (n, add) in self.survival.nutrition.iter_mut().zip(&f.nutrition) {

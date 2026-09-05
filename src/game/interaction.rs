@@ -106,7 +106,7 @@ impl Game {
             return;
         }
         if let Some(remote) = &self.multiplayer.remote {
-            remote.client.send(&net::C2S::CopyObservation {
+            remote.session.send(&net::C2S::CopyObservation {
                 writing_pos,
                 source,
                 record_id,
@@ -173,7 +173,7 @@ impl Game {
         self.ui_state.discovery_selected = [None; 2];
         self.ui_state.discovery_page = 0;
         if let Some(remote) = &self.multiplayer.remote {
-            remote.client.send(&net::C2S::OpenDiscovery {
+            remote.session.send(&net::C2S::OpenDiscovery {
                 holder: destination,
             });
             return;
@@ -207,7 +207,7 @@ impl Game {
             self.ui_state.discovery_copy_target = None;
             self.ui_state.discovery_writing_pos = None;
             remote
-                .client
+                .session
                 .send(&net::C2S::ReadKnowledge { slot: slot as u8 });
             self.sfx(Sfx::Click);
             return;
@@ -361,7 +361,7 @@ impl Game {
         let label = (!self.ui_state.discovery_label.trim().is_empty())
             .then(|| self.ui_state.discovery_label.trim().to_string());
         if let Some(remote) = &self.multiplayer.remote {
-            remote.client.send(&net::C2S::Observe {
+            remote.session.send(&net::C2S::Observe {
                 target: match aim {
                     DiscoveryAim::Region(_) => net::DiscoveryTargetSnap::Region,
                     DiscoveryAim::Block(pos) => net::DiscoveryTargetSnap::Block(pos),
@@ -447,7 +447,7 @@ impl Game {
             })
         });
         if let Some(remote) = &self.multiplayer.remote {
-            remote.client.send(&net::C2S::RunExperiment {
+            remote.session.send(&net::C2S::RunExperiment {
                 pos,
                 kind,
                 ledger_slot: ledger_slot as u8,
@@ -512,7 +512,7 @@ impl Game {
             self.ui_state.discovery_holder = Some(net::RecordHolderSnap::Folio { pos });
             self.ui_state.discovery_copy_target = None;
             self.ui_state.discovery_writing_pos = None;
-            remote.client.send(&net::C2S::OpenDiscovery {
+            remote.session.send(&net::C2S::OpenDiscovery {
                 holder: net::RecordHolderSnap::Folio { pos },
             });
             return;
@@ -540,7 +540,7 @@ impl Game {
 
     pub(super) fn assemble_tuning_lens(&mut self, pos: crate::planet::BlockPos) {
         if let Some(remote) = &self.multiplayer.remote {
-            remote.client.send(&net::C2S::AssembleTuningLens { pos });
+            remote.session.send(&net::C2S::AssembleTuningLens { pos });
             return;
         }
         match self
@@ -568,7 +568,7 @@ impl Game {
             self.interaction.experiment_kind = index;
         }
         if let Some(remote) = &self.multiplayer.remote {
-            remote.client.send(&net::C2S::SetExperimentItem {
+            remote.session.send(&net::C2S::SetExperimentItem {
                 pos,
                 slot: slot as u8,
             });
@@ -588,7 +588,7 @@ impl Game {
         let slot = self.input.hotbar_sel;
         if self.inventory.slots[slot].is_none() {
             if let Some(remote) = &self.multiplayer.remote {
-                remote.client.send(&net::C2S::OperateWorking {
+                remote.session.send(&net::C2S::OperateWorking {
                     working_id: "base:auto_ritual".into(),
                     held_instance: 0,
                     target: crate::workings::WorkingTargetIntent::Ritual { controller: pos },
@@ -628,7 +628,7 @@ impl Game {
         }
         let expected_revision = self.interaction.binding_revisions.get(&pos).copied();
         if let Some(remote) = &self.multiplayer.remote {
-            remote.client.send(&net::C2S::OperateBindingFrame {
+            remote.session.send(&net::C2S::OperateBindingFrame {
                 pos,
                 slot: slot as u8,
                 action: crate::implements::FrameAction::Contextual,
@@ -678,7 +678,7 @@ impl Game {
     ) {
         let expected_revision = self.interaction.alchemy_revisions.get(&pos).copied();
         if let Some(remote) = &self.multiplayer.remote {
-            remote.client.send(&net::C2S::OperateAlchemy {
+            remote.session.send(&net::C2S::OperateAlchemy {
                 pos,
                 expected_revision,
                 action,
@@ -717,7 +717,7 @@ impl Game {
     pub(super) fn use_selected_preparation(&mut self, target: crate::alchemy::AlchemyTarget) {
         let slot = self.input.hotbar_sel;
         if let Some(remote) = &self.multiplayer.remote {
-            remote.client.send(&net::C2S::UsePreparation {
+            remote.session.send(&net::C2S::UsePreparation {
                 slot: slot as u8,
                 target,
             });
@@ -1231,7 +1231,7 @@ impl Game {
             self.ui_state.discovery_copy_target = Some(destination);
             self.ui_state.discovery_writing_pos = Some(writing_pos);
             remote
-                .client
+                .session
                 .send(&net::C2S::OpenDiscovery { holder: source });
             return;
         }
@@ -1388,7 +1388,7 @@ impl Game {
             return;
         }
         if let Some(r) = &mut self.multiplayer.remote {
-            r.client.send(&net::C2S::SleepRequest);
+            r.session.send(&net::C2S::SleepRequest);
             r.sleeping = true;
             self.toast("You settle in, waiting for the others... (move to get up)".to_string());
             return;

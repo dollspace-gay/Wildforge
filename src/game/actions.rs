@@ -300,7 +300,7 @@ impl Game {
     pub(super) fn commit_sign(&mut self, pos: crate::planet::BlockPos) {
         let lines = self.ui_state.sign_lines.clone();
         if let Some(rc) = &self.multiplayer.remote {
-            rc.client.send(&net::C2S::SetSign {
+            rc.session.send(&net::C2S::SetSign {
                 pos,
                 lines: lines.clone(),
             });
@@ -424,7 +424,7 @@ impl Game {
         let dir = self.camera.local_forward();
         let eye = self.player.eye();
         if let Some(r) = &self.multiplayer.remote {
-            r.client.send(&net::C2S::FireProjectile {
+            r.session.send(&net::C2S::FireProjectile {
                 direction: dir,
                 charge,
             });
@@ -620,7 +620,7 @@ impl Game {
                         })
                     };
                     let moved = if let Some(r) = &self.multiplayer.remote {
-                        r.client.send(&net::C2S::Scoop { pos });
+                        r.session.send(&net::C2S::Scoop { pos });
                         true
                     } else if reg.is_lava(b) {
                         self.server.world.set_block_at(pos, AIR);
@@ -656,7 +656,7 @@ impl Game {
                 if self.server.world.get_block_at(pos) == AIR && !self.player.overlaps_block_at(pos)
                 {
                     if let Some(r) = &self.multiplayer.remote {
-                        r.client.send(&net::C2S::Place { pos });
+                        r.session.send(&net::C2S::Place { pos });
                     } else {
                         self.server.world.place_portable_water_at(pos, water_class);
                     }
@@ -679,7 +679,7 @@ impl Game {
                 if self.server.world.get_block_at(pos) == AIR && !self.player.overlaps_block_at(pos)
                 {
                     if let Some(r) = &self.multiplayer.remote {
-                        r.client.send(&net::C2S::Place { pos });
+                        r.session.send(&net::C2S::Place { pos });
                     } else {
                         let lava = reg.lava_for_volume(8);
                         self.server.world.place_block_at(pos, lava);
@@ -827,9 +827,9 @@ impl Game {
                         let kind =
                             crate::discovery::ExperimentKind::ALL[self.interaction.experiment_kind
                                 % crate::discovery::ExperimentKind::ALL.len()];
-                        remote.client.send(&net::C2S::BeginExperiment { pos, kind });
+                        remote.session.send(&net::C2S::BeginExperiment { pos, kind });
                     } else {
-                        remote.client.send(&net::C2S::BeginObserve {
+                        remote.session.send(&net::C2S::BeginObserve {
                             target: match aim {
                                 DiscoveryAim::Region(_) => net::DiscoveryTargetSnap::Region,
                                 DiscoveryAim::Block(pos) => net::DiscoveryTargetSnap::Block(pos),
@@ -891,7 +891,7 @@ impl Game {
                 if let Some(rc) = &self.multiplayer.remote {
                     // The host rolls the find and Gives it straight to
                     // us; the BlockSet echo swaps the remnant out.
-                    rc.client.send(&net::C2S::BrushBlock { pos: target });
+                    rc.session.send(&net::C2S::BrushBlock { pos: target });
                     if !self.creative {
                         self.inventory.wear_tool(&reg, self.input.hotbar_sel);
                     }
@@ -1016,7 +1016,7 @@ impl Game {
                 }
                 if let Some(rc) = &self.multiplayer.remote {
                     // The host counts strikes and Gives the bar.
-                    rc.client.send(&net::C2S::AnvilStrike { pos: target });
+                    rc.session.send(&net::C2S::AnvilStrike { pos: target });
                 } else {
                     let Some(out) = self.server.world.anvil_strike_at(target) else {
                         return;
@@ -1072,7 +1072,7 @@ impl Game {
                 if let Some(r) = &self.multiplayer.remote {
                     // The host is the damage authority; it applies heavy and
                     // backstab and reports the true number back.
-                    r.client.send(&net::C2S::AttackMob { id: mob_id, heavy });
+                    r.session.send(&net::C2S::AttackMob { id: mob_id, heavy });
                     if let Some(mob) = self.server.world.mob_mut(mi) {
                         mob.hurt_flash = 0.35; // feedback
                     }
@@ -1300,7 +1300,7 @@ impl Game {
                         if allow && self.multiplayer.remote.is_some() {
                             // Guests request; the echo applies the change.
                             if let Some(r) = &self.multiplayer.remote {
-                                r.client.send(&net::C2S::Break { pos: target });
+                                r.session.send(&net::C2S::Break { pos: target });
                             }
                             self.survival.hunger = (self.survival.hunger - 0.008).max(0.0);
                             self.sfx(Sfx::Break(self.break_mat(b)));
@@ -1485,7 +1485,7 @@ impl Game {
                     })
                 {
                     if let Some(rc) = &self.multiplayer.remote {
-                        rc.client.send(&net::C2S::HackMob { id: mob_id });
+                        rc.session.send(&net::C2S::HackMob { id: mob_id });
                     } else {
                         self.server.world.hack_mob(mi, &mut self.server.rng);
                     }
@@ -1510,7 +1510,7 @@ impl Game {
                         // Guests request; local change is the
                         // prediction until the snapshot echoes it.
                         if let Some(rc) = &self.multiplayer.remote {
-                            rc.client.send(&net::C2S::FeedMob { id: mob_id });
+                            rc.session.send(&net::C2S::FeedMob { id: mob_id });
                         } else if !self.creative
                             && let Err(error) = self
                                 .server
@@ -1559,7 +1559,7 @@ impl Game {
                     && (self.creative || self.inventory.take_one(self.input.hotbar_sel).is_some())
                 {
                     if let Some(rc) = &self.multiplayer.remote {
-                        rc.client.send(&net::C2S::LeadMob { id: mob_id });
+                        rc.session.send(&net::C2S::LeadMob { id: mob_id });
                     } else if let Some(mob) = self.server.world.mob_mut(mi) {
                         mob.led_by = Some(0);
                     }
@@ -1575,7 +1575,7 @@ impl Game {
                     && (self.creative || self.inventory.take_one(self.input.hotbar_sel).is_some())
                 {
                     if let Some(rc) = &self.multiplayer.remote {
-                        rc.client.send(&net::C2S::SaddleMob { id: mob_id });
+                        rc.session.send(&net::C2S::SaddleMob { id: mob_id });
                     } else if let Some(mob) = self.server.world.mob_mut(mi) {
                         mob.cargo = Some(Default::default());
                     }
@@ -1592,7 +1592,7 @@ impl Game {
                         .is_some_and(|m| m.ridden_by.is_none());
                     if free {
                         if let Some(rc) = &self.multiplayer.remote {
-                            rc.client.send(&net::C2S::RideMob {
+                            rc.session.send(&net::C2S::RideMob {
                                 id: mob_id,
                                 mount: true,
                             });
@@ -1608,7 +1608,7 @@ impl Game {
                 // Open the pack.
                 if tamed && has_cargo {
                     if let Some(rc) = &self.multiplayer.remote {
-                        rc.client.send(&net::C2S::OpenMobCargo { id: mob_id });
+                        rc.session.send(&net::C2S::OpenMobCargo { id: mob_id });
                     } else {
                         self.set_screen(Screen::MobCargo(mob_id));
                     }
@@ -1630,7 +1630,7 @@ impl Game {
                 if is_log {
                     if let Some(rc) = &self.multiplayer.remote {
                         self.inventory.take_one(self.input.hotbar_sel);
-                        rc.client.send(&net::C2S::LightClamp { pos });
+                        rc.session.send(&net::C2S::LightClamp { pos });
                     } else {
                         match self.server.world.try_light_clamp_at(pos) {
                             Ok(n) => {
@@ -1691,7 +1691,7 @@ impl Game {
                 }
                 let dir = self.camera.local_forward();
                 if let Some(rc) = &self.multiplayer.remote {
-                    rc.client.send(&net::C2S::FireProjectile {
+                    rc.session.send(&net::C2S::FireProjectile {
                         direction: dir,
                         charge: 1.0,
                     });
@@ -1943,7 +1943,7 @@ impl Game {
                     self.input.right_held = false;
                     if let Some(rc) = &self.multiplayer.remote {
                         // The host owns the switch; it echoes the selection.
-                        rc.client.send(&net::C2S::ToggleSwitch { pos: h.block });
+                        rc.session.send(&net::C2S::ToggleSwitch { pos: h.block });
                         return;
                     }
                     self.server.world.toggle_switch(h.block);
@@ -1965,7 +1965,7 @@ impl Game {
                         return;
                     };
                     if let Some(rc) = &self.multiplayer.remote {
-                        rc.client.send(&net::C2S::DepotDeposit { pos: h.block });
+                        rc.session.send(&net::C2S::DepotDeposit { pos: h.block });
                         return;
                     }
                     let item_name = reg.item(held.item).name.clone();
@@ -2034,7 +2034,7 @@ impl Game {
                     self.input.right_held = false;
                     let name = s.trim_start_matches("dungeon_entry:").to_string();
                     if let Some(rc) = &self.multiplayer.remote {
-                        rc.client.send(&net::C2S::DungeonUse {
+                        rc.session.send(&net::C2S::DungeonUse {
                             pos: h.block,
                             kind: 0,
                         });
@@ -2053,7 +2053,7 @@ impl Game {
                     self.input.action_cooldown = 0.5;
                     self.input.right_held = false;
                     if let Some(rc) = &self.multiplayer.remote {
-                        rc.client.send(&net::C2S::DungeonUse {
+                        rc.session.send(&net::C2S::DungeonUse {
                             pos: h.block,
                             kind: 1,
                         });
@@ -2072,7 +2072,7 @@ impl Game {
                     self.input.action_cooldown = 0.5;
                     self.input.right_held = false;
                     if let Some(rc) = &self.multiplayer.remote {
-                        rc.client.send(&net::C2S::DungeonUse {
+                        rc.session.send(&net::C2S::DungeonUse {
                             pos: h.block,
                             kind: 2,
                         });
@@ -2085,7 +2085,7 @@ impl Game {
                 Some("chest") if self.input.action_cooldown <= 0.0 => {
                     self.input.action_cooldown = 0.3;
                     if let Some(rc) = &self.multiplayer.remote {
-                        rc.client.send(&net::C2S::OpenContainer { pos: h.block });
+                        rc.session.send(&net::C2S::OpenContainer { pos: h.block });
                         return;
                     }
                     let e = self.server.world.ensure_block_entity_at(
@@ -2292,7 +2292,7 @@ impl Game {
                 Some("offering") if self.input.action_cooldown <= 0.0 => {
                     self.input.action_cooldown = 0.3;
                     if let Some(rc) = &self.multiplayer.remote {
-                        rc.client.send(&net::C2S::OpenContainer { pos: h.block });
+                        rc.session.send(&net::C2S::OpenContainer { pos: h.block });
                         return;
                     }
                     self.server.world.ensure_block_entity_at(
@@ -2306,7 +2306,7 @@ impl Game {
                     self.input.action_cooldown = 0.3;
                     self.input.right_held = false;
                     if let Some(rc) = &self.multiplayer.remote {
-                        rc.client.send(&net::C2S::OpenContainer { pos: h.block });
+                        rc.session.send(&net::C2S::OpenContainer { pos: h.block });
                         return;
                     }
                     // First open claims an unowned counter for the
@@ -2428,7 +2428,7 @@ impl Game {
                         self.input.action_cooldown = 0.25;
                         let stack = self.inventory.slots[self.input.hotbar_sel].unwrap();
                         if let Some(rc) = &self.multiplayer.remote {
-                            rc.client.send(&net::C2S::AnvilPut { pos: h.block });
+                            rc.session.send(&net::C2S::AnvilPut { pos: h.block });
                             return;
                         }
                         let one = ItemStack { count: 1, ..stack };
@@ -2445,7 +2445,7 @@ impl Game {
                     if held.is_none() {
                         self.input.action_cooldown = 0.3;
                         if let Some(rc) = &self.multiplayer.remote {
-                            rc.client.send(&net::C2S::AnvilTake { pos: h.block });
+                            rc.session.send(&net::C2S::AnvilTake { pos: h.block });
                             return;
                         }
                         if let Some(st) = self.server.world.anvil_take_at(h.block) {
@@ -2608,7 +2608,7 @@ impl Game {
                 {
                     self.input.action_cooldown = 0.3;
                     if let Some(rc) = &self.multiplayer.remote {
-                        rc.client.send(&net::C2S::OpenContainer { pos: h.block });
+                        rc.session.send(&net::C2S::OpenContainer { pos: h.block });
                         return;
                     }
                     let kind = reg
@@ -2639,7 +2639,7 @@ impl Game {
                     // player crafts them from the inventory.
                     self.input.right_held = false;
                     if let Some(rc) = &self.multiplayer.remote {
-                        rc.client.send(&net::C2S::OpenContainer { pos: h.block });
+                        rc.session.send(&net::C2S::OpenContainer { pos: h.block });
                         return;
                     }
                     let kind = reg
@@ -2749,7 +2749,7 @@ impl Game {
                         if self.creative || self.inventory.take_one(self.input.hotbar_sel).is_some()
                         {
                             if let Some(r) = &self.multiplayer.remote {
-                                r.client.send(&net::C2S::Place { pos });
+                                r.session.send(&net::C2S::Place { pos });
                             }
                             self.input.action_cooldown = 0.22;
                             self.sfx(Sfx::Place);
@@ -2847,7 +2847,7 @@ impl Game {
         {
             let channel = self.interaction.working.take().unwrap();
             if let Some(remote) = &self.multiplayer.remote {
-                remote.client.send(&net::C2S::OperateWorking {
+                remote.session.send(&net::C2S::OperateWorking {
                     working_id: channel.working_id,
                     held_instance: channel.wand_id,
                     target: channel.target,
@@ -2875,7 +2875,7 @@ impl Game {
                     let target = channel.target;
                     let stable_id = channel.stable_id;
                     if let Some(remote) = &self.multiplayer.remote {
-                        remote.client.send(&net::C2S::OperateWorking {
+                        remote.session.send(&net::C2S::OperateWorking {
                             working_id,
                             held_instance: wand_id,
                             target,
@@ -2893,7 +2893,7 @@ impl Game {
             }
             let channel = self.interaction.working.take().unwrap();
             if let Some(remote) = &self.multiplayer.remote {
-                remote.client.send(&net::C2S::OperateWorking {
+                remote.session.send(&net::C2S::OperateWorking {
                     working_id: channel.working_id,
                     held_instance: channel.wand_id,
                     target: channel.target,
@@ -3110,7 +3110,7 @@ impl Game {
             WorkingIntent::Start
         };
         if let Some(remote) = &self.multiplayer.remote {
-            remote.client.send(&net::C2S::OperateWorking {
+            remote.session.send(&net::C2S::OperateWorking {
                 working_id: working_id.clone(),
                 held_instance: wand.arcane_id,
                 target,

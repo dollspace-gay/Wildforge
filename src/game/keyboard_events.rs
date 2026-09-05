@@ -56,7 +56,7 @@ impl Game {
                     if !msg.is_empty() {
                         let me = self.config.display_name.clone();
                         if let Some(r) = &self.multiplayer.remote {
-                            r.client.send(&net::C2S::Chat(msg.clone()));
+                            r.session.send(&net::C2S::Chat(msg.clone()));
                         } else if msg.starts_with('!') {
                             // Capture & stamp commands (spec Part 1.4)
                             // run against the local/host world and

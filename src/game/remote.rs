@@ -128,13 +128,13 @@ impl Game {
                     identity::AdmissionPolicy::Allowlist => "ALLOWLIST ONLY",
                 };
                 self.multiplayer.remote = Some(Remote {
-                    client,
                     my_id: 0,
                     role: identity::Role::Player,
-                    session: GuestSession::new(
+                    session: GuestSession::with_client(
                         Arc::clone(&self.content.reg),
                         PresentationRequirement::FirstFrame,
                         std::time::Instant::now(),
+                        client,
                     ),
                     players: Default::default(),
                     player_positions: Default::default(),
@@ -187,7 +187,7 @@ impl Game {
                     if self.server.world.has_chunk(pos) || !r.wants.insert(pos) {
                         continue;
                     }
-                    r.client.send(&net::C2S::RequestChunk {
+                    r.session.send(&net::C2S::RequestChunk {
                         face: pos.face() as u8,
                         u: pos.u(),
                         v: pos.v(),
@@ -207,7 +207,7 @@ impl Game {
         let Some(mut r) = self.multiplayer.remote.take() else {
             return;
         };
-        if !r.client.is_connected() {
+        if !r.session.is_connected() {
             r.session.close();
             if self.in_world {
                 self.toast("Disconnected from host.".to_string());
@@ -218,7 +218,7 @@ impl Game {
             }
             return;
         }
-        let msgs = r.client.poll();
+        let msgs = r.session.poll();
         if !msgs.is_empty() {
             r.session.note_activity(std::time::Instant::now());
         } else if !self.in_world && r.session.admission().timed_out(std::time::Instant::now()) {
@@ -908,7 +908,7 @@ impl Game {
             }
         }
         if r.session.take_ready() {
-            r.client.send(&net::C2S::EntryReady);
+            r.session.send(&net::C2S::EntryReady);
         }
         // Snapshot smoothing: glide players and mobs along their spans,
         // dead-reckon bolts, advance walk cycles from apparent speed.
@@ -946,7 +946,7 @@ impl Game {
             self.multiplayer.move_timer += dt;
             if self.multiplayer.move_timer >= 0.05 {
                 self.multiplayer.move_timer = 0.0;
-                r.client.send_datagram(&net::C2S::Move {
+                r.session.send_datagram(&net::C2S::Move {
                     pos: self.player.pos,
                     yaw: self.camera.yaw,
                     hotbar: self.input.hotbar_sel as u8,
@@ -959,7 +959,7 @@ impl Game {
             let want = self.config.view_dist;
             if want != r.asked_view_dist {
                 r.asked_view_dist = want;
-                r.client
+                r.session
                     .send(&net::C2S::SetViewDistance { chunks: want as u8 });
             }
             // Ask for terrain we are missing inside the granted radius.

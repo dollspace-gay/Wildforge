@@ -1171,7 +1171,7 @@ impl Game {
                 if self.multiplayer.remote.as_ref().is_some_and(|r| r.sleeping) {
                     let r = self.multiplayer.remote.as_mut().unwrap();
                     r.sleeping = false;
-                    r.client.send(&net::C2S::SleepCancel);
+                    r.session.send(&net::C2S::SleepCancel);
                     self.toast("You get up.".to_string());
                 }
             }
@@ -1210,7 +1210,7 @@ impl Game {
                 if gone || input.jump {
                     if !gone && self.multiplayer.remote.is_some() {
                         if let Some(rc) = &self.multiplayer.remote {
-                            rc.client.send(&net::C2S::RideMob {
+                            rc.session.send(&net::C2S::RideMob {
                                 id: bid,
                                 mount: false,
                             });

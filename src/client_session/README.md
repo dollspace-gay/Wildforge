@@ -62,3 +62,9 @@ native guest evidence. Read [AGENTS.md](AGENTS.md) before changing this module.
 Incoming world updates now target `ReplicationTarget` and admission queries
 need only `TerrainRead`. The agent supplies `ReplicaWorld`; the graphical
 World adapter remains an explicit temporary migration boundary.
+
+`connection.rs` puts QUIC ownership, polling, and reliable/datagram sends in the
+same GuestSession lifetime for graphics and agents. Dropping that owner invokes
+the transport's existing drain, endpoint close, and task join. Admission closure
+still clears protocol work; connection teardown retains its existing drop timing.
+Disconnected sessions support deterministic protocol fixtures without a socket.

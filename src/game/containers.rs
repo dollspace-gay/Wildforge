@@ -32,7 +32,7 @@ impl Game {
 
     pub(super) fn inventory_click(&mut self, craft: bool, slot: usize, right: bool) {
         if let Some(remote) = &self.multiplayer.remote {
-            remote.client.send(&net::C2S::InventoryClick {
+            remote.session.send(&net::C2S::InventoryClick {
                 area: if craft {
                     net::InventoryArea::Craft
                 } else {
@@ -67,7 +67,7 @@ impl Game {
             return;
         }
         if let Some(remote) = &self.multiplayer.remote {
-            remote.client.send(&net::C2S::CraftResult {
+            remote.session.send(&net::C2S::CraftResult {
                 size: self.interaction.craft_size as u8,
             });
         }
@@ -143,7 +143,7 @@ impl Game {
         }
         let reg = self.content.reg.clone();
         if let Some(rc) = &self.multiplayer.remote {
-            rc.client.send(&net::C2S::MobCargoClick {
+            rc.session.send(&net::C2S::MobCargoClick {
                 id: mob_id,
                 slot: slot as u8,
                 right,
@@ -211,7 +211,7 @@ impl Game {
         }
         let reg = self.content.reg.clone();
         if let Some(rc) = &self.multiplayer.remote {
-            rc.client.send(&net::C2S::ContainerClick {
+            rc.session.send(&net::C2S::ContainerClick {
                 pos,
                 slot: slot as u8,
                 right,
@@ -337,7 +337,7 @@ impl Game {
         };
         if let Some(rc) = &self.multiplayer.remote {
             self.inventory.take_one(slot);
-            rc.client.send(&net::C2S::LightBloomery { pos });
+            rc.session.send(&net::C2S::LightBloomery { pos });
             return;
         }
         let block = self.server.world.get_block_at(pos);
@@ -525,7 +525,7 @@ impl Game {
 
     pub(super) fn armor_click(&mut self, i: usize) {
         if let Some(remote) = &self.multiplayer.remote {
-            remote.client.send(&net::C2S::InventoryClick {
+            remote.session.send(&net::C2S::InventoryClick {
                 area: net::InventoryArea::Armor,
                 slot: i as u8,
                 right: false,
@@ -586,7 +586,7 @@ impl Game {
         let Some(r) = &self.multiplayer.remote else {
             return;
         };
-        r.client.send(&net::C2S::ContainerClick {
+        r.session.send(&net::C2S::ContainerClick {
             pos,
             slot: slot as u8,
             right,
@@ -723,7 +723,7 @@ impl Game {
                     if let Some(rc) = &self.multiplayer.remote {
                         // The host validates both ids against its own
                         // registry before dispatching anything.
-                        rc.client.send(&net::C2S::ScreenClick {
+                        rc.session.send(&net::C2S::ScreenClick {
                             screen: id.clone(),
                             action: action.clone(),
                         });

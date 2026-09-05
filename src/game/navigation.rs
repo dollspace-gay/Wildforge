@@ -196,7 +196,7 @@ impl Game {
                 | Screen::Stall(_)
         ) && let Some(r) = &self.multiplayer.remote
         {
-            r.client.send(&net::C2S::CloseContainer);
+            r.session.send(&net::C2S::CloseContainer);
         }
         // Leaving the inventory returns the cursor-held stack and craft grid.
         if self.ui_state.screen == Screen::Inventory

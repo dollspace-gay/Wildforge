@@ -1582,3 +1582,17 @@ No validation command ran. Final checks must compare authority/replica reads,
 legacy and current wire planes/light, support updates, weather fallback, entity
 identity/remapping, admission and reconnect, and native agent gameplay. Compiler
 visibility/import checks and existing agent fixture adaptation remain deferred.
+
+## Shared guest transport lifetime (coding checkpoint; unverified)
+
+GuestSession now owns the connected QUIC client and outgoing reliable/datagram
+surface. Graphical request adapters and agent work send through that owner;
+neither retains a separate client field. Polling and connection state use the
+same owner, while admission closure and transport drop timing are unchanged.
+Dropping the session invokes the existing reliable drain/endpoint close/task
+join. Protocol-only fixtures retain the disconnected constructor.
+
+No validation ran. Final native teardown, queued reliable ordering, movement
+datagrams, admission failure, reconnect, and ordinary UI/agent request scenarios
+must exercise this lifetime. Graphical replica and remaining ownership work are
+still implementation, not accepted phase completion.

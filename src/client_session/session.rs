@@ -18,6 +18,8 @@ use crate::registry::{BlockId, Registry};
 use crate::world::{FallingBlock, ReplicationTarget, TerrainRead};
 
 pub(crate) struct GuestSession {
+    // Dropping the session drains and joins the owned QUIC transport.
+    pub(super) connection: Option<crate::net::Client>,
     content: ContentMap,
     entities: EntitySnapshots,
     admission: Admission,
@@ -32,6 +34,7 @@ impl GuestSession {
         now: Instant,
     ) -> Self {
         Self {
+            connection: None,
             content: ContentMap::empty(registry),
             entities: EntitySnapshots::default(),
             admission: Admission::new(requirement, now),

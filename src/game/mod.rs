@@ -301,7 +301,6 @@ enum DiscoveryAim {
 
 /// Guest-side connection state.
 struct Remote {
-    client: net::Client,
     my_id: u32,
     role: identity::Role,
     session: crate::client_session::GuestSession,
