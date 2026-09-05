@@ -676,7 +676,7 @@ struct Game {
     /// validates the complete atlas off-thread before entry.
     world_details: std::collections::HashMap<String, String>,
     world_problems: Vec<(String, String)>,
-    gen_pool: Option<streaming::GenPool>,
+    gen_pool: Option<crate::terrain_jobs::TerrainJobs>,
     mesh_pool: Option<streaming::MeshPool>,
     /// Start of this frame's streaming work (shared adopt+mesh budget).
     stream_t0: std::time::Instant,

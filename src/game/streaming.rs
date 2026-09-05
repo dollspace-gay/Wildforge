@@ -8,13 +8,6 @@ use std::collections::HashSet;
 use std::sync::mpsc::{Receiver, Sender, channel};
 use std::sync::{Arc, Mutex};
 
-/// A pool of background chunk generators for the current world.
-pub(super) struct GenPool {
-    pub(super) req: Sender<ChunkPos>,
-    pub(super) done: Receiver<(ChunkPos, crate::chunk::Chunk, bool)>,
-    pub(super) in_flight: HashSet<ChunkPos>,
-}
-
 struct MeshJob {
     input: mesher::ChunkMeshInput,
     variants: atlas::TileVariants,
@@ -68,59 +61,8 @@ impl MeshPool {
     }
 }
 
-impl GenPool {
-    pub(super) fn new(
-        seed: u32,
-        reg: Arc<Registry>,
-        atlas: Option<Arc<crate::planet_atlas::PlanetAtlas>>,
-        loader: crate::world::ChunkLoader,
-    ) -> GenPool {
-        let (req, req_rx) = channel::<ChunkPos>();
-        let (done_tx, done) = channel();
-        let req_rx = Arc::new(Mutex::new(req_rx));
-        // World generation is memory-heavy as well as CPU-heavy. Consuming
-        // every logical core starved rendering, meshing, and the simulation
-        // during the exact period when the player first starts walking.
-        // Half the machine (up to eight workers) keeps terrain arriving while
-        // reserving real headroom for a responsive game.
-        let workers = std::thread::available_parallelism()
-            .map(|n| (n.get() / 2).clamp(1, 8))
-            .unwrap_or(2);
-        for _ in 0..workers {
-            let rx = Arc::clone(&req_rx);
-            let tx = done_tx.clone();
-            let reg = reg.clone();
-            let atlas = atlas.clone();
-            let loader = loader.clone();
-            std::thread::spawn(move || {
-                let generator = atlas.map_or_else(
-                    || crate::worldgen::Generator::new(seed, &reg),
-                    |atlas| crate::worldgen::Generator::with_atlas(seed, &reg, atlas),
-                );
-                loop {
-                    let pos = {
-                        let Ok(guard) = rx.lock() else { return };
-                        let Ok(pos) = guard.recv() else { return };
-                        pos
-                    };
-                    let loaded = loader.load(pos);
-                    let fresh = loaded.is_none();
-                    let chunk = loaded.unwrap_or_else(|| generator.generate(pos, &reg));
-                    if tx.send((pos, chunk, fresh)).is_err() {
-                        return; // the world moved on
-                    }
-                }
-            });
-        }
-        GenPool {
-            req,
-            done,
-            in_flight: HashSet::new(),
-        }
-    }
-}
-
 use super::*;
+use crate::terrain_jobs::Priority;
 
 impl Game {
     fn effective_view_dist(&self) -> i32 {
@@ -221,20 +163,19 @@ impl Game {
         if let Some(pool) = &mut self.gen_pool {
             // Keep the workers fed a nearest-first pipeline.
             for (_, pos) in wanted.iter().take(ask) {
-                if pool.in_flight.len() >= flight {
+                if pool.pending_count() >= flight {
                     break;
                 }
-                if pool.in_flight.insert(*pos) {
-                    let _ = pool.req.send(*pos);
-                }
+                pool.request(*pos, Priority::Ordinary, flight);
             }
             // Adopt what's ready on a time budget. Lighting and seam repair
             // still belong to the authoritative world on this thread, while
             // pure mesh construction runs in the bounded pool below.
             let t0 = self.stream_t0;
-            while let Ok((pos, chunk, fresh)) = pool.done.try_recv() {
-                pool.in_flight.remove(&pos);
-                if self.server.world.adopt_prepared(pos, chunk, fresh) {
+            while let Some(prepared) = pool.try_ready() {
+                let pos = prepared.position;
+                let fresh = prepared.is_fresh();
+                if self.server.world.adopt_prepared(pos, prepared.chunk, fresh) {
                     // New terrain changes neighbors' faces at the border.
                     for (dx, dz) in [(-1, 0), (1, 0), (0, -1), (0, 1)] {
                         self.server.world.mark_chunk_dirty(pos.offset(dx, dz));

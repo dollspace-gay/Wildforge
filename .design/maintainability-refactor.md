@@ -7,9 +7,11 @@ authoritative player operations, and world domains. Keep ordinary source files
 around 400 lines, use 500 lines as a soft review limit, and continuously report
 copy/paste candidates. Deliver small, tested slices that preserve the game.
 
-Status: proposed migration; the advisory linter and its tests are implemented.
-The architecture migration has not begun. Prepared on 2026-09-05 from the
-working tree based on `8c1ec40`, including the pending agent/wildlife repairs.
+Status: implementation in progress on `refactor/maintainable-engine`.
+The user subsequently authorized the full migration and directory guidance.
+Track completed slices and remaining criteria in [the progress record](maintainability-progress.md).
+Originally prepared on 2026-09-05 from the working tree based on `8c1ec40`,
+including the then-pending agent/wildlife repairs.
 This follows the completed July work in [the modularization plan](../docs/modularization-plan.md).
 That document's historical sizes and protocol versions are not this baseline.
 
@@ -351,14 +353,18 @@ single-package starting point, and first terrain-service slice follow the
 discussion. Renamed-clone analysis, syntax-aware complexity tooling, and later
 merge enforcement remain explicit future evaluations, not implemented features.
 
-## Out of Scope
+## Scope boundaries
 
-- Executing the architecture migration in this planning change.
+The original planning change excluded execution and local runtime work. The
+subsequent implementation goal authorizes the migration, local checkpoints,
+and controlled verification. Publishing and unrelated gameplay changes remain
+outside this work.
+
 - Changing terrain appearance, ecology balance, or player-facing mechanics.
 - Replacing the engine, introducing an ECS, or forcing async simulation.
 - Reformatting or splitting the entire repository to satisfy a line counter.
 - Automatically deduplicating code or changing save/wire versions.
-- Starting game services, committing, publishing, or launching agents.
+- Publishing changes or launching delegated agents without authorization.
 
 ## Tooling delivery and verification
 
@@ -375,7 +381,8 @@ Node toolchain are required. It scans tracked and unignored new `.rs`, `.py`,
 installed test mods, and build products are excluded by Git's existing rules.
 Finding debt exits successfully; scanner/configuration failures exit nonzero.
 The CI job tests the analyzer and prints its advisory report independently of
-the existing Rust gates. Architecture extraction remains pending.
+the existing Rust gates. The delivery results below describe the original
+planning checkpoint; current implementation evidence is in the progress record.
 
 Delivery checks: 18 analyzer tests passed on Python 3.12.13 and 3.14.7;
 both full-tree scans found 103 files over 500 lines and 71 clone candidate

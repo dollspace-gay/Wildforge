@@ -142,11 +142,14 @@ impl Game {
         self.renderer.clear_chunks();
         // Background generators for this world's seed (heavy terrain
         // math off the main thread; guests never generate).
-        self.gen_pool = Some(crate::game::streaming::GenPool::new(
-            world.seed,
-            self.content.reg.clone(),
-            world.planet_atlas(),
-            world.chunk_loader(),
+        self.gen_pool = Some(crate::terrain_jobs::TerrainJobs::new(
+            crate::terrain_jobs::TerrainContext::new(
+                world.seed,
+                Arc::clone(&self.content.reg),
+                world.planet_atlas(),
+                world.chunk_loader(),
+            ),
+            crate::terrain_jobs::WorkerPolicy::Interactive,
         ));
         self.mesh_pool = Some(crate::game::streaming::MeshPool::new());
         self.server = server::Server::new(world, 0.3, self.rng ^ 0x5ee1);
