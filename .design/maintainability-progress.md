@@ -662,3 +662,60 @@ and the entire Rust manifest validator passes against that completed diagnostic
 dataset and its original source snapshot. Two native-identity regression tests
 and all 35 Python tests pass. The temporary external-dataset diagnostic hook was
 removed before committing; its logs and captured inputs remain in working storage.
+
+## Native GPU campaign qualified — 2026-09-05
+
+The complete replacement campaign passes against clean candidate `74fec843`
+and clean `main` baseline `8c1ec408`. Its 92 native captures comprise 52 visual
+scenes and 40 timing samples, with no retries in this final run. All captures
+record the same NVIDIA GeForce RTX 5070 Ti Laptop GPU, discrete Vulkan backend,
+and atlas content identity `adbd53f4372ff5f0`. All six rain scenes record actual
+precipitation. Both independently opened geode fixtures retain balanced material
+accounting, successful save/reload, and unchanged source inputs.
+
+The foundation repeatability comparison, both strata readability reports, both
+geode composition reports, all four performance reports, and motion qualification
+pass their existing budgets. Recorded median differences in milliseconds are:
+
+| Comparison | Draw difference / budget | Simulation difference / budget |
+| --- | --- | --- |
+| Strata candidate vs baseline | +0.080128 / 0.30 | -0.10 / 0.10 |
+| Closeout strata vs baseline | -0.014620 / 0.30 | +0.12 / 1.00 |
+| Opened vs sealed geode | +0.005883 / 0.20 | -0.032965 / 0.10 |
+| Closeout opened vs sealed geode | -0.031134 / 0.20 | -0.022040 / 0.10 |
+
+Strata simulation differences use the verifier's existing 0.01 ms precision.
+These are recorded game draw/simulation observations, not GPU timestamps or a
+general streaming benchmark. No builds or other campaign analysis ran during
+the timing interval.
+
+Both native WASD walks completed normal shutdown and supplied 28 F2 frames each.
+All 56 frame hashes were checked and all frames were inspected in ordered contact
+sheets, with representative approach/return frames also inspected at full scene
+size. The reviewed samples show no shimmer, unloaded chunk faces, or abrupt
+reveals. Maximum static-hold luminance differences are 0.000197405 for strata
+and 0.003714961 for the geode, below the unchanged 0.050 budget. Water and torch
+animation remain visible. This is sampled motion evidence, not continuous video
+or an unbounded travel test.
+
+The selected [campaign records](../screenshots/qualification-20260905/README.md)
+include 205 small metadata, report, execution, and guidance files. Original
+August evidence and failed/superseded attempts remain intact. Frozen binaries,
+fixture inventories, raw images, input traces, and process results remain under
+`target/maintainability/visual-campaign-20260905/campaign-5/`. The captured source
+revision is retained in branch ancestry. All eight visual tests now pass,
+including the five previously failing GitHub checks and the stale/incomplete
+evidence rejection test.
+
+Final local validation passes: format, strict all-target/all-feature Clippy,
+Rust 1.95 MSRV, release build, all 35 Python tests, all 1,097 subsystem tests
+(24 ignored, 15 agent scenarios filtered), all 15 serial agent scenarios, and
+doctests (zero defined). The subsystem suite completed in 156.47 seconds. This
+includes the three source-provenance and two native-identity regressions.
+Folder guidance covers all 60 maintained directories with zero problems;
+advisory maintainability analysis and whitespace checks pass. Publishing the
+evidence and this record leaves the captured source fingerprint unchanged.
+
+Broader migration work remains open: guest negotiation, shared client/authority
+ownership, remaining domain and UI decomposition, dependency/complexity tools,
+remaining shutdown cases, and controlled streaming/travel performance coverage.

@@ -1,0 +1,17 @@
+qualification_schema_version = 1
+kind = "closeout-geode-performance"
+evidence_commit = "74fec843cad23804f54337eaa2067c4148b0e695"
+sample_count_per_phase = 5
+sealed_draw_ms = [0.5048811, 0.6466171, 0.57057023, 0.5674062, 0.52494127]
+opened_draw_ms = [0.5431462, 0.53627247, 0.63891476, 0.482597, 0.50711066]
+sealed_simulation_ms = [6.8079205, 7.2372646, 6.981709, 6.88372, 6.8256207]
+opened_simulation_ms = [6.8516073, 6.932215, 6.8616796, 6.825263, 6.9051824]
+sealed_median_draw_ms = 0.5674062
+opened_median_draw_ms = 0.53627247
+median_draw_regression_ms = -0.03113372999999997
+maximum_median_draw_regression_ms = 0.2
+sealed_median_simulation_ms = 6.88372
+opened_median_simulation_ms = 6.8616796
+median_simulation_regression_ms = -0.02204039999999985
+maximum_median_simulation_regression_ms = 0.1
+passed = true

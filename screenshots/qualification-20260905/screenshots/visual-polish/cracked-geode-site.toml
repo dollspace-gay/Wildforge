@@ -1,0 +1,412 @@
+schema_version = 1
+site_id = "cracked-geode"
+source_world = "visual-polish-geode-sealed"
+selection_world = "visual-polish-strata-baseline"
+seed = 20260802
+generator_version = 10
+atlas_format_version = 6
+atlas_algorithm_version = 7
+atlas_content_hash = "adbd53f4372ff5f0"
+atlas_genesis_checksum = "b053756eee79d7e7"
+deposit_id = 48
+host_geology = "limestone"
+finite_quartz_units = 10497600
+finite_amethyst_units = 10497600
+face = "neg_y"
+chunk_u = 337
+chunk_v = 107
+local_cx = 7
+local_cy = 62
+local_cz = 11
+radius = 4
+center_u = 5399
+center_y = 62
+center_v = 1723
+surface_y = 67
+depth_below_surface = 5
+shell_blocks = 118
+lining_quartz_blocks = 12
+lining_amethyst_blocks = 36
+heart_air_blocks = 32
+surrounding_host_blocks = 400
+accidental_air_blocks = 0
+shell_six_connected = true
+heart_sealed = true
+shortest_solid_path = 9
+aperture_direction = "positive-u"
+tunnel_host_blocks = 16
+shell_depth_blocks = 3
+camera_face = "neg_y"
+camera_u = 5408.5
+camera_y = 62.02
+camera_v = 1723.5
+camera_local_u = 1312.5
+camera_local_v = -2372.5
+yaw = 3.1415927
+pitch = -0.12
+context_camera_u = 5408.5
+context_camera_y = 68.02
+context_camera_v = 1723.5
+context_camera_local_u = 1312.5
+context_camera_local_v = -2372.5
+context_yaw = 3.1415927
+context_pitch = -1.35
+estimated_host_pixels = 760000
+estimated_quartz_pixels = 180000
+estimated_amethyst_pixels = 120000
+estimated_heart_pixels = 80000
+neighborhood_sha256 = "afd7b20550861bd4df57aff47bcd4b27127e26462bf171eae7423adde5572c63"
+scanned_deposits = 2
+generated_chunks = 27
+elapsed_millis = 1635
+peak_rss_bytes = 486293504
+
+[torch]
+face = "neg_y"
+u = 5404
+y = 62
+v = 1722
+block = "base:torch"
+
+[[planned_break]]
+face = "neg_y"
+u = 5408
+y = 67
+v = 1722
+block = "base:dirt"
+
+[[planned_break]]
+face = "neg_y"
+u = 5408
+y = 66
+v = 1722
+block = "base:dirt"
+
+[[planned_break]]
+face = "neg_y"
+u = 5408
+y = 65
+v = 1722
+block = "base:dirt"
+
+[[planned_break]]
+face = "neg_y"
+u = 5408
+y = 64
+v = 1722
+block = "base:dirt"
+
+[[planned_break]]
+face = "neg_y"
+u = 5408
+y = 63
+v = 1722
+block = "base:limestone"
+
+[[planned_break]]
+face = "neg_y"
+u = 5408
+y = 62
+v = 1722
+block = "base:limestone"
+
+[[planned_break]]
+face = "neg_y"
+u = 5408
+y = 67
+v = 1723
+block = "base:dirt"
+
+[[planned_break]]
+face = "neg_y"
+u = 5408
+y = 66
+v = 1723
+block = "base:dirt"
+
+[[planned_break]]
+face = "neg_y"
+u = 5408
+y = 65
+v = 1723
+block = "base:dirt"
+
+[[planned_break]]
+face = "neg_y"
+u = 5408
+y = 64
+v = 1723
+block = "base:dirt"
+
+[[planned_break]]
+face = "neg_y"
+u = 5408
+y = 63
+v = 1723
+block = "base:limestone"
+
+[[planned_break]]
+face = "neg_y"
+u = 5408
+y = 62
+v = 1723
+block = "base:limestone"
+
+[[planned_break]]
+face = "neg_y"
+u = 5407
+y = 62
+v = 1722
+block = "base:limestone"
+
+[[planned_break]]
+face = "neg_y"
+u = 5407
+y = 63
+v = 1722
+block = "base:limestone"
+
+[[planned_break]]
+face = "neg_y"
+u = 5407
+y = 62
+v = 1723
+block = "base:limestone"
+
+[[planned_break]]
+face = "neg_y"
+u = 5407
+y = 63
+v = 1723
+block = "base:limestone"
+
+[[planned_break]]
+face = "neg_y"
+u = 5406
+y = 62
+v = 1722
+block = "base:limestone"
+
+[[planned_break]]
+face = "neg_y"
+u = 5406
+y = 63
+v = 1722
+block = "base:limestone"
+
+[[planned_break]]
+face = "neg_y"
+u = 5406
+y = 62
+v = 1723
+block = "base:limestone"
+
+[[planned_break]]
+face = "neg_y"
+u = 5406
+y = 63
+v = 1723
+block = "base:limestone"
+
+[[planned_break]]
+face = "neg_y"
+u = 5405
+y = 62
+v = 1722
+block = "base:limestone"
+
+[[planned_break]]
+face = "neg_y"
+u = 5405
+y = 63
+v = 1722
+block = "base:limestone"
+
+[[planned_break]]
+face = "neg_y"
+u = 5405
+y = 62
+v = 1723
+block = "base:limestone"
+
+[[planned_break]]
+face = "neg_y"
+u = 5405
+y = 63
+v = 1723
+block = "base:limestone"
+
+[[planned_break]]
+face = "neg_y"
+u = 5404
+y = 62
+v = 1722
+block = "base:limestone"
+
+[[planned_break]]
+face = "neg_y"
+u = 5404
+y = 63
+v = 1722
+block = "base:limestone"
+
+[[planned_break]]
+face = "neg_y"
+u = 5404
+y = 62
+v = 1723
+block = "base:limestone"
+
+[[planned_break]]
+face = "neg_y"
+u = 5404
+y = 63
+v = 1723
+block = "base:limestone"
+
+[[planned_break]]
+face = "neg_y"
+u = 5403
+y = 62
+v = 1722
+block = "base:limestone"
+
+[[planned_break]]
+face = "neg_y"
+u = 5403
+y = 63
+v = 1722
+block = "base:limestone"
+
+[[planned_break]]
+face = "neg_y"
+u = 5403
+y = 62
+v = 1723
+block = "base:quartz_block"
+
+[[planned_break]]
+face = "neg_y"
+u = 5403
+y = 63
+v = 1723
+block = "base:limestone"
+
+[[planned_break]]
+face = "neg_y"
+u = 5402
+y = 62
+v = 1722
+block = "base:quartz_block"
+
+[[planned_break]]
+face = "neg_y"
+u = 5402
+y = 63
+v = 1722
+block = "base:quartz_block"
+
+[[planned_break]]
+face = "neg_y"
+u = 5402
+y = 62
+v = 1723
+block = "base:quartz_block"
+
+[[planned_break]]
+face = "neg_y"
+u = 5402
+y = 63
+v = 1723
+block = "base:quartz_block"
+
+[[planned_break]]
+face = "neg_y"
+u = 5401
+y = 62
+v = 1722
+block = "base:amethyst_block"
+
+[[planned_break]]
+face = "neg_y"
+u = 5401
+y = 63
+v = 1722
+block = "base:amethyst_block"
+
+[[planned_break]]
+face = "neg_y"
+u = 5401
+y = 63
+v = 1723
+block = "base:amethyst_block"
+
+[[view_ray]]
+face = "neg_y"
+u = 5408
+y = 62
+v = 1723
+block = "base:limestone"
+
+[[view_ray]]
+face = "neg_y"
+u = 5407
+y = 62
+v = 1723
+block = "base:limestone"
+
+[[view_ray]]
+face = "neg_y"
+u = 5406
+y = 62
+v = 1723
+block = "base:limestone"
+
+[[view_ray]]
+face = "neg_y"
+u = 5405
+y = 62
+v = 1723
+block = "base:limestone"
+
+[[view_ray]]
+face = "neg_y"
+u = 5404
+y = 62
+v = 1723
+block = "base:limestone"
+
+[[view_ray]]
+face = "neg_y"
+u = 5403
+y = 62
+v = 1723
+block = "base:quartz_block"
+
+[[view_ray]]
+face = "neg_y"
+u = 5402
+y = 62
+v = 1723
+block = "base:quartz_block"
+
+[[view_ray]]
+face = "neg_y"
+u = 5401
+y = 62
+v = 1723
+block = "base:air"
+
+[[view_ray]]
+face = "neg_y"
+u = 5400
+y = 62
+v = 1723
+block = "base:air"
+
+[[view_ray]]
+face = "neg_y"
+u = 5399
+y = 62
+v = 1723
+block = "base:air"
