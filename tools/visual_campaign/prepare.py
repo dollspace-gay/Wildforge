@@ -43,12 +43,16 @@ def initialize(root: Path, work: Path, source: Path, baseline: Path, baseline_re
         ["--prepare-cracked-geode", str(sources / "visual-polish-geode-sealed"),
          "--destination", str(sources / "visual-polish-geode-opened"), "--site", str(site),
          "--output", str(report_dir / "geode-preparation.report.toml")],
-        ["--prepare-cracked-geode", str(sources / "visual-polish-geode-sealed"),
+        ["--prepare-cracked-geode", str(sources / "closeout/visual-polish-geode-sealed"),
          "--destination", str(sources / "closeout/visual-polish-geode-opened"), "--site", str(site),
          "--output", str(report_dir / "closeout-geode-preparation.report.toml")],
     ]
     source_before = inventory(source)
     for index, arguments in enumerate(commands):
+        if index == 3:
+            # The game's preparation transaction requires sibling saves.
+            # Give the independently repeated closeout its own sealed input.
+            copy_world(sources / "visual-polish-geode-sealed", sources / "closeout/visual-polish-geode-sealed")
         argv = [executable, *arguments, "--mods", str(work / "empty-mods")]
         print(f"Preparing production fixture {index + 1}/{len(commands)}", flush=True)
         write_json(work / f"preparation-{index}.argv.json", argv)
