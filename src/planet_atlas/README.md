@@ -28,6 +28,9 @@ committed persistence. The parent retains the public atlas facade.
 `water_cycle/` separates exact mass arithmetic, custody records/operations,
 audits, initial finite reservoirs, and versioned checkpoint encoding.
 
+`biomes/` separates zonal classification, soils, habitats, country nuclei and
+borders, heart selection, persisted records, validation, and local queries.
+
 Start with `biomes.rs`, `climate.rs`, `diagnostics.rs`, `geology.rs`, `hydrology.rs`, `water_cycle.rs`. See the [repository overview](../../README.md) for
 build prerequisites and complete checks. Commands below run from the repository root.
 

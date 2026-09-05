@@ -36,7 +36,7 @@ runtime comparisons. Cold/warm runtime measurements remain outstanding.
 | AC-4 common client | Shared admission, mappings, entity reconstruction, terrain ordering, roster, content publication, and domain updates implemented; earlier source has focused/QUIC evidence | Finish request and replica ownership; final transfer/reconnect/native qualification |
 | AC-5 player operations | Shared stall, craft/repair, conservation effects, and armor exchange implemented | Remaining action domains; final rejection/conservation/adapter parity tests |
 | AC-6 world domains | Domain fields/methods inventoried | Encapsulation, explicit transaction coordination |
-| AC-7 generation stages | Explicit chunk stages, intermediate maps, independent queries, and atlas climate/weather/geology/hydrology modules implemented | Remaining biome/diagnostic decomposition; final pinned output and worker-order checks |
+| AC-7 generation stages | Explicit chunk stages, intermediate maps, independent queries, and atlas climate/weather/geology/hydrology modules implemented | Remaining diagnostic decomposition; final pinned output and worker-order checks |
 | AC-8 app/content/render/tools | Registry definitions, schemas, linker, graph validation, runtime publication gate, and script preparation implemented | App/UI/render/tool owners; final publication/runtime/codec checks |
 | AC-9 source size | Advisory 400/500 report and baseline | Reduce migrated debt; explain any real exceptions |
 | AC-10 clone analyzer | 18 tests passed in planning; complete JSON snapshot | Maintain analyzer coverage as tooling evolves |
@@ -44,7 +44,7 @@ runtime comparisons. Cold/warm runtime measurements remain outstanding.
 | AC-12 tests/performance | Baseline suite passed; extraction focused gates passed | Full slice gates and reproducible measurements for affected paths |
 | AC-13 shutdown | Terrain, mesh, encoding, creation, entry, and homeland work have joined owners and failure tests | Dedicated shutdown; graphical close/capture and save-failure runtime proof |
 | AC-14 migration record | This file and separate baseline commits | Add implementation/result entries after each slice |
-| Folder guidance | 64 directories previously verified; new player_ops, worldgen, registry/schema, registry/linking, script, planet_atlas/climate, planet_atlas/geology, and planet_atlas/hydrology, planet_atlas/codec, and planet_atlas/storage, and planet_atlas/water_cycle directories include guides | Final coverage and content identity checks after coding |
+| Folder guidance | 64 directories previously verified; new player_ops, worldgen, registry/schema, registry/linking, script, planet_atlas/climate, planet_atlas/geology, and planet_atlas/hydrology, planet_atlas/codec, and planet_atlas/storage, and planet_atlas/water_cycle, and planet_atlas/biomes directories include guides | Final coverage and content identity checks after coding |
 
 ## Compatibility observations requiring explicit treatment
 
@@ -1309,3 +1309,16 @@ preserved. New folder guidance records the custody and conservation contracts.
 This is structural implementation only. Parcel/rejection/conservation tests,
 codec fixtures, backup recovery, strict Rust gates, and fresh runtime/GPU
 qualification remain deferred until all coding is finished.
+
+
+## Biome and country generation domains (coding checkpoint; unverified)
+
+Biome classification, soil/groundwater genesis, water-backed habitat overlays,
+country seed selection, traversal/border costs, heart scoring, persisted country
+records, validation, and read-only sampling now have cohesive modules. The
+parent preserves the ordered generation coordinator and identifiers. Existing
+production/fixture policies, seeds, tie-breaking, IDs, numerical expressions,
+and habitat compatibility rules are retained. Folder guidance describes their
+ownership and physical constraints. Pinned atlas/codec, country coverage and
+route/heart checks, Rust gates, and fresh runtime/GPU evidence remain deferred
+until the coding phase is finished.
