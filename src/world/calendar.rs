@@ -29,18 +29,10 @@ impl World {
                 .sample(atlas, pos, day, self.long_winter)
                 .temperature_c;
         }
-        if self.remote_weather_side > 0 {
-            let atlas_pos =
-                crate::planet_atlas::AtlasPos::from_surface(pos, self.remote_weather_side);
-            if let Some(sample) = self.remote_weather.get(&atlas_pos) {
-                return sample.temperature_c;
-            }
+        if let Some(sample) = self.replica_observations.weather_at(pos) {
+            return sample.temperature_c;
         }
-        let climate = self.generator.climate_at(pos);
-        let latitude = self.latitude_at_surface(pos);
-        let orbital_phase = std::f64::consts::TAU * day / f64::from(crate::planet_atlas::YEAR_DAYS);
-        let seasonal_delta = (orbital_phase.sin() * latitude.sin() * 14.0) as f32;
-        climate.t * 22.0 + 8.0 + seasonal_delta
+        crate::climate::seasonal_temperature(self.generator.climate_at(pos).t, pos, day)
     }
 
     /// Local astronomical season. The Long Winter is a supernatural thermal
@@ -66,12 +58,8 @@ impl World {
         if let (Some(atlas), Some(weather)) = (&self.planet_atlas, &self.planetary_weather) {
             return weather.sample(atlas, pos, self.orbital_day(), self.long_winter);
         }
-        if self.remote_weather_side > 0 {
-            let atlas_pos =
-                crate::planet_atlas::AtlasPos::from_surface(pos, self.remote_weather_side);
-            if let Some(sample) = self.remote_weather.get(&atlas_pos) {
-                return *sample;
-            }
+        if let Some(sample) = self.replica_observations.weather_at(pos) {
+            return sample;
         }
         // Atlas-free fixtures and development worlds still need a physically
         // sane local temperature. The old fixed +14 C spring/summer offset

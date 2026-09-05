@@ -58,3 +58,7 @@ capabilities.
 Run `cargo test --locked client_session::` for focused checks and all serial
 agent scenarios for protocol integration. Graphical session changes also require
 native guest evidence. Read [AGENTS.md](AGENTS.md) before changing this module.
+
+Incoming world updates now target `ReplicationTarget` and admission queries
+need only `TerrainRead`. The agent supplies `ReplicaWorld`; the graphical
+World adapter remains an explicit temporary migration boundary.

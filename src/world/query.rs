@@ -41,6 +41,14 @@ pub trait TerrainRead {
         self.chunk(position.chunk()).map_or(0, |chunk| chunk.soil_salinity(x, y, z))
     }
 
+    fn fertility_at_pos(&self, position: BlockPos) -> u8 {
+        if self.registry().block(self.get_block_at(position)).fert_tiles.is_some() {
+            super::soil::fert_of(self.get_meta_at(position))
+        } else {
+            0
+        }
+    }
+
     fn light_at_pos(&self, position: BlockPos) -> (u8, u8) {
         let (x, y, z) = position.local();
         self.chunk(position.chunk()).map_or((0, 15), |chunk| chunk.light_intensity(x, y, z))

@@ -4,6 +4,7 @@ use std::collections::HashMap;
 
 use crate::chunk::{CHUNK_X, Chunk, ChunkPos};
 
+mod edits;
 mod lighting;
 mod network;
 

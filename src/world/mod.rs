@@ -45,6 +45,12 @@ mod persistence;
 pub(crate) mod pieces;
 mod power;
 mod query;
+mod replica;
+mod replication;
+pub(crate) use replica::ReplicaWorld;
+pub(crate) use replication::ReplicationTarget;
+mod observations;
+pub(crate) use observations::ReplicaObservations;
 pub use query::{SceneRead, TerrainRead};
 pub(crate) mod power_draw;
 mod preparation;
@@ -1039,19 +1045,7 @@ pub struct World {
     /// Atlas-free unit fixtures can request a local condition explicitly.
     /// Production worlds never consult this: their weather is atlas state.
     weather_override: Option<crate::planet_atlas::LocalWeatherSample>,
-    remote_weather_side: u16,
-    remote_weather: HashMap<crate::planet_atlas::AtlasPos, crate::planet_atlas::LocalWeatherSample>,
-    remote_arcane_cue: [u8; 2],
-    /// Guest-safe categorical base resonance: 0 is unclear, 1..=6 follows
-    /// `arcane::BASE_RESONANCES`. The authoritative mixture never crosses the
-    /// wire.
-    remote_arcane_dominant: u8,
-    remote_arcane_ecology: Option<(String, bool)>,
-    /// Exact charge only for opaque item ids the host says this guest may
-    /// inspect. Replaced as a bounded snapshot; never populated from clients.
-    remote_arcane_items: HashMap<u64, u64>,
-    remote_implements: HashMap<u64, crate::implements::ImplementPublicState>,
-    remote_apparatus: HashMap<crate::planet::BlockPos, crate::implements::ApparatusCue>,
+    replica_observations: ReplicaObservations,
     pub reg: Arc<Registry>,
     #[allow(dead_code)]
     pub seed: u32,
@@ -1524,14 +1518,7 @@ impl World {
             water_carriers,
             dross_exposure_tick: HashMap::new(),
             weather_override: None,
-            remote_weather_side: 0,
-            remote_weather: HashMap::new(),
-            remote_arcane_cue: [0; 2],
-            remote_arcane_dominant: 0,
-            remote_arcane_ecology: None,
-            remote_arcane_items: HashMap::new(),
-            remote_implements: HashMap::new(),
-            remote_apparatus: HashMap::new(),
+            replica_observations: ReplicaObservations::default(),
             palette: storage::PaletteStore::new(&save_dir, &reg),
             reg,
             seed,
@@ -1642,6 +1629,7 @@ impl World {
         )
     }
 
+    #[cfg(test)]
     pub fn set_remote_weather(
         &mut self,
         side: u16,
@@ -1650,32 +1638,25 @@ impl World {
             crate::planet_atlas::LocalWeatherSample,
         )>,
     ) {
-        self.remote_weather_side = side;
-        self.remote_weather.clear();
-        self.remote_weather.extend(cells);
+        self.replica_observations.set_weather(side, cells);
     }
 
+    #[cfg(test)]
     pub fn set_remote_arcane_cue(
         &mut self,
         bands: [u8; 2],
         dominant: u8,
         ecology: Option<(String, bool)>,
     ) {
-        self.remote_arcane_cue = bands.map(|band| band.min(4));
-        self.remote_arcane_dominant = dominant.min(crate::arcane::BASE_RESONANCES.len() as u8);
-        self.remote_arcane_ecology = ecology.map(|(text, damped)| {
-            let mut text = text;
-            text.truncate(240);
-            (text, damped)
-        });
+        self.replica_observations.set_arcane_cue(bands, dominant, ecology);
     }
 
     pub fn remote_arcane_cue(&self) -> [u8; 2] {
-        self.remote_arcane_cue
+        self.replica_observations.arcane_bands()
     }
 
     pub fn remote_arcane_dominant(&self) -> u8 {
-        self.remote_arcane_dominant
+        self.replica_observations.arcane_dominant()
     }
 
     pub fn arcane_cue_at(&self, region: crate::planet_atlas::AtlasPos) -> [u8; 2] {
@@ -2033,27 +2014,18 @@ impl World {
         radius: f32,
     ) -> Option<crate::arcane_ecology::EcologyObservation> {
         if self.remote {
-            return self.remote_arcane_ecology.as_ref().map(|(text, damped)| {
-                crate::arcane_ecology::EcologyObservation {
-                    text: text.clone(),
-                    damped: *damped,
-                }
-            });
+            return self.replica_observations.ecology();
         }
         self.arcane_ecology_observation_at(surface, radius)
     }
 
     #[cfg(test)]
     pub fn set_remote_arcane_items(&mut self, charges: Vec<(u64, u64)>) {
-        self.remote_arcane_items.clear();
-        self.remote_arcane_items
-            .extend(charges.into_iter().filter(|(id, _)| *id != 0));
+        self.replica_observations.replace_charges(charges);
     }
 
     pub fn set_remote_arcane_item(&mut self, id: u64, units: u64) {
-        if id != 0 {
-            self.remote_arcane_items.insert(id, units);
-        }
+        self.replica_observations.set_charge(id, units);
     }
 
     pub fn inspectable_item_current(&self, id: u64) -> Option<u64> {
@@ -2063,7 +2035,7 @@ impl World {
         self.arcane_ledger
             .as_ref()
             .and_then(|ledger| ledger.item_clean_total(id))
-            .or_else(|| self.remote_arcane_items.get(&id).copied())
+            .or_else(|| self.replica_observations.charge(id))
     }
 
     /// Switch between authoritative storage and guest snapshot mode.
@@ -3604,25 +3576,16 @@ impl World {
         soil_salinity: u8,
     ) {
         let chunk_pos = pos.chunk();
-        let (x, y, z) = pos.local();
         let old = self.get_block_at(pos);
         let old_holds_water_carrier =
             self.reg.is_water(old) || self.reg.block(old).name == "base:ice";
         let new_holds_water_carrier =
             self.reg.is_water(block) || self.reg.block(block).name == "base:ice";
-        if let Some(chunk) = self.chunks.get_mut(&chunk_pos) {
-            chunk.set(x, y, z, block);
-            chunk.set_meta(x, y, z, meta);
-            chunk.set_water_salt(x, y, z, salt_mass);
-            chunk.set_soil_salinity(x, y, z, soil_salinity);
-            chunk.dirty = true;
-            chunk.modified = true;
-            if self.log_edits {
-                self.edit_log
-                    .push((pos, block, meta, salt_mass, soil_salinity));
-            }
-        } else {
+        if self.chunks.write_state(pos, block, meta, salt_mass, soil_salinity).is_none() {
             return;
+        }
+        if self.log_edits {
+            self.edit_log.push((pos, block, meta, salt_mass, soil_salinity));
         }
         if old_holds_water_carrier
             && !new_holds_water_carrier
@@ -3633,16 +3596,7 @@ impl World {
             // Ice deliberately retains the allocation for exact thawing.
             carriers.cells.remove(&pos);
         }
-        if x == 0 {
-            self.mark_chunk_dirty(chunk_pos.offset(-1, 0));
-        } else if x == CHUNK_X - 1 {
-            self.mark_chunk_dirty(chunk_pos.offset(1, 0));
-        }
-        if z == 0 {
-            self.mark_chunk_dirty(chunk_pos.offset(0, -1));
-        } else if z == CHUNK_Z - 1 {
-            self.mark_chunk_dirty(chunk_pos.offset(0, 1));
-        }
+        self.chunks.dirty_edit_neighbors(pos);
         self.wake_water_at(pos);
 
         // Gravity blocks detach when support vanishes, and a newly placed
@@ -3666,22 +3620,14 @@ impl World {
             }
         }
 
-        // Plants, torches, and layers pop when the support underneath changes.
-        if !self.reg.is_solid(block)
-            && let Some(above) = pos.offset(0, 1, 0)
-        {
-            let above_block = self.get_block_at(above);
-            let above_def = self.reg.block(above_block);
-            if above_block != AIR
-                && !above_def.floats
-                && (above_def.cross || above_def.height.is_some())
-            {
-                if let Some((item, count)) = above_def.drops {
-                    let reg = self.reg.clone();
-                    self.push_drop_at(above, ItemStack::new(&reg, item, count));
-                }
-                self.set_block_at(above, AIR);
+        // Resident support classification is shared with replica application;
+        // the authoritative coordinator owns the displaced items.
+        if let Some((above, above_block)) = self.chunks.unsupported_above(&self.reg, pos, block) {
+            if let Some((item, count)) = self.reg.block(above_block).drops {
+                let reg = self.reg.clone();
+                self.push_drop_at(above, ItemStack::new(&reg, item, count));
             }
+            self.set_block_at(above, AIR);
         }
 
         let fluid_level_only = self.reg.is_fluid(old)

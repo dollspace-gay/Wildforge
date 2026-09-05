@@ -20,3 +20,7 @@ constructs the seeded fields and resolved content bindings. `landmarks.rs` owns
 pure heart forms/heights shared with living-heart simulation; generation does
 not import the authoritative world owner. The parent retains public value types,
 immutable generator storage, and the explicit stage coordinator.
+
+The immutable temperature field and seam-safe surface noise live in the source
+climate module so replica weather fallback shares the same seed and sampling
+formula without constructing a Generator. Atlas-backed climate stays here.

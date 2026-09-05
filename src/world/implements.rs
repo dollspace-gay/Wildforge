@@ -495,7 +495,7 @@ impl World {
             .arcane_ledger
             .as_ref()
             .and_then(|ledger| ledger.item_clean_total(stack.arcane_id))
-            .or_else(|| self.remote_arcane_items.get(&stack.arcane_id).copied())
+            .or_else(|| self.replica_observations.charge(stack.arcane_id))
             .unwrap_or(0);
         if let Some(instance) = self
             .implements_state
@@ -508,56 +508,19 @@ impl World {
                 .map_or(0, |ledger| ledger.item_dross_total(stack.arcane_id));
             crate::implements::tooltip(instance, clean, dross, exact)
         } else {
-            self.remote_implements
-                .get(&stack.arcane_id)
+            self.replica_observations.implement(stack.arcane_id)
                 .map_or_else(Vec::new, |state| state.tooltip(clean, exact))
         }
     }
 
     #[cfg(test)]
     pub fn set_remote_implements(&mut self, states: Vec<crate::implements::ImplementPublicState>) {
-        self.remote_implements.clear();
-        self.remote_implements.extend(
-            states
-                .into_iter()
-                .filter(|state| state.instance_id != 0)
-                .map(|state| (state.instance_id, state)),
-        );
-    }
-
-    pub fn clear_remote_implement_snapshot(&mut self) {
-        self.remote_arcane_items.clear();
-        self.remote_implements.clear();
-        self.remote_apparatus.clear();
-    }
-
-    pub fn extend_remote_arcane_items(&mut self, charges: Vec<(u64, u64)>) {
-        self.remote_arcane_items
-            .extend(charges.into_iter().filter(|(id, _)| *id != 0));
-    }
-
-    pub fn extend_remote_implements(
-        &mut self,
-        states: Vec<crate::implements::ImplementPublicState>,
-    ) {
-        self.remote_implements.extend(
-            states
-                .into_iter()
-                .filter(|state| state.instance_id != 0)
-                .map(|state| (state.instance_id, state)),
-        );
-    }
-
-    pub fn extend_remote_apparatus(&mut self, cues: Vec<crate::implements::ApparatusCue>) {
-        self.remote_apparatus
-            .extend(cues.into_iter().take(128).map(|cue| (cue.pos, cue)));
+        self.replica_observations.replace_implements(states);
     }
 
     #[cfg(test)]
     pub fn set_remote_apparatus(&mut self, cues: Vec<crate::implements::ApparatusCue>) {
-        self.remote_apparatus.clear();
-        self.remote_apparatus
-            .extend(cues.into_iter().take(128).map(|cue| (cue.pos, cue)));
+        self.replica_observations.replace_apparatus(cues);
     }
 
     /// Bounded qualitative apparatus state for local presentation or nearby
@@ -570,13 +533,7 @@ impl World {
     ) -> Vec<crate::implements::ApparatusCue> {
         let radius = radius.clamp(1.0, 96.0);
         if self.remote {
-            return self
-                .remote_apparatus
-                .values()
-                .copied()
-                .filter(|cue| observer.distance_to(cue.pos.entity_center()) <= radius)
-                .take(128)
-                .collect();
+            return self.replica_observations.apparatus_near(observer, radius);
         }
         let Some(state) = self.implements_state.as_ref() else {
             return Vec::new();
@@ -619,8 +576,7 @@ impl World {
             .and_then(|state| state.instance(stack.arcane_id))
             .map(|instance| &instance.kind)
             .or_else(|| {
-                self.remote_implements
-                    .get(&stack.arcane_id)
+                self.replica_observations.implement(stack.arcane_id)
                     .map(|state| &state.kind)
             })?;
         let ImplementKind::Wand { parts, resolved } = kind else {

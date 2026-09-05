@@ -25,3 +25,8 @@ cargo test --locked tests::agent:: -- --test-threads=1
 
 Read [AGENTS.md](AGENTS.md) before changing this area. For a structural migration,
 run the complete applicable gates and record evidence in the migration record.
+
+The agent now owns `ReplicaWorld`, containing streamed terrain, entity snapshots,
+and bounded host observations. It has no world-cache path, generator, save API,
+or authority ledgers. Perception uses host arcane cues directly; immutable
+climate sampling preserves weather fallback before host cells arrive.

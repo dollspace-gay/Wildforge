@@ -276,7 +276,7 @@ pub struct Generator {
     cont: Perlin,
     ero: Perlin,
     ridge: Perlin,
-    temperature: Perlin,
+    temperature: crate::climate::TemperatureField,
     moisture: Perlin,
     cheese: Perlin,
     spag1: Perlin,

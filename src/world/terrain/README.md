@@ -15,3 +15,8 @@ The map is private; world-domain coordinators receive explicit chunk operations.
 Read [AGENTS.md](AGENTS.md). Final checks cover light removal across seams, wire
 fixtures/remapping/rejection, mesh dirtiness, and actual hardware captures with
 `cargo test --locked tests::rendering::` and the full repository gates.
+
+`edits.rs` owns resident plane writes, edge dirtiness, and the shared support
+classification. Coordinators retain consequence order: authority accounts for
+drops and domain changes, while replicas invalidate their received state and
+settle derived lighting after the full ordered update group.

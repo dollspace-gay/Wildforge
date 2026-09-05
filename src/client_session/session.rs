@@ -15,7 +15,7 @@ use crate::mobs::{Mob, Projectile};
 use crate::net::{BoltSnap, FallSnap, LooseItemSnap, MobSnap, PlayerSnap, Snapshot};
 use crate::planet::{BlockPos, EntityPos};
 use crate::registry::{BlockId, Registry};
-use crate::world::{FallingBlock, World};
+use crate::world::{FallingBlock, ReplicationTarget, TerrainRead};
 
 pub(crate) struct GuestSession {
     content: ContentMap,
@@ -134,7 +134,7 @@ impl GuestSession {
     pub(crate) fn apply_world_message(
         &self,
         message: crate::net::S2C,
-        world: &mut World,
+        world: &mut impl ReplicationTarget,
         time_of_day: &mut f32,
     ) -> Option<crate::net::S2C> {
         super::events::apply_world(message, world, time_of_day, self.admission.receives_world())
@@ -148,7 +148,7 @@ impl GuestSession {
         &mut self,
         spawn: EntityPos,
         required: Vec<ChunkPos>,
-        world: &World,
+        world: &impl TerrainRead,
     ) -> Result<(), AdmissionError> {
         let result = self
             .admission
@@ -216,7 +216,7 @@ impl GuestSession {
         local
     }
 
-    pub(crate) fn apply_terrain(&mut self, world: &mut World, budget: usize) -> Vec<ChunkPos> {
+    pub(crate) fn apply_terrain(&mut self, world: &mut impl ReplicationTarget, budget: usize) -> Vec<ChunkPos> {
         let attempted = self.terrain.apply(world, &self.content, budget);
         for &position in &attempted {
             if world.has_chunk(position) {

@@ -30,8 +30,7 @@ impl Generator {
 
     #[inline]
     pub(super) fn noise_at(noise: &Perlin, pos: SurfacePos, scale: f64, offset: [f64; 3]) -> f32 {
-        let p = surface_to_unit(pos.center()) * (PLANET_RADIUS / scale);
-        noise.get([p.x + offset[0], p.y + offset[1], p.z + offset[2]]) as f32
+        crate::climate::surface_noise(noise, pos, scale, offset)
     }
 
     #[inline]
@@ -66,7 +65,7 @@ impl Generator {
             cont: p(20),
             ero: p(21),
             ridge: p(22),
-            temperature: p(4),
+            temperature: crate::climate::TemperatureField::new(seed),
             moisture: p(5),
             cheese: p(30),
             spag1: p(31),

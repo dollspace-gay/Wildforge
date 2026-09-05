@@ -102,11 +102,7 @@ pub fn soil_after_harvest(meta: u8, family: u8) -> u8 {
 
 impl World {
     pub fn fertility_at_pos(&self, pos: BlockPos) -> u8 {
-        if self.reg.block(self.get_block_at(pos)).fert_tiles.is_some() {
-            fert_of(self.get_meta_at(pos))
-        } else {
-            0
-        }
+        super::TerrainRead::fertility_at_pos(self, pos)
     }
 
     /// Fertility of the soil block at a position (0 for non-soil).

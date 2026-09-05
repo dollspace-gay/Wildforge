@@ -36,3 +36,9 @@ retains its existing facade while forwarding common observations to that code.
 and WFC wire reconstruction. Adoption and persistence still coordinate through
 World; the spatial owner has no generator, save writer, or conservation ledger.
 This is the shared storage seam used by the separate replica migration.
+
+`ReplicaWorld` is the independent agent world owner. `observations.rs` owns
+bounded host weather, arcane, item, and apparatus data. `replication.rs` defines
+the shared incoming mutation contract; its World adapter is temporary until
+graphical migration finishes. Replica block updates share resident writes and
+support classification with authority, without spawning drops or simulation.

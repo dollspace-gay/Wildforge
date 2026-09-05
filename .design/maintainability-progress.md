@@ -1557,3 +1557,28 @@ cover read parity, hidden cells, physics and targeting, missing chunks, complete
 wire fixtures and invalid payloads, light removal across seams, and fresh native
 mesh/render evidence. This establishes a shared spatial primitive; separate
 replica ownership and the remaining world domains are still being implemented.
+
+
+## Agent replica and shared spatial observations (coding checkpoint; unverified)
+
+The agent now constructs ReplicaWorld with resident terrain, replicated entities,
+and bounded host observations. It no longer constructs World or names a world
+save/cache path. ReplicaWorld has no generator, persistence operation, identity
+allocator, simulation queues, or conservation ledger. Perception consumes host
+arcane observations directly, removing its unreachable authoritative survey path.
+GuestSession uses a bounded replication target and TerrainRead for admission;
+the graphical World adapter remains temporary, so AC-2/AC-4 remain unfinished.
+
+The immutable temperature field and seasonal formula are shared with generation
+and atlas-free authority readings, preserving seed salts, seam sampling, and
+fallback temperature. ReplicaObservations owns weather and arcane snapshot rules.
+Resident plane writes, edge dirtiness, and support classification moved into the
+terrain owner. Replica updates preserve recursive plant/torch/layer removal,
+material-change invalidation, and batched light, without minting temporary drops
+or scheduling authority simulation. The host still coordinates its existing
+logging, carrier retirement, gravity, drops, nests, and machine revalidation.
+
+No validation command ran. Final checks must compare authority/replica reads,
+legacy and current wire planes/light, support updates, weather fallback, entity
+identity/remapping, admission and reconnect, and native agent gameplay. Compiler
+visibility/import checks and existing agent fixture adaptation remain deferred.

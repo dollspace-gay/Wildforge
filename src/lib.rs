@@ -18,6 +18,7 @@ mod bounce;
 mod camera;
 mod chunk;
 mod client_session;
+mod climate;
 mod config;
 mod content_files;
 mod crafting;

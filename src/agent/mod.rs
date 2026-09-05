@@ -18,7 +18,7 @@ use crate::client_session::{ContentMap, GuestSession, PresentationRequirement};
 use crate::inventory::{HOTBAR_SLOTS, Inventory, ItemStack, TOTAL_SLOTS};
 use crate::physics::{self, Player};
 use crate::registry::{self, ItemId, Registry};
-use crate::world::World;
+use crate::world::{ReplicaWorld, TerrainRead};
 use crate::{identity, net};
 
 /// How far an agent asks to see, in chunks. Enough to path somewhere it has
@@ -56,7 +56,7 @@ pub enum Behavior {
 pub struct Agent {
     client: net::Client,
     pub reg: Arc<Registry>,
-    pub world: World,
+    pub world: ReplicaWorld,
     pub my_id: u32,
     pub player: Player,
     pub yaw: f32,
@@ -96,7 +96,6 @@ pub struct Agent {
     /// (pos sampled, seconds since) for stuck detection.
     stuck_probe: (crate::planet::EntityPos, f32),
     mods_dir: PathBuf,
-    cache_dir: PathBuf,
 }
 
 impl Agent {
@@ -130,7 +129,7 @@ impl Agent {
         let hash = net::content_hash(&mods_dir);
         let client = net::Client::connect(addr, name.to_string(), hash, 0, &identity, None)
             .map_err(|e| format!("connect: {e}"))?;
-        let world = World::new(0, id_dir.join("world-cache"), reg.clone());
+        let world = ReplicaWorld::new(0, reg.clone(), 0.0);
         let half = f32::from(crate::planet::FACE_BLOCKS) * 0.5;
         let default_origin =
             crate::planet::EntityPos::new(crate::planet::Face::PosZ, half, 0.0, half)
@@ -177,7 +176,6 @@ impl Agent {
             move_timer: 0.0,
             stuck_probe: (default_origin, 0.0),
             mods_dir,
-            cache_dir: id_dir.join("world-cache"),
         };
         // Block for admission: the handshake is quick or refused.
         let start = std::time::Instant::now();
@@ -318,7 +316,7 @@ impl Agent {
             }
             net::S2C::Welcome {
                 seed,
-                mode,
+                mode: _,
                 time,
                 ire,
                 palette,
@@ -330,10 +328,7 @@ impl Agent {
                 world_name,
                 player_state,
             } => {
-                let mut world = World::new(seed, self.cache_dir.clone(), self.reg.clone());
-                world.set_remote(true);
-                world.mode = mode;
-                world.ire = ire;
+                let world = ReplicaWorld::new(seed, self.reg.clone(), ire);
                 self.my_id = your_id;
                 self.session.begin(
                     ContentMap::new(Arc::clone(&self.reg), palette, items),

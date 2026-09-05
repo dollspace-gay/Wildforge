@@ -1,11 +1,11 @@
 //! Shared replica-domain updates; presentation consumes the remaining messages.
 
 use crate::net::S2C;
-use crate::world::World;
+use crate::world::ReplicationTarget;
 
 pub(super) fn apply_world(
     message: S2C,
-    world: &mut World,
+    world: &mut impl ReplicationTarget,
     time_of_day: &mut f32,
     receiving: bool,
 ) -> Option<S2C> {
@@ -19,18 +19,17 @@ pub(super) fn apply_world(
     match message {
             S2C::TimeIre { time, ire, day } => {
                 *time_of_day = time;
-                world.ire = ire;
-                world.day = day;
+                world.receive_clock(ire, day);
             }
             S2C::WeatherCells { side, cells } => {
-                world.set_remote_weather(side, cells);
+                world.observations_mut().set_weather(side, cells);
             }
             S2C::ArcaneCue {
                 bands,
                 dominant,
                 ecology,
             } => {
-                world.set_remote_arcane_cue(bands, dominant, ecology);
+                world.observations_mut().set_arcane_cue(bands, dominant, ecology);
             }
             S2C::ArcaneItems {
                 reset,
@@ -39,14 +38,14 @@ pub(super) fn apply_world(
                 apparatus,
             } => {
                 if reset {
-                    world.clear_remote_implement_snapshot();
+                    world.observations_mut().clear_items();
                 }
-                world.extend_remote_arcane_items(charges);
-                world.extend_remote_implements(implements);
-                world.extend_remote_apparatus(apparatus);
+                world.observations_mut().extend_charges(charges);
+                world.observations_mut().extend_implements(implements);
+                world.observations_mut().extend_apparatus(apparatus);
             }
             S2C::SignText { pos, lines } => {
-                world.insert_block_entity_at(
+                world.receive_block_entity(
                     pos,
                     crate::world::BlockEntity::Sign(crate::world::SignState { lines }),
                 );
@@ -58,7 +57,7 @@ pub(super) fn apply_world(
                     2 => crate::planet::Direction4::West,
                     _ => crate::planet::Direction4::South,
                 };
-                world.insert_block_entity_at(
+                world.receive_block_entity(
                     pos,
                     crate::world::BlockEntity::Switch(crate::world::SwitchState { selected }),
                 );

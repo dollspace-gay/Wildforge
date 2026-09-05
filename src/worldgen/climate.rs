@@ -2,7 +2,7 @@
 
 use super::{Biome, Climate, Generator, Tectonics, CENTROIDS};
 use crate::chunk::SEA_LEVEL;
-use crate::planet::{Direction4, SurfacePos, step4, surface_to_unit};
+use crate::planet::{Direction4, SurfacePos, step4};
 #[cfg(test)]
 use super::hash2;
 #[cfg(test)]
@@ -94,7 +94,7 @@ impl Generator {
         // per-column classifier turned into confetti — and a province
         // needs to be small against its climate for its site to speak
         // for the whole country.
-        let t = self.temperature.get([x * 0.0004, z * 0.0004]) as f32;
+        let t = self.temperature.planar_sample(x, z);
         let h = self.moisture.get([x * 0.0004 + 31.7, z * 0.0004 - 17.3]) as f32;
         Climate { t, h, c, e, r, tec }
     }
@@ -103,15 +103,11 @@ impl Generator {
     /// unit direction; latitude supplies the broad temperature belt while
     /// low-frequency 3D noise breaks it into recognizable regions.
     pub fn climate_at(&self, pos: SurfacePos) -> Climate {
-        let unit = surface_to_unit(pos.center());
         let c = Self::noise_at(&self.cont, pos, 1_650.0, [0.0, 0.0, 0.0]) * 1.15;
         let e = Self::noise_at(&self.ero, pos, 720.0, [13.5, -7.2, 4.1]);
         let ridge_raw = Self::noise_at(&self.ridge, pos, 410.0, [-3.3, 21.7, 8.9]);
         let r = 1.0 - (2.0 * ridge_raw.abs() - 1.0).abs();
-        let lat_heat = 1.0 - 2.0 * unit.y.abs() as f32;
-        let t = (lat_heat * 0.82
-            + Self::noise_at(&self.temperature, pos, 2_300.0, [2.7, -4.9, 8.3]) * 0.34)
-            .clamp(-1.0, 1.0);
+        let t = self.temperature.sample(pos);
         let h = (Self::noise_at(&self.moisture, pos, 1_900.0, [31.7, -17.3, 11.9])
             + Self::noise_at(&self.moisture, pos, 520.0, [-9.1, 6.4, 23.0]) * 0.28)
             .clamp(-1.0, 1.0);

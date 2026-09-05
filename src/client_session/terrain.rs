@@ -5,7 +5,7 @@ use std::collections::VecDeque;
 use super::palette::ContentMap;
 use crate::chunk::ChunkPos;
 use crate::planet::BlockPos;
-use crate::world::World;
+use crate::world::ReplicationTarget;
 
 #[derive(Default)]
 pub(super) struct TerrainInbox {
@@ -49,7 +49,7 @@ impl TerrainInbox {
     /// rejected payload. Only the replica can establish successful residency.
     pub(super) fn apply(
         &mut self,
-        world: &mut World,
+        world: &mut impl ReplicationTarget,
         content: &ContentMap,
         budget: usize,
     ) -> Vec<ChunkPos> {
@@ -88,13 +88,12 @@ impl TerrainInbox {
 /// Consecutive snapshots and their following edits retain batched lighting.
 /// Edits behind a paced snapshot remain queued with it until a later pump.
 fn apply_batch(
-    world: &mut World,
+    world: &mut impl ReplicationTarget,
     content: &ContentMap,
     chunks: &mut Vec<(ChunkPos, Vec<u8>)>,
     blocks: &mut Vec<(BlockPos, u16, u8, u16, u8)>,
 ) {
     if !chunks.is_empty() {
-        debug_assert!(world.is_remote(), "guest terrain needs a replica");
         world.insert_remote_chunks(
             chunks.iter().map(|(pos, bytes)| (*pos, bytes.as_slice())),
             content.blocks(),
