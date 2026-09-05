@@ -6,6 +6,7 @@ use std::collections::{BTreeMap, HashMap};
 pub(super) fn empty() -> Registry {
     Registry {
         content_hash: 0,
+        asset_snapshot: None,
         blocks: Vec::new(),
         items: Vec::new(),
         recipes: Vec::new(),

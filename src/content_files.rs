@@ -4,6 +4,9 @@
 //! folder guides opt out, so adding maintenance instructions cannot change
 //! an existing world's content identity or signed provenance.
 
+mod snapshot;
+pub(crate) use snapshot::AssetSnapshot;
+
 use std::path::{Path, PathBuf};
 
 const GUIDE_MARKER: &[u8] = b"<!-- wildforge:guide -->";

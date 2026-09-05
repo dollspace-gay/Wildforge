@@ -6,6 +6,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use crate::registry::{self, Registry};
+use crate::content_files::AssetSnapshot;
 
 #[derive(Debug, thiserror::Error)]
 pub(crate) enum TransferError {
@@ -91,15 +92,21 @@ pub(crate) fn install(
     let staging = publication.root.join("incoming");
     let backup = publication.root.join("previous");
     std::fs::create_dir(&staging)?;
+    let mut relative_paths = Vec::with_capacity(files.len());
     for (relative, bytes) in files {
-        let path = staging.join(relative);
+        let path = staging.join(&relative);
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent)?;
         }
         std::fs::write(path, bytes)?;
+        relative_paths.push(relative);
     }
     let mut candidate = registry::load_validated(&staging)
         .map_err(|error| TransferError::InvalidRegistry(error.to_string()))?;
+
+    // Retain reader storage before replacing any published cache. A failed
+    // copy leaves the old cache untouched and cleans its own partial tree.
+    let snapshot = AssetSnapshot::copy_files(cache, &staging, &relative_paths)?;
 
     let previous = match std::fs::symlink_metadata(cache) {
         Ok(metadata) if metadata.is_dir() => {
@@ -117,20 +124,9 @@ pub(crate) fn install(
         }
         return Err(publish.into());
     }
-    // Loaded paths refer to the private staging directory. Rebase only paths
-    // rooted there; embedded base assets retain their original locations.
-    for info in &mut candidate.mods {
-        if let Some(path) = &mut info.path
-            && let Ok(relative) = path.strip_prefix(&staging)
-        {
-            *path = cache.join(relative);
-        }
-    }
-    for (_, path) in &mut candidate.tex_files {
-        if let Ok(relative) = path.strip_prefix(&staging) {
-            *path = cache.join(relative);
-        }
-    }
+    // The public cache keeps its historical path/hash convention. Live readers
+    // point to their retained copy instead of this replaceable publication.
+    candidate.retain_asset_snapshot(&staging, snapshot);
     candidate.content_hash = crate::planet_atlas::genesis_content_hash(cache);
     Ok(Arc::new(candidate))
 }

@@ -38,3 +38,7 @@ cargo test --locked tests::registry_tests::
 
 Read [AGENTS.md](AGENTS.md) before changing this area. For a structural migration,
 run the complete applicable gates and record evidence in the migration record.
+
+`assets.rs` ties transferred asset snapshots to registry lifetime. Registry
+clones share the storage owner; embedded base paths and the existing content
+hash convention remain unchanged. Runtime readers never follow a replaced cache.

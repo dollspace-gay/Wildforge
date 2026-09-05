@@ -1412,3 +1412,22 @@ colors, stack counts, and durability bars are preserved by the extraction.
 No checks ran. Final vertex/layout characterization, click/hover scenarios,
 full Rust gates, and fresh native GPU captures/timings remain required. Larger
 screen/action dispatchers and remaining ownership boundaries are still open.
+
+
+## Transferred content reader lifetime correction (coding checkpoint; unverified)
+
+The exclusive transfer writer protected publication but left existing readers
+pointing at the replaceable cache. A later agent/guest transfer could therefore
+change assets beneath an older registry. Transfers now prepare a private asset
+copy before cache publication; accepted registries and their clones share its
+storage owner. The last reader releases that exclusively created directory.
+Failed copies/publications release only their own storage, and collisions or
+crash leftovers are never automatically reclaimed. Files are copied rather than
+linked, so ordinary cache edits cannot change a retained snapshot.
+
+The ordinary cache path and its legacy content hash remain unchanged. This is
+a separate ownership correction, with no test/build/lint execution. Final cases
+must cover simultaneous readers, cloned registries/jobs, independent transfer
+contents, cache edits, failed copy/validation/publication, final-reader cleanup,
+and unchanged content hashes. The extra per-transfer disk copy is deliberate;
+entry timing and native integration remain in the deferred validation phase.

@@ -44,7 +44,9 @@ Welcome and closure. Render poses and navigation trails clear with the world.
 `transfer.rs` validates portable relative data paths, writes into an exclusively
 owned staging directory, rejects registry errors, and publishes the cache only
 after loading succeeds. Publication keeps the established cache path and content
-hash convention. Failed replacement restores the prior cache; a failed restore
+hash convention. Each accepted registry retains a private asset copy through
+all of its clones; replacing the ordinary cache cannot change a live reader.
+Failed replacement restores the prior cache; a failed restore
 retains its recovery directory and reports it. Stale transfer workspaces are
 reported instead of automatically removed. Host scripts remain host-owned.
 

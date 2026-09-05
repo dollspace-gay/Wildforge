@@ -28,6 +28,7 @@ mod schema;
 mod loading;
 mod reading;
 mod publication;
+mod assets;
 pub use publication::{ContentErrors, load_validated};
 mod linking;
 pub use loading::load;
@@ -51,6 +52,8 @@ pub struct ModInfo {
 
 #[derive(Clone)]
 pub struct Registry {
+    /// Shared lifetime of a private transferred asset tree, when present.
+    asset_snapshot: Option<std::sync::Arc<crate::content_files::AssetSnapshot>>,
     pub content_hash: u64,
     pub blocks: Vec<BlockDef>,
     pub items: Vec<ItemDef>,
