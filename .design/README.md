@@ -12,3 +12,8 @@ Pipeline JSON identifies its design by SHA-256. Update the hash when changing
 the referenced design. Preserve historical baseline evidence and record new
 observations separately. Acceptance checkboxes require implementation and
 verification evidence; a passing narrow test cannot establish a whole phase.
+
+`architecture-boundaries.json` is the explicit written-dependency contract for
+established owners. It is source policy rather than a scan-derived exemption
+list. Keep migration seams and test allowances specific, and review changes
+alongside the owning modules.

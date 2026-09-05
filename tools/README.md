@@ -29,3 +29,8 @@ The visual-polish converter is the shared owner of evidence byte hashes, TOML
 reads, deterministic scalar serialization, and report replacement. Geode and
 closeout verifiers retain their own error types and qualification rules while
 using those same helpers. Their different report table layouts remain explicit.
+
+`check_architecture.py` reports configured written dependency boundaries, and
+`report_rust_functions.py` collects Clippy's function-size and cognitive-complexity
+warnings. Both keep policy debt advisory and fail on incomplete analysis. Their
+coverage and limits are documented in [maintainability/README.md](maintainability/README.md).

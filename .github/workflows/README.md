@@ -19,3 +19,8 @@ actionlint .github/workflows/ci.yml
 
 Read [AGENTS.md](AGENTS.md) before changing this area. For a structural migration,
 run the complete applicable gates and record evidence in the migration record.
+
+Written dependency findings run in the Python maintainability job. Clippy-based
+function findings run after the ordinary strict Clippy gate. Both new reports
+are advisory for debt and fail on analysis failure; neither replaces the tests,
+MSRV, format, or existing strict warning checks.

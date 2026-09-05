@@ -1,0 +1,370 @@
+{
+  "schema_version": 1,
+  "externals": [
+    "alloc",
+    "core",
+    "std",
+    "bytemuck",
+    "glam",
+    "jacquard_common",
+    "jacquard_identity",
+    "jacquard_oauth",
+    "noise",
+    "png",
+    "pollster",
+    "postcard",
+    "quinn",
+    "rcgen",
+    "ring",
+    "reqwest",
+    "rhai",
+    "rodio",
+    "rustls",
+    "serde",
+    "serde_json",
+    "smol_str",
+    "tokio",
+    "toml",
+    "wgpu",
+    "winit",
+    "thiserror",
+    "http",
+    "naga",
+    "windows_sys"
+  ],
+  "boundaries": [
+    {
+      "name": "background work",
+      "paths": [
+        "src/background.rs",
+        "src/background/*.rs"
+      ],
+      "allow": [
+        "alloc",
+        "core",
+        "std",
+        "crate::background"
+      ],
+      "test_allow": [],
+      "reason": "Worker ownership has no gameplay, platform, or presentation dependencies."
+    },
+    {
+      "name": "terrain preparation",
+      "paths": [
+        "src/terrain_jobs/*.rs"
+      ],
+      "allow": [
+        "alloc",
+        "core",
+        "std",
+        "crate::terrain_jobs",
+        "crate::background",
+        "crate::chunk",
+        "crate::planet",
+        "crate::planet_atlas",
+        "crate::registry",
+        "crate::worldgen",
+        "crate::world::ChunkLoader",
+        "crate::world::ChunkRead",
+        "crate::world::ChunkRevision",
+        "crate::world::storage::ChunkLoader",
+        "crate::world::storage::reader::ChunkLoader",
+        "crate::world::storage::ChunkRead",
+        "crate::world::storage::reader::ChunkRead",
+        "crate::world::storage::ChunkRevision",
+        "crate::world::storage::reader::ChunkRevision"
+      ],
+      "test_allow": [
+        "crate::world",
+        "crate::tests"
+      ],
+      "reason": "Workers prepare immutable chunks; save-reader types are the existing authority seam."
+    },
+    {
+      "name": "generation stages",
+      "paths": [
+        "src/worldgen.rs",
+        "src/worldgen/*.rs"
+      ],
+      "allow": [
+        "alloc",
+        "core",
+        "std",
+        "crate::worldgen",
+        "crate::planet",
+        "crate::planet_atlas",
+        "crate::chunk",
+        "crate::registry",
+        "crate::materials",
+        "crate::edifice",
+        "glam",
+        "noise"
+      ],
+      "test_allow": [
+        "crate::tests"
+      ],
+      "reason": "Generation stages do not schedule jobs or access live world state."
+    },
+    {
+      "name": "planet atlas",
+      "paths": [
+        "src/planet_atlas.rs",
+        "src/planet_atlas/*.rs"
+      ],
+      "allow": [
+        "alloc",
+        "core",
+        "std",
+        "crate::alchemy",
+        "crate::arcane",
+        "crate::arcane_ecology",
+        "crate::arcane_geography",
+        "crate::chunk",
+        "crate::content_files",
+        "crate::crafting",
+        "crate::discovery",
+        "crate::dross",
+        "crate::edifice",
+        "crate::equipment",
+        "crate::implements",
+        "crate::inventory",
+        "crate::machines",
+        "crate::materials",
+        "crate::persist",
+        "crate::planet",
+        "crate::planet_atlas",
+        "crate::registry",
+        "crate::ruleset",
+        "crate::skills",
+        "crate::stats",
+        "crate::workings",
+        "crate::worldgen",
+        "glam",
+        "noise",
+        "serde",
+        "serde_json",
+        "toml",
+        "postcard",
+        "thiserror"
+      ],
+      "test_allow": [
+        "crate::tests"
+      ],
+      "reason": "Atlas generation and codecs do not depend on jobs, networking, app state, or presentation."
+    },
+    {
+      "name": "content definitions",
+      "paths": [
+        "src/registry.rs",
+        "src/registry/*.rs"
+      ],
+      "allow": [
+        "alloc",
+        "core",
+        "std",
+        "crate::alchemy",
+        "crate::arcane",
+        "crate::arcane_ecology",
+        "crate::arcane_geography",
+        "crate::chunk",
+        "crate::content_files",
+        "crate::crafting",
+        "crate::discovery",
+        "crate::dross",
+        "crate::edifice",
+        "crate::entity",
+        "crate::equipment",
+        "crate::identity",
+        "crate::implements",
+        "crate::inventory",
+        "crate::machines",
+        "crate::materials",
+        "crate::mobs",
+        "crate::npc",
+        "crate::persist",
+        "crate::physics",
+        "crate::planet",
+        "crate::planet_atlas",
+        "crate::registry",
+        "crate::ruleset",
+        "crate::skills",
+        "crate::stats",
+        "crate::workings",
+        "crate::worldgen",
+        "crate::world::template::TemplateCell",
+        "crate::world::multiblock::MachineKind",
+        "serde",
+        "serde_json",
+        "toml",
+        "glam",
+        "thiserror"
+      ],
+      "test_allow": [
+        "crate::tests"
+      ],
+      "reason": "Content may use shared domain definitions; world access is limited to existing schema types."
+    },
+    {
+      "name": "guest protocol",
+      "paths": [
+        "src/client_session/*.rs"
+      ],
+      "allow": [
+        "alloc",
+        "core",
+        "std",
+        "crate::client_session",
+        "crate::chunk",
+        "crate::content_files",
+        "crate::entity",
+        "crate::identity",
+        "crate::implements",
+        "crate::inventory",
+        "crate::mobs",
+        "crate::net",
+        "crate::planet",
+        "crate::planet_atlas",
+        "crate::registry",
+        "crate::world",
+        "glam",
+        "thiserror"
+      ],
+      "test_allow": [
+        "crate::tests"
+      ],
+      "reason": "Guest interpretation has no graphics, audio, app, or simulation driver; World is a migration seam."
+    },
+    {
+      "name": "player operations",
+      "paths": [
+        "src/player_ops/*.rs"
+      ],
+      "allow": [
+        "alloc",
+        "core",
+        "std",
+        "crate::alchemy",
+        "crate::arcane",
+        "crate::arcane_ecology",
+        "crate::arcane_geography",
+        "crate::chunk",
+        "crate::content_files",
+        "crate::crafting",
+        "crate::discovery",
+        "crate::dross",
+        "crate::edifice",
+        "crate::entity",
+        "crate::equipment",
+        "crate::identity",
+        "crate::implements",
+        "crate::inventory",
+        "crate::machines",
+        "crate::materials",
+        "crate::mobs",
+        "crate::npc",
+        "crate::persist",
+        "crate::physics",
+        "crate::planet",
+        "crate::planet_atlas",
+        "crate::registry",
+        "crate::ruleset",
+        "crate::skills",
+        "crate::stats",
+        "crate::workings",
+        "crate::worldgen",
+        "crate::player_ops",
+        "crate::world",
+        "glam",
+        "thiserror"
+      ],
+      "test_allow": [
+        "crate::tests"
+      ],
+      "reason": "Authoritative operations have no graphical or network adapter dependency."
+    },
+    {
+      "name": "simulation driver",
+      "paths": [
+        "src/server.rs",
+        "src/server/*.rs"
+      ],
+      "allow": [
+        "alloc",
+        "core",
+        "std",
+        "crate::alchemy",
+        "crate::arcane",
+        "crate::arcane_ecology",
+        "crate::arcane_geography",
+        "crate::chunk",
+        "crate::content_files",
+        "crate::crafting",
+        "crate::discovery",
+        "crate::dross",
+        "crate::edifice",
+        "crate::entity",
+        "crate::equipment",
+        "crate::identity",
+        "crate::implements",
+        "crate::inventory",
+        "crate::machines",
+        "crate::materials",
+        "crate::mobs",
+        "crate::npc",
+        "crate::persist",
+        "crate::physics",
+        "crate::planet",
+        "crate::planet_atlas",
+        "crate::registry",
+        "crate::ruleset",
+        "crate::skills",
+        "crate::stats",
+        "crate::workings",
+        "crate::worldgen",
+        "crate::server",
+        "crate::world",
+        "glam"
+      ],
+      "test_allow": [
+        "crate::tests"
+      ],
+      "reason": "Fixed-step authority emits outcomes; adapters own transport and presentation."
+    },
+    {
+      "name": "renderer",
+      "paths": [
+        "src/renderer/*.rs"
+      ],
+      "allow": [
+        "alloc",
+        "core",
+        "std",
+        "crate::renderer",
+        "crate::shader",
+        "crate::chunk",
+        "crate::mesher",
+        "crate::ui",
+        "crate::visual_capture",
+        "crate::geode_capture",
+        "crate::lights",
+        "crate::bounce",
+        "crate::camera",
+        "crate::sky",
+        "crate::style",
+        "crate::particles",
+        "crate::registry",
+        "bytemuck",
+        "glam",
+        "wgpu",
+        "winit",
+        "png",
+        "serde",
+        "serde_json"
+      ],
+      "test_allow": [
+        "crate::tests"
+      ],
+      "reason": "Render passes consume prepared data and cannot import authoritative World or player operations."
+    }
+  ]
+}

@@ -57,6 +57,8 @@ cargo deny check advisories
 python3 -m unittest discover -s tools/tests -v
 python3 tools/check_maintainability.py
 python3 tools/check_folder_guides.py
+python3 tools/check_architecture.py
+python3 tools/report_rust_functions.py
 ```
 
 For quick feedback, CI runs non-agent tests separately:

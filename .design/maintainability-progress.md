@@ -40,7 +40,7 @@ runtime comparisons. Cold/warm runtime measurements remain outstanding.
 | AC-8 app/content/render/tools | Registry definitions, schemas, linker, graph validation, runtime publication gate, and script preparation implemented | App/UI/render/tool owners; final publication/runtime/codec checks |
 | AC-9 source size | Advisory 400/500 report and baseline | Reduce migrated debt; explain any real exceptions |
 | AC-10 clone analyzer | 18 tests passed in planning; complete JSON snapshot | Maintain analyzer coverage as tooling evolves |
-| AC-11 dependency boundaries | Direction specified in plan | Dependency checker with violating fixtures |
+| AC-11 dependency boundaries | Written import/alias/glob allowlist report and Clippy function-report implementation added, unverified | Violating fixtures, resolution/noise review, complete compiler reports, and remaining owner restrictions |
 | AC-12 tests/performance | Baseline suite passed; extraction focused gates passed | Full slice gates and reproducible measurements for affected paths |
 | AC-13 shutdown | Terrain, mesh, encoding, creation, entry, and homeland work have joined owners and failure tests | Dedicated shutdown; graphical close/capture and save-failure runtime proof |
 | AC-14 migration record | This file and separate baseline commits | Add implementation/result entries after each slice |
@@ -1506,3 +1506,31 @@ access has already been replaced by narrow domain interfaces.
 No formatting, build, lint, test, or runtime validation ran. Import resolution
 and unused imports remain part of the final Rust gates; session, interaction,
 world ownership, large dispatchers, and architecture checks are still open.
+
+
+## Architecture and compiler-backed reports (coding checkpoint; unverified)
+
+An explicit dependency allowlist now covers established worker, terrain,
+generation, content, guest, operation, simulation, and renderer boundaries.
+A written-token scanner follows nested imports, aliases, re-exports, and globs,
+records all resolved edges, and identifies unrestricted parent imports. It is
+conservative about cfg and block scopes, reports resolution cycles, and does not
+claim macro expansion, type inference, or mutation-effect analysis. Guest World
+access remains a documented migration seam. Empty selectors and bad contracts
+are errors. CI findings are advisory; strict policy exit is an explicit option.
+
+A separate report uses Clippy's syntax-aware function-line and cognitive-
+complexity diagnostics, with 100/25 advisory thresholds. It records toolchain,
+command, configuration, compiler completion, locations, and errors, without
+keyword approximations. Failed/incomplete compiler runs fail the report. The
+ordinary strict Clippy gate remains unchanged. Commands and limitations are
+added to the relevant guides; no new directories or runtime dependencies were
+introduced.
+
+No analyzer, Python test, format, build, Clippy, workflow, or runtime command ran.
+Final validation must add alias/re-export/glob/qualified-path/inline-module and
+violating boundary fixtures, malformed-input and empty-selector cases, compiler
+failure/timeout/diagnostic fixtures, and a real reviewed noise inventory. These
+checks remain unverified and AC-11 is not accepted. World/replica separation,
+remaining domain operations and state ownership, large dispatchers, and final
+Rust/native/GPU qualification remain open under the complete refactor goal.
