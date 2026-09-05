@@ -123,7 +123,14 @@ named phase rather than treated as permanent exemptions.
 | `src/tests/mod.rs` | 518 | Shared fixtures remain alongside test registration | Phase 7 scenario fixtures and test organization |
 | `src/net/transport.rs` | 1006 | Content inventory is extracted; QUIC lifecycle/discovery remain | Phases 3 and 8 session/transport boundaries |
 | `src/planet_atlas/climate.rs` | 2440 | Live-audit correction reuses the existing total helper; stage ownership remains debt | Phase 6 climate stage extraction |
-| `src/multiplayer/host/streaming.rs` | 462 | Within review ceiling; encoding/snapshot delivery still share the adapter | Phases 2 and 3 encoding/session ownership |
+| `src/world/mod.rs` | 4265 | Composes the new region owner; remaining world domains still share fields | Phase 5 domain ownership |
+| `src/world/chunks.rs` | 1191 | Revision validation wraps the existing adoption side-effect sequence | Phase 5 chunk/residency domain |
+| `src/world/storage.rs` | 1224 | Delegates chunk I/O; sidecars, save orchestration, and remapping remain | Phase 5 persistence ownership |
+| `src/world/spawn.rs` | 1631 | Fingerprints use coordinated reads; trial/qualification orchestration remains | Phases 5 and 6 entry/genesis ownership |
+
+The host streaming adapter is now 371 lines after extracting its private job
+owner; it no longer needs a size exception. World-domain files above remain
+explicit migration debt, with the added revision boundary reviewed in Phase 2.
 
 The baseline check commands, counts, compatibility versions, executable hash,
 and source hashes for public entrypoint modules are retained in
@@ -241,3 +248,60 @@ so a read cannot observe a partially published header/index. Prepared terrain
 also needs persisted-revision validation after a player edit is saved/unloaded.
 These checks are required before accepting the streaming slice; they are not
 resolved by the existing resident-chunk edit regression alone.
+
+## Coordinated region I/O and prepared revision validation
+
+`568e18a` separates the host's private chunk-job/cache owner from guest interest
+and delivery scheduling without changing budgets. Its compile, format, directory
+coverage, and whitespace checks passed before the following corrective slice.
+
+Category A root-cause correction: World now owns a RegionStore, cloned into
+immutable loaders, that coordinates raw reads/writes/compaction per region.
+Spawn fingerprints use that owner too. Reads retain opaque revision watches;
+attempted writes invalidate watches for that chunk before touching disk. Both
+streaming adapters reject stale prepared results without another file read,
+even after an edited chunk was saved and unloaded. No disk/wire format changes
+or global I/O mutex were introduced. Weak region/watch indexes retain only
+active work plus expired slots pruned on the next access.
+
+Call-site evidence: `rg -n 'region::(read|write)_chunk|adopt_prepared\\(' src
+--glob '*.rs'` found raw production reads/writes only inside RegionStore and
+the unchecked adoption method only behind the revision-checked World boundary;
+that unchecked method is now private. The scope is one World session: independent
+processes or separately opened Worlds writing the same directory are not
+coordinated. The existing on-disk index is not a crash-atomic transaction; its
+documentation now states that limit rather than promising an intact old slot.
+
+Eight storage tests, 13 terrain-job tests, and three real worker/save/QUIC
+scenarios pass, as does strict all-feature Clippy. Scenarios cover independent
+region progress, concurrent complete payload snapshots, watch lifetimes, failed
+write invalidation, missing/saved provenance, edits saved/unloaded before late
+adoption under both worker policies, and unchanged exactly-once water/material
+accounting. The saved fixture initially did not dirty its generated chunk, so
+no persisted input existed; explicitly editing it corrected the fixture.
+Format, strict all-feature Clippy, MSRV 1.95, 15 serial agent scenarios,
+doctests (zero defined), and release build pass. The full subsystem run recorded
+1,041 passes, six failures, and 24 ignored. Five failures are the previously
+identified stale visual-source fingerprints. The sixth was a save-error fixture
+that made its save directory unreadable before asking to generate its dirty
+chunk. Under the corrected read contract it never had a chunk to save. The
+fixture now creates and edits terrain first, then injects the same filesystem
+write failure; all its component-reporting and retry assertions are retained.
+That focused regression and strict Clippy pass after the fixture correction.
+The whole subsystem suite was not rerun after this test-only change; no full
+green-suite claim is made.
+
+Logs, exact broad-gate commands/results, and source fingerprints (including
+untracked new modules) are under
+`target/maintainability/region-coordination-gates/`. The advisory comparison is
+`target/maintainability/region-coordination-delta.json`: 220 source files,
+119 above 400 lines, 102 above 500, and 71 exact-token clone candidate groups.
+All 54 maintained directories retain both guides. This is not full streaming
+or migration acceptance. No new native GPU/runtime qualification was performed.
+
+Next Phase 2/13 work remains: typed startup/live worker failures, owned mesh
+and encoding lifetimes, caller-level world-switch/disconnect proof, and measured
+native runtime travel/entry qualification. Inspection of `game/content.rs`
+also confirms hot reload remaps World/generator but retains old terrain-job
+context; rebuild/invalidate that context with a regression before acceptance.
+Phases 3–8 and the five stale visual-qualification manifests remain outstanding.

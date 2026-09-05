@@ -6,10 +6,11 @@
 //! some filesystems on every individual open.
 //!
 //! Layout: a four-byte magic, then 1024 `(offset u32, length u32)` slots, then
-//! payloads. Writes append and then update the slot, in that order — a crash
-//! between the two leaves the slot pointing at the previous payload, which is
-//! stale but whole. Rewriting a chunk strands its old payload, so the file is
-//! compacted once the dead weight outgrows the live.
+//! payloads. Writes append and then update the slot. The session RegionStore
+//! coordinates readers with this publication; a process crash during the slot
+//! update can still tear the index, which validation reports as an error.
+//! Rewriting a chunk strands its old payload, so the file is compacted once
+//! the dead weight outgrows the live.
 
 use std::fs;
 use std::io::{Read, Seek, SeekFrom, Write};

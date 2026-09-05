@@ -2,7 +2,10 @@
 
 mod decoder;
 mod reader;
+mod region_store;
 pub(crate) use reader::{ChunkLoader, ChunkRead};
+pub(crate) use region_store::ChunkRevision;
+pub(super) use region_store::RegionStore;
 
 use super::*;
 
@@ -702,7 +705,7 @@ impl World {
 
     pub(crate) fn chunk_loader(&self) -> ChunkLoader {
         ChunkLoader {
-            save_dir: self.save_dir.clone(),
+            store: self.region_store.clone(),
             load_remap: self.load_remap.clone(),
             reg: Arc::clone(&self.reg),
             palette_stale: self.palette_stale,
@@ -925,7 +928,7 @@ impl World {
                 format!("chunk {pos:?} is not resident"),
             )
         })?;
-        super::region::write_chunk(&self.save_dir, pos, &buf)
+        self.region_store.write(pos, &buf)
     }
 
     /// Persist a single departing chunk (unload path): only its own

@@ -99,9 +99,12 @@ impl HostChunkJobs {
                 && wanted(prepared.position)
             {
                 let fresh = prepared.is_fresh();
-                server
-                    .world
-                    .adopt_prepared(prepared.position, prepared.chunk, fresh);
+                server.world.adopt_prepared_at_revision(
+                    prepared.position,
+                    prepared.chunk,
+                    fresh,
+                    &prepared.revision,
+                );
             }
             if started.elapsed() >= ADOPT_BUDGET {
                 break;

@@ -58,7 +58,7 @@ pub use machines::{station_powered, worked_table_for};
 pub mod soil;
 mod spawn;
 pub(crate) use spawn::player_entry_chunks;
-pub(crate) use storage::{ChunkLoader, ChunkRead, encode_stream_chunk};
+pub(crate) use storage::{ChunkLoader, ChunkRead, ChunkRevision, encode_stream_chunk};
 pub(crate) mod local_structure;
 pub(crate) mod rail;
 pub(crate) mod template;
@@ -1048,6 +1048,7 @@ pub struct World {
     #[allow(dead_code)]
     pub seed: u32,
     save_dir: PathBuf,
+    region_store: storage::RegionStore,
     /// stored-id -> runtime-id remap for chunks loaded from disk.
     load_remap: Vec<BlockId>,
     /// The saved palette no longer matches this registry, so every chunk
@@ -1530,6 +1531,7 @@ impl World {
             remote_apparatus: HashMap::new(),
             reg,
             seed,
+            region_store: storage::RegionStore::new(save_dir.clone()),
             save_dir,
             load_remap: Vec::new(),
             // A world with no save behind it has no palette on disk

@@ -32,6 +32,7 @@ pub(crate) struct PreparedChunk {
     pub(crate) position: ChunkPos,
     pub(crate) chunk: Chunk,
     pub(crate) origin: ChunkOrigin,
+    pub(crate) revision: crate::world::ChunkRevision,
     pub(super) generation: GenerationId,
 }
 

@@ -57,10 +57,23 @@ impl World {
         }
     }
 
-    /// Adopt a worker result whose saved-vs-generated decision was already
-    /// made off-thread. Unlike `adopt_generated`, this path performs no cold
-    /// disk read and is safe inside a live host/client pump.
-    pub fn adopt_prepared(&mut self, pos: ChunkPos, chunk: Chunk, fresh: bool) -> bool {
+    /// Reject prepared terrain invalidated by a save, including a chunk that
+    /// has since been unloaded. The authoritative thread owns all writes.
+    pub(crate) fn adopt_prepared_at_revision(
+        &mut self,
+        pos: ChunkPos,
+        chunk: Chunk,
+        fresh: bool,
+        revision: &ChunkRevision,
+    ) -> bool {
+        if !self.region_store.is_current(pos, revision) {
+            return false;
+        }
+        self.adopt_prepared(pos, chunk, fresh)
+    }
+
+    /// Adopt only after the caller has validated the saved-terrain revision.
+    fn adopt_prepared(&mut self, pos: ChunkPos, chunk: Chunk, fresh: bool) -> bool {
         if self.chunks.contains_key(&pos) || self.remote {
             return false;
         }

@@ -181,7 +181,12 @@ impl Game {
                     Ok(prepared) => {
                         let pos = prepared.position;
                         let fresh = prepared.is_fresh();
-                        if self.server.world.adopt_prepared(pos, prepared.chunk, fresh) {
+                        if self.server.world.adopt_prepared_at_revision(
+                            pos,
+                            prepared.chunk,
+                            fresh,
+                            &prepared.revision,
+                        ) {
                             for (dx, dz) in [(-1, 0), (1, 0), (0, -1), (0, 1)] {
                                 self.server.world.mark_chunk_dirty(pos.offset(dx, dz));
                             }

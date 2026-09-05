@@ -790,7 +790,10 @@ fn qualify_trial_region(
     }
 }
 
-fn prepared_chunk_digest(save_dir: &std::path::Path, chunks: &[ChunkPos]) -> std::io::Result<u64> {
+fn prepared_chunk_digest(
+    store: &storage::RegionStore,
+    chunks: &[ChunkPos],
+) -> std::io::Result<u64> {
     let mut hash = 0xcbf2_9ce4_8422_2325u64;
     for position in chunks {
         for byte in [position.face() as u8]
@@ -800,7 +803,7 @@ fn prepared_chunk_digest(save_dir: &std::path::Path, chunks: &[ChunkPos]) -> std
         {
             hash = (hash ^ u64::from(byte)).wrapping_mul(0x1000_0000_01b3);
         }
-        let payload = region::read_chunk(save_dir, *position)?.ok_or_else(|| {
+        let payload = store.read(*position)?.0.ok_or_else(|| {
             std::io::Error::new(
                 std::io::ErrorKind::InvalidData,
                 format!("prepared spawn chunk {position:?} is missing"),
@@ -1270,7 +1273,7 @@ impl World {
             )));
         }
         validate_spawn_ledgers(self)?;
-        let prepared_digest = prepared_chunk_digest(&self.save_dir, &chunks)?;
+        let prepared_digest = prepared_chunk_digest(&self.region_store, &chunks)?;
         let completed_unix_seconds = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap_or_default()
