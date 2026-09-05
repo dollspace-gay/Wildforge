@@ -4,7 +4,7 @@
 
 Read [README.md](README.md) and [the root instructions](../../../AGENTS.md).
 
-streaming.rs schedules guest terrain delivery, wire encoding, snapshots, and residency around active and pending players.
+streaming.rs schedules guest interest and snapshot delivery. chunk_jobs.rs owns terrain preparation, wire encoding, revisions, and cache state behind bounded methods.
 
 Maintain bounded work and entry priority. Only the simulation thread adopts terrain. Preserve revisions so stale encoded chunks cannot replace current edits.
 

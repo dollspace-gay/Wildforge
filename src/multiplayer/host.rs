@@ -3,6 +3,8 @@
 //! world back. Shared by the windowed host (pause menu → OPEN TO
 //! FRIENDS) and the headless `--server` — one code path.
 
+#[path = "host/chunk_jobs.rs"]
+mod chunk_jobs;
 #[path = "moderation.rs"]
 mod moderation;
 #[path = "profiles.rs"]
@@ -232,7 +234,7 @@ pub struct HostSession {
     pub fresh_spawn: Option<EntityPos>,
     /// Pure terrain work for cold guest horizons. Created lazily from the
     /// authoritative world's seed/content; the host pump only adopts results.
-    chunk_jobs: Option<streaming::HostChunkJobs>,
+    chunk_jobs: Option<chunk_jobs::HostChunkJobs>,
     /// Horizon assigned before a client negotiates one. Tests may shrink this
     /// for compact protocol fixtures; production retains the legacy five.
     initial_view_dist: i32,

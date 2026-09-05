@@ -12,7 +12,7 @@ mod workers;
 
 pub(crate) use policy::WorkerPolicy;
 pub(crate) use queue::Priority;
-pub(crate) use result::{ChunkOrigin, PreparedChunk};
+pub(crate) use result::{ChunkOrigin, PreparedChunk, TerrainFailure};
 
 use std::collections::HashMap;
 use std::io;
@@ -25,7 +25,7 @@ use crate::planet_atlas::PlanetAtlas;
 use crate::registry::Registry;
 use crate::world::ChunkLoader;
 use queue::WorkQueue;
-use result::{Completion, GenerationId, TerrainFailure};
+use result::{Completion, GenerationId};
 
 /// Immutable inputs shared by every worker in one world session.
 #[derive(Clone)]
