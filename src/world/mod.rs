@@ -44,6 +44,8 @@ pub(crate) mod multiblock;
 mod persistence;
 pub(crate) mod pieces;
 mod power;
+mod query;
+pub use query::{SceneRead, TerrainRead};
 pub(crate) mod power_draw;
 mod preparation;
 #[cfg_attr(test, allow(unused))]
@@ -65,6 +67,7 @@ pub(crate) mod local_structure;
 pub(crate) mod rail;
 pub(crate) mod template;
 mod ticks;
+mod terrain;
 mod workings;
 
 /// Materialized water conditions used by fish and later aquatic biomes. Depth
@@ -997,7 +1000,7 @@ pub struct RevealKey {
 }
 
 pub struct World {
-    chunks: HashMap<ChunkPos, Chunk>,
+    chunks: terrain::TerrainStore,
     pub generator: Generator,
     planet_atlas: Option<Arc<crate::planet_atlas::PlanetAtlas>>,
     planetary_weather: Option<crate::planet_atlas::PlanetaryWeather>,
@@ -1506,7 +1509,7 @@ impl World {
                 .ok()
         });
         World {
-            chunks: HashMap::new(),
+            chunks: terrain::TerrainStore::default(),
             generator,
             planet_atlas,
             planetary_weather,
@@ -2383,9 +2386,7 @@ impl World {
     /// world changes what a mesh should look like — switching texture packs
     /// can change which atlas slot a face draws, and that lives in the uvs.
     pub fn mark_all_chunks_dirty(&mut self) {
-        for c in self.chunks.values_mut() {
-            c.dirty = true;
-        }
+        self.chunks.mark_all_dirty();
     }
 
     pub fn chunk(&self, pos: ChunkPos) -> Option<&Chunk> {
@@ -2393,9 +2394,7 @@ impl World {
     }
 
     pub fn mark_chunk_dirty(&mut self, pos: ChunkPos) {
-        if let Some(chunk) = self.chunks.get_mut(&pos) {
-            chunk.dirty = true;
-        }
+        self.chunks.mark_dirty(pos, true);
     }
 
     /// Chunks outside `radius` of every one of `centers`.
@@ -2407,15 +2406,7 @@ impl World {
     /// through. With no centers at all nothing is resident: an empty server
     /// holds no world.
     pub fn chunks_outside_all(&self, centers: &[ChunkPos], radius: i32) -> Vec<ChunkPos> {
-        self.chunks
-            .keys()
-            .filter(|pos| {
-                !centers
-                    .iter()
-                    .any(|center| pos.distance(*center) <= f64::from(radius * CHUNK_X as i32))
-            })
-            .copied()
-            .collect()
+        self.chunks.outside(centers, radius)
     }
 
     /// Save and drop every chunk no longer near any of `centers`.
@@ -2624,26 +2615,21 @@ impl World {
     }
 
     pub fn dirty_chunks(&self) -> Vec<ChunkPos> {
-        self.chunks
-            .iter()
-            .filter_map(|(pos, chunk)| chunk.dirty.then_some(*pos))
-            .collect()
+        self.chunks.dirty_positions()
     }
 
     pub fn mark_chunk_meshed(&mut self, pos: ChunkPos) {
-        if let Some(chunk) = self.chunks.get_mut(&pos) {
-            chunk.dirty = false;
-        }
+        self.chunks.mark_dirty(pos, false);
     }
 
     #[cfg(test)]
     pub(crate) fn chunks(&self) -> &HashMap<ChunkPos, Chunk> {
-        &self.chunks
+        self.chunks.test_map()
     }
 
     #[cfg(test)]
     pub(crate) fn chunks_mut(&mut self) -> &mut HashMap<ChunkPos, Chunk> {
-        &mut self.chunks
+        self.chunks.test_map_mut()
     }
 
     #[cfg(test)]
@@ -2661,11 +2647,7 @@ impl World {
     }
 
     pub fn get_block_at(&self, pos: crate::planet::BlockPos) -> BlockId {
-        let (x, y, z) = pos.local();
-        match self.chunks.get(&pos.chunk()) {
-            Some(chunk) => chunk.get(x, y, z),
-            None => AIR,
-        }
+        TerrainRead::get_block_at(self, pos)
     }
 
     #[cfg(test)]
@@ -2678,25 +2660,15 @@ impl World {
 
     /// Metadata byte at a world position (octant mask for sub-voxel blocks).
     pub fn get_meta_at(&self, pos: crate::planet::BlockPos) -> u8 {
-        let (x, y, z) = pos.local();
-        match self.chunks.get(&pos.chunk()) {
-            Some(chunk) => chunk.meta(x, y, z),
-            None => 0,
-        }
+        TerrainRead::get_meta_at(self, pos)
     }
 
     pub fn get_water_salt_at(&self, pos: crate::planet::BlockPos) -> u16 {
-        let (x, y, z) = pos.local();
-        self.chunks
-            .get(&pos.chunk())
-            .map_or(0, |chunk| chunk.water_salt(x, y, z))
+        TerrainRead::get_water_salt_at(self, pos)
     }
 
     pub fn get_soil_salinity_at(&self, pos: crate::planet::BlockPos) -> u8 {
-        let (x, y, z) = pos.local();
-        self.chunks
-            .get(&pos.chunk())
-            .map_or(0, |chunk| chunk.soil_salinity(x, y, z))
+        TerrainRead::get_soil_salinity_at(self, pos)
     }
 
     pub fn water_mass_at(
@@ -3968,15 +3940,7 @@ impl World {
     }
 
     pub fn surface_height_at(&self, surface: crate::planet::SurfacePos) -> i32 {
-        for y in (0..CHUNK_Y as i32).rev() {
-            let pos =
-                crate::planet::BlockPos::new(surface.face(), surface.u(), y as u8, surface.v())
-                    .expect("surface column and height are validated");
-            if self.reg.is_solid(self.get_block_at(pos)) && !self.is_hidden(pos) {
-                return y;
-            }
-        }
-        0
+        TerrainRead::surface_height_at(self, surface)
     }
 
     /// How many chunks carry a random-tick stamp.

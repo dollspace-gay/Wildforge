@@ -25,3 +25,8 @@ cargo clippy --locked --all-targets --all-features -- -D warnings
 
 Read [AGENTS.md](AGENTS.md) before changing this area. For a structural migration,
 run the complete applicable gates and record evidence in the migration record.
+
+Physics, dropped-item motion, raycasts, camera collision, and mesh capture use
+`world::TerrainRead`; structure selection additionally uses `SceneRead`. These
+contracts expose observations without generation, persistence, or authoritative
+mutation. Resident storage and derived light are owned by `world/terrain`.

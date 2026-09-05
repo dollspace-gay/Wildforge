@@ -5,7 +5,7 @@ use glam::Vec3;
 #[cfg(test)]
 use crate::planet::Face;
 use crate::planet::{BlockPos, EntityPos, QuarterTurn, SurfacePos};
-use crate::world::World;
+use crate::world::TerrainRead;
 
 pub const PLAYER_HALF_W: f32 = 0.3;
 pub const PLAYER_HEIGHT: f32 = 1.8;
@@ -85,15 +85,15 @@ impl Player {
             .pos
     }
 
-    fn head_in_water(&self, world: &World) -> bool {
+    fn head_in_water(&self, world: &(impl TerrainRead + ?Sized)) -> bool {
         let Some(pos) = self.eye().block() else {
             return false;
         };
         let b = world.get_block_at(pos);
-        world.reg.is_fluid(b)
+        world.registry().is_fluid(b)
     }
 
-    fn body_in_water(&self, world: &World) -> bool {
+    fn body_in_water(&self, world: &(impl TerrainRead + ?Sized)) -> bool {
         let Some(pos) = self
             .pos
             .translated(Vec3::new(0.0, 0.6, 0.0))
@@ -103,10 +103,10 @@ impl Player {
             return false;
         };
         let b = world.get_block_at(pos);
-        world.reg.is_fluid(b)
+        world.registry().is_fluid(b)
     }
 
-    pub fn update(&mut self, world: &World, input: &Input, flat_fwd: Vec3, right: Vec3, dt: f32) {
+    pub fn update(&mut self, world: &(impl TerrainRead + ?Sized), input: &Input, flat_fwd: Vec3, right: Vec3, dt: f32) {
         self.frame_rotation = QuarterTurn::IDENTITY;
         self.in_water = self.body_in_water(world);
 
@@ -192,12 +192,12 @@ impl Player {
         let _ = self.head_in_water(world); // (used by renderer via head_underwater)
     }
 
-    pub fn head_underwater(&self, world: &World) -> bool {
+    pub fn head_underwater(&self, world: &(impl TerrainRead + ?Sized)) -> bool {
         self.head_in_water(world)
     }
 
     /// Creative flight: direct velocity, no gravity, collisions kept.
-    pub fn fly(&mut self, world: &World, wish: Vec3, dt: f32) {
+    pub fn fly(&mut self, world: &(impl TerrainRead + ?Sized), wish: Vec3, dt: f32) {
         self.vel = wish;
         self.on_ground = false;
         self.in_water = false;
@@ -207,7 +207,7 @@ impl Player {
         self.move_axis(world, Vec3::new(0.0, d.y, 0.0));
     }
 
-    pub(crate) fn collides(&self, world: &World, pos: EntityPos) -> bool {
+    pub(crate) fn collides(&self, world: &(impl TerrainRead + ?Sized), pos: EntityPos) -> bool {
         let local = pos.chart_local();
         let min = local - Vec3::new(PLAYER_HALF_W, 0.0, PLAYER_HALF_W);
         let max = local + Vec3::new(PLAYER_HALF_W, PLAYER_HEIGHT, PLAYER_HALF_W);
@@ -232,7 +232,7 @@ impl Player {
                         )
                         .expect("collision cell is validated"),
                     );
-                    if !world.reg.is_solid(b) {
+                    if !world.registry().is_solid(b) {
                         continue;
                     }
                     if world.is_hidden(
@@ -250,7 +250,7 @@ impl Player {
                     // only the bottom of their voxel.  Treating them as a
                     // full cube made the auto-step path impossible even
                     // though rendering already honored `height`.
-                    let block_top = y as f32 + world.reg.block(b).height.unwrap_or(1.0);
+                    let block_top = y as f32 + world.registry().block(b).height.unwrap_or(1.0);
                     if max.y <= y as f32 || min.y >= block_top {
                         continue;
                     }
@@ -264,7 +264,7 @@ impl Player {
     /// Horizontal move with auto-step: if blocked while grounded, try lifting up
     /// to `STEP_HEIGHT`, re-advancing, and settling onto a low ledge (slabs,
     /// snow layers). Falls back to the plain slide if that gains no ground.
-    fn walk_axis(&mut self, world: &World, delta: Vec3, grounded: bool) {
+    fn walk_axis(&mut self, world: &(impl TerrainRead + ?Sized), delta: Vec3, grounded: bool) {
         let start = self.pos;
         let start_vel = self.vel;
         let start_rotation = self.frame_rotation;
@@ -296,7 +296,7 @@ impl Player {
         }
     }
 
-    fn move_axis(&mut self, world: &World, delta: Vec3) -> f32 {
+    fn move_axis(&mut self, world: &(impl TerrainRead + ?Sized), delta: Vec3) -> f32 {
         let dist = delta.length();
         if dist <= 0.0 {
             return 1.0;

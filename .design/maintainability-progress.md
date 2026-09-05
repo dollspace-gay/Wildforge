@@ -1534,3 +1534,26 @@ failure/timeout/diagnostic fixtures, and a real reviewed noise inventory. These
 checks remain unverified and AC-11 is not accepted. World/replica separation,
 remaining domain operations and state ownership, large dispatchers, and final
 Rust/native/GPU qualification remain open under the complete refactor goal.
+
+
+## Resident terrain and read contracts (coding checkpoint; unverified)
+
+TerrainRead now bounds resident voxel, metadata, hidden-cell, light, and surface
+queries; SceneRead adds local structures for selection. Physics, dropped-item
+motion, raycasts, camera collision, and mesh snapshots use those read contracts.
+World keeps compatibility methods forwarding shared query behavior. Missing
+chunks still read as air/open sky, and hidden cells retain their prior collision
+and mesh treatment. No mutable world or generation/save operation is exposed by
+the read contracts.
+
+TerrainStore owns the resident map, mesh dirtiness, light solve/cascade, and
+WFC6-WFC9 wire reconstruction. Lighting and decoding were moved with their exact
+plane order, remapping, legacy fallback, neighbor dirtiness, and visit bound.
+World coordinates adoption/persistence through explicit store methods; direct
+map access remains test-only. The new terrain folder includes both guides.
+
+No format, compiler, tests, analyzers, or runtime checks ran. Final cases must
+cover read parity, hidden cells, physics and targeting, missing chunks, complete
+wire fixtures and invalid payloads, light removal across seams, and fresh native
+mesh/render evidence. This establishes a shared spatial primitive; separate
+replica ownership and the remaining world domains are still being implemented.

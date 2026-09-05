@@ -26,3 +26,13 @@ cargo test --locked tests::world::
 
 Read [AGENTS.md](AGENTS.md) before changing this area. For a structural migration,
 run the complete applicable gates and record evidence in the migration record.
+
+`TerrainRead` exposes only resident voxel/metadata/light queries and the immutable
+registry; `SceneRead` adds local structure selection. Physics, item motion,
+raycasts, camera collision, and mesh capture consume these contracts. World
+retains its existing facade while forwarding common observations to that code.
+
+`terrain.rs` owns the private resident map, dirty-mesh bookkeeping, light solve,
+and WFC wire reconstruction. Adoption and persistence still coordinate through
+World; the spatial owner has no generator, save writer, or conservation ledger.
+This is the shared storage seam used by the separate replica migration.

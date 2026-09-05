@@ -7,7 +7,7 @@ use crate::atlas::{ATLAS_TILES, CRACK_SLOT};
 use crate::mesher::{CORNERS, NORMALS, Vertex};
 use crate::planet::{BlockPos, EntityPos, SurfacePoint, block_to_render, local_frame};
 use crate::registry::{ItemId, Registry};
-use crate::world::World;
+use crate::world::TerrainRead;
 
 #[derive(Clone, Debug)]
 pub struct ItemEntity {
@@ -44,7 +44,7 @@ impl ItemEntity {
     }
 
     /// Returns false when the entity should despawn.
-    pub fn update(&mut self, world: &World, dt: f32) -> bool {
+    pub fn update(&mut self, world: &(impl TerrainRead + ?Sized), dt: f32) -> bool {
         self.age += dt;
         if self.age > DESPAWN {
             return false;
@@ -54,7 +54,7 @@ impl ItemEntity {
             .pos
             .block()
             .map_or(crate::registry::AIR, |pos| world.get_block_at(pos));
-        if world.reg.is_lava(at) {
+        if world.registry().is_lava(at) {
             return false;
         }
         self.vel.y -= 16.0 * dt;
@@ -75,7 +75,7 @@ impl ItemEntity {
         let below = EntityPos::new(next.face(), next.u(), by as f32, next.v())
             .ok()
             .and_then(EntityPos::block);
-        if below.is_some_and(|pos| world.reg.is_solid(world.get_block_at(pos))) && self.vel.y < 0.0
+        if below.is_some_and(|pos| world.registry().is_solid(world.get_block_at(pos))) && self.vel.y < 0.0
         {
             next = EntityPos::new(next.face(), next.u(), by as f32 + 1.0 + half, next.v())
                 .expect("item floor resolution remains inside the shell");
@@ -84,7 +84,7 @@ impl ItemEntity {
         // Simple side collision: don't move into solid blocks.
         if next
             .block()
-            .is_some_and(|pos| world.reg.is_solid(world.get_block_at(pos)))
+            .is_some_and(|pos| world.registry().is_solid(world.get_block_at(pos)))
         {
             next = self.pos;
             self.vel.x = 0.0;
@@ -94,11 +94,11 @@ impl ItemEntity {
         true
     }
 
-    pub fn loss_reason(&self, world: &World) -> &'static str {
+    pub fn loss_reason(&self, world: &(impl TerrainRead + ?Sized)) -> &'static str {
         let lava = self
             .pos
             .block()
-            .is_some_and(|pos| world.reg.is_lava(world.get_block_at(pos)));
+            .is_some_and(|pos| world.registry().is_lava(world.get_block_at(pos)));
         if lava {
             "lava oxidation/dispersal"
         } else if self.age > DESPAWN {

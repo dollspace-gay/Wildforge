@@ -11,7 +11,7 @@ use crate::planet::{
     BlockPos, SurfacePos, block_to_render, canonicalize_surface_point, local_frame,
 };
 use crate::registry::{AIR, BlockId, Registry};
-use crate::world::World;
+use crate::world::TerrainRead;
 
 #[repr(C)]
 #[derive(Clone, Copy, Pod, Zeroable)]
@@ -70,7 +70,7 @@ impl ChunkMeshInput {
         &self.reg
     }
 
-    pub fn capture(world: &World, pos: ChunkPos) -> Option<Self> {
+    pub fn capture(world: &(impl TerrainRead + ?Sized), pos: ChunkPos) -> Option<Self> {
         let mut center = world.chunk(pos)?.mesh_snapshot();
         let origin = pos.block_origin();
         // Settlement growth cells (spec 3.4): placed at worldgen but hidden
@@ -124,7 +124,7 @@ impl ChunkMeshInput {
         }
         Some(Self {
             pos,
-            reg: Arc::clone(&world.reg),
+            reg: Arc::clone(world.registry()),
             center,
             border,
         })
@@ -208,7 +208,7 @@ fn should_draw(reg: &Registry, b: BlockId, n: BlockId) -> bool {
 /// baked into the uvs here rather than resolved in the shader, so switching
 /// packs has to remesh — see `apply_pack`.
 pub fn mesh_chunk(
-    world: &World,
+    world: &(impl TerrainRead + ?Sized),
     pos: ChunkPos,
     variants: &crate::atlas::TileVariants,
 ) -> ChunkMesh {

@@ -11,9 +11,8 @@ use glam::Vec3;
 
 use crate::planet::{BlockPos, EntityPos};
 use crate::registry::{AIR, BlockId};
-use crate::world::World;
+use crate::world::{SceneRead, TerrainRead};
 use crate::world::local_structure::LocalStructureId;
-use crate::world::multiblock::BlockStore;
 
 /// A hit in flat `(i32,i32,i32)` coordinate space (no planet topology).
 /// Used when casting against a structure's local store or in test scenes.
@@ -41,12 +40,12 @@ pub struct PlanetHit {
 }
 
 /// Topology-aware voxel DDA in the origin's local face frame.
-pub fn raycast_at(world: &World, origin: EntityPos, dir: Vec3, max_dist: f32) -> Option<PlanetHit> {
+pub fn raycast_at(world: &(impl TerrainRead + ?Sized), origin: EntityPos, dir: Vec3, max_dist: f32) -> Option<PlanetHit> {
     cast_at(world, origin, dir, max_dist, false)
 }
 
 pub fn raycast_water_at(
-    world: &World,
+    world: &(impl TerrainRead + ?Sized),
     origin: EntityPos,
     dir: Vec3,
     max_dist: f32,
@@ -55,13 +54,13 @@ pub fn raycast_water_at(
 }
 
 #[cfg(test)]
-pub fn raycast(world: &World, origin: Vec3, dir: Vec3, max_dist: f32) -> Option<Hit> {
+pub fn raycast(world: &(impl TerrainRead + ?Sized), origin: Vec3, dir: Vec3, max_dist: f32) -> Option<Hit> {
     cast(
         origin,
         dir,
         max_dist,
         |(x, y, z)| world.get_block(x, y, z),
-        |b| b != crate::registry::AIR && !world.reg.is_fluid(b),
+        |b| b != crate::registry::AIR && !world.registry().is_fluid(b),
     )
     .map(|flat| Hit {
         block: flat.block,
@@ -186,7 +185,7 @@ where
 /// ## Coordinate convention
 ///
 pub fn raycast_target_at(
-    world: &World,
+    world: &(impl SceneRead + ?Sized),
     origin: EntityPos,
     dir: Vec3,
     max_dist: f32,
@@ -273,7 +272,7 @@ pub fn raycast_target_at(
             .rotation
             .inverse()
             .apply_vec((dir.x, dir.y, dir.z));
-        let reg = world.reg();
+        let reg = world.registry();
         let is_hit = |b: BlockId| b != AIR && !reg.is_fluid(b);
 
         if let Some(flat) = cast(
@@ -306,7 +305,7 @@ pub fn raycast_target_at(
 }
 
 fn cast_at(
-    world: &World,
+    world: &(impl TerrainRead + ?Sized),
     mut point: EntityPos,
     dir: Vec3,
     max_dist: f32,
@@ -337,7 +336,7 @@ fn cast_at(
         // hidden settlement cell: behaves as air for aiming
         if !world.is_hidden(current)
             && block != crate::registry::AIR
-            && (hit_water || !world.reg.is_fluid(block))
+            && (hit_water || !world.registry().is_fluid(block))
         {
             return Some(PlanetHit {
                 block: current,
