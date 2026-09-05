@@ -78,6 +78,8 @@ pub struct Agent {
     names: HashMap<u32, String>,
     /// Breadcrumbs per player: the trail follow() chases.
     trail: HashMap<u32, VecDeque<crate::planet::EntityPos>>,
+    /// Walkable waypoints are separate from observations of the leader.
+    follow_path: Option<motion::FollowPath>,
     /// Snapshots arrive split when they outgrow one datagram.
     players_rx: net::SnapshotAssembler<net::PlayerSnap>,
     mobs_rx: net::SnapshotAssembler<net::MobSnap>,
@@ -169,6 +171,7 @@ impl Agent {
             players: HashMap::new(),
             names: HashMap::new(),
             trail: HashMap::new(),
+            follow_path: None,
             players_rx: Default::default(),
             mobs_rx: Default::default(),
             bolts_rx: Default::default(),
@@ -773,12 +776,20 @@ impl Agent {
 
     /// Advance the standing behavior and step player physics.
     fn tick_behavior(&mut self, dt: f32) {
+        if !matches!(self.behavior, Behavior::Follow { .. }) {
+            self.follow_path = None;
+        }
         let input = match std::mem::replace(&mut self.behavior, Behavior::Idle) {
             Behavior::Idle => motion::idle(self.player.in_water),
             Behavior::GoTo { path, goal } => self.tick_goto(path, goal, dt),
             Behavior::Follow { id, distance } => self.tick_follow(id, distance, dt),
         };
-        let (fwd, right) = motion::basis(self.yaw);
+        let frame = crate::planet::local_frame(self.player.pos.surface_point());
+        let (east, north) = frame.chart_basis(self.player.pos);
+        let (forward, right) = motion::basis(self.yaw);
+        let fwd = east * forward.x + north * forward.z;
+        let right = east * right.x + north * right.z;
         self.player.update(&self.world, &input, fwd, right, dt);
+        self.yaw = self.player.frame_rotation.rotate_yaw(self.yaw);
     }
 }

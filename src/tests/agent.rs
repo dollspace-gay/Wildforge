@@ -25,6 +25,10 @@ impl TestHost {
     }
 
     fn start_inner(world_tag: &str, discovery: bool) -> TestHost {
+        Self::start_at(world_tag, discovery, bp(0, 200, 0))
+    }
+
+    fn start_at(world_tag: &str, discovery: bool, origin: crate::planet::BlockPos) -> TestHost {
         let reg = base_reg();
         // These are protocol/behavior tests over a deliberately hand-built
         // stage. Generating 25 full terrain chunks here previously dominated
@@ -37,16 +41,15 @@ impl TestHost {
         } else {
             World::new(42, root, reg)
         };
-        world.insert_empty_chunks_for_test(
-            (-2..=2).flat_map(|x| (-2..=2).map(move |z| tchunk(x, z))),
-        );
+        world.insert_empty_chunks_for_test((-2..=2).flat_map(|x| {
+            (-2..=2).map(move |z| origin.offset(x * 16, 0, z * 16).unwrap().chunk())
+        }));
         let mut sim = crate::server::Server::new(world, 0.3, 5);
         let mut sess = crate::mp::HostSession::start_on(world_tag.into(), 0).unwrap();
         // Arrivals land on a stage this harness owns, well above any
         // terrain: these tests exercise the wire, not the landscape,
         // and a spawn that follows the world's shoreline makes them
         // depend on whatever the seed happened to roll.
-        const STAGE_Y: i32 = 200;
         {
             // Build the largest stage any test needs before guests join.
             // Its state arrives in chunk snapshots; replaying thousands of
@@ -58,19 +61,26 @@ impl TestHost {
             for x in x0..=x1 {
                 for z in z0..=z1 {
                     let rim = x == x0 || x == x1 || z == z0 || z == z1;
-                    edits.push((x, STAGE_Y - 1, z, grass));
+                    edits.push((origin.offset(x, -1, z).unwrap(), grass));
                     for dy in 0..10 {
                         let want = if rim && dy < 2 { stone } else { AIR };
-                        if sim.world.get_block(x, STAGE_Y + dy, z) != want {
-                            edits.push((x, STAGE_Y + dy, z, want));
+                        let at = origin.offset(x, dy, z).unwrap();
+                        if sim.world.get_block_at(at) != want {
+                            edits.push((at, want));
                         }
                     }
                 }
             }
-            sim.world.set_blocks_for_test(edits);
+            sim.world.edit_fixture_for_test(|world| {
+                for (at, block) in edits {
+                    world.set_block_at(at, block);
+                }
+            });
             for cx in (x0 >> 4) - 1..=(x1 >> 4) + 1 {
                 for cz in (z0 >> 4) - 1..=(z1 >> 4) + 1 {
-                    sim.world.player_touched.insert(tchunk(cx, cz));
+                    sim.world
+                        .player_touched
+                        .insert(origin.offset(cx * 16, 0, cz * 16).unwrap().chunk());
                 }
             }
         }
@@ -78,7 +88,7 @@ impl TestHost {
         // does — the agents' mirrors must see what the test changes.
         sim.world.set_edit_logging(true);
         sess.set_initial_view_distance_for_test(2);
-        sess.fresh_spawn = Some(ep(glam::Vec3::new(0.5, STAGE_Y as f32 + 0.2, 0.5)));
+        sess.fresh_spawn = Some(origin.entity_at_height(0.2));
         let addr = format!("127.0.0.1:{}", sess.net.port).parse().unwrap();
         let shared = Arc::new(Mutex::new((sess, sim)));
         let stop = Arc::new(AtomicBool::new(false));
@@ -1050,6 +1060,61 @@ fn the_agent_follows_the_leader() {
 }
 
 #[test]
+fn the_agent_follows_past_off_center_breadcrumbs() {
+    let host = TestHost::start("agent-follow-off-center");
+    let mut leader = Agent::connect_for_test(host.addr, "LEADER").expect("leader joins");
+    let mut follower = Agent::connect_for_test(host.addr, "FOLLOWER").expect("follower joins");
+    leader.pump_for(0.3);
+    follower.pump_for(0.3);
+    let start = crate::agent::cell_of(follower.player.pos).unwrap();
+    // Record a trail before following. Real player snapshots can lie anywhere
+    // within a cell; the navigation route ends at that cell's center.
+    for x in [4, 8, 14] {
+        let cell = start.offset(x, 0, 0).unwrap();
+        let pos = crate::planet::EntityPos::new(
+            cell.face(),
+            f32::from(cell.u()) + 0.8,
+            f32::from(cell.y()),
+            f32::from(cell.v()) + 0.8,
+        )
+        .unwrap();
+        leader.player = Player::new_at(pos);
+        host.with(|session, _| {
+            session.guests.get_mut(&leader.my_id).unwrap().pos = pos;
+        });
+        leader.pump_for(0.2);
+        assert!(pump_until(
+            &mut follower,
+            std::time::Duration::from_secs(5),
+            |agent| agent
+                .players
+                .get(&leader.my_id)
+                .is_some_and(|(_, seen, _)| { seen.distance_to(pos) < 0.1 })
+        ));
+    }
+    follower.behavior = Behavior::Follow {
+        id: leader.my_id,
+        distance: 2.0,
+    };
+    for _ in 0..1_000 {
+        leader.pump(0.02);
+        follower.pump(0.02);
+        if follower.player.pos.distance_to(leader.player.pos) < 3.0 {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(2));
+    }
+    let gap = follower.player.pos.distance_to(leader.player.pos);
+    assert!(
+        gap < 3.0,
+        "follower stopped at an old breadcrumb: gap {gap:.2}"
+    );
+    follower.pump_for(0.3);
+    let authoritative = host.with(|session, _| session.guests[&follower.my_id].pos);
+    assert!(authoritative.distance_to(leader.player.pos) < 3.0);
+}
+
+#[test]
 fn the_agent_crafts_places_and_deposits() {
     let host = TestHost::start("agent-craft");
     let mut a = Agent::connect_for_test(host.addr, "JOINER").expect("joins");
@@ -1101,4 +1166,180 @@ fn the_agent_crafts_places_and_deposits() {
         _ => 0,
     });
     assert!(held > 0, "the authoritative chest holds the deposit");
+}
+
+#[test]
+fn the_agent_follows_around_a_leaf_canopy() {
+    let host = TestHost::start("agent-leaf-follow");
+    follows_around_leaf_canopy(host, false);
+}
+
+#[test]
+fn the_agent_follows_around_leaves_near_a_planet_edge() {
+    let origin = crate::planet::BlockPos::new(crate::planet::Face::PosZ, 640, 200, 8180).unwrap();
+    follows_around_leaf_canopy(
+        TestHost::start_at("agent-leaf-edge-follow", false, origin),
+        false,
+    );
+}
+
+#[test]
+fn the_agent_follows_through_turns_between_leaf_blocks() {
+    follows_around_leaf_canopy(TestHost::start("agent-leaf-turns"), true);
+}
+
+fn follows_around_leaf_canopy(host: TestHost, passage: bool) {
+    let mut leader = Agent::connect_for_test(host.addr, "LEADER").expect("leader joins");
+    let mut follower = Agent::connect_for_test(host.addr, "FOLLOWER").expect("follower joins");
+    leader.pump_for(0.3);
+    follower.pump_for(0.3);
+    let start = crate::agent::cell_of(follower.player.pos).unwrap();
+    let obstruction = start.offset(3, 0, 0).unwrap();
+    host.with(|_, sim| {
+        let leaves = sim.world.reg.block_id("base:acacia_leaves").unwrap();
+        if passage {
+            let corridor = [
+                (0, 0),
+                (1, 0),
+                (2, 0),
+                (3, 0),
+                (3, 1),
+                (3, 2),
+                (3, 3),
+                (4, 3),
+                (5, 3),
+                (6, 3),
+                (6, 2),
+                (6, 1),
+                (6, 0),
+                (7, 0),
+                (8, 0),
+            ];
+            sim.world.edit_fixture_for_test(|world| {
+                for x in -3..=19 {
+                    for z in -3..=19 {
+                        if !corridor.contains(&(x, z)) {
+                            for y in 0..3 {
+                                world.set_block_at(start.offset(x, y, z).unwrap(), leaves);
+                            }
+                        }
+                    }
+                }
+            });
+        } else {
+            for dz in -2..=2 {
+                for dy in 0..3 {
+                    sim.world
+                        .set_block_at(obstruction.offset(0, dy, dz).unwrap(), leaves);
+                }
+            }
+        }
+    });
+    let obstruction = if passage {
+        start.offset(4, 0, 0).unwrap()
+    } else {
+        obstruction
+    };
+    assert!(pump_until(
+        &mut follower,
+        std::time::Duration::from_secs(10),
+        |agent| {
+            agent.world.get_block_at(obstruction)
+                == agent.reg.block_id("base:acacia_leaves").unwrap()
+        }
+    ));
+    // A player already on the other side is a normal way to begin following;
+    // there is no pre-recorded route around this intact leaf canopy.
+    leader.player = Player::new_at(start.offset(8, 0, 0).unwrap().entity_at_height(0.0));
+    host.with(|session, _| {
+        session.guests.get_mut(&leader.my_id).unwrap().pos = leader.player.pos;
+    });
+    leader.pump_for(0.3);
+    assert!(
+        pump_until(&mut follower, std::time::Duration::from_secs(10), |agent| {
+            agent
+                .players
+                .get(&leader.my_id)
+                .is_some_and(|(_, pos, _)| pos.distance_to(leader.player.pos) < 0.5)
+        }),
+        "leader id {} at {:?}, host {:?}, follower sees {:?}",
+        leader.my_id,
+        leader.player.pos,
+        host.with(|session, _| session.guests.get(&leader.my_id).map(|guest| guest.pos)),
+        follower.players
+    );
+    follower.behavior = Behavior::Follow {
+        id: leader.my_id,
+        distance: 2.0,
+    };
+    let mut furthest_side_step = 0.0f32;
+    let mut pinned_seconds = 0.0f32;
+    let mut longest_pin = 0.0f32;
+    for _ in 0..1_500 {
+        leader.pump(0.02);
+        let before = follower.player.pos;
+        follower.pump(0.02);
+        if follower.player.pushed_wall && before.horizontal_distance_to(follower.player.pos) < 0.02
+        {
+            pinned_seconds += 0.02;
+            longest_pin = longest_pin.max(pinned_seconds);
+        } else {
+            pinned_seconds = 0.0;
+        }
+        let delta = start.entity_center().local_delta_to(follower.player.pos);
+        furthest_side_step = furthest_side_step.max(delta.z.abs());
+        if follower.player.pos.distance_to(leader.player.pos) < 3.0 {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(2));
+    }
+    let gap = follower.player.pos.distance_to(leader.player.pos);
+    eprintln!(
+        "leaf follow: gap {gap:.2}, maximum time pinned {longest_pin:.2}s, side step {furthest_side_step:.2}"
+    );
+    assert!(
+        gap < 3.0,
+        "follower stayed against intact leaves: gap {gap:.2}, side step {furthest_side_step:.2}, pos {:?}, events {:?}",
+        follower.player.pos,
+        follower.events
+    );
+    assert!(
+        furthest_side_step > 2.5,
+        "the follower must walk around the canopy"
+    );
+    assert!(
+        longest_pin < 0.5,
+        "follow blindly pushed against known leaves for {longest_pin:.2} seconds before routing around them"
+    );
+    follower.pump_for(0.3);
+    host.with(|_, sim| {
+        assert_eq!(
+            sim.world.get_block_at(obstruction),
+            sim.world.reg.block_id("base:acacia_leaves").unwrap()
+        );
+    });
+    let authoritative = host.with(|session, _| session.guests[&follower.my_id].pos);
+    assert!(
+        authoritative.distance_to(leader.player.pos) < 3.0,
+        "the host still sees the follower stuck: host {authoritative:?}, client {:?}",
+        follower.player.pos
+    );
+}
+
+#[test]
+fn a_timed_out_walk_does_not_report_an_old_arrival() {
+    let host = TestHost::start("agent-wait-result");
+    let mut agent = Agent::connect_for_test(host.addr, "WALKER").expect("joins");
+    agent.event("arrived at a previous destination".into());
+    let goal = crate::agent::cell_of(agent.player.pos)
+        .unwrap()
+        .offset(8, 0, 0)
+        .unwrap();
+    agent.go_to(goal).expect("new walk plans");
+    let result = agent.wait_idle(0.0);
+    assert!(
+        result.contains("timed out"),
+        "a pending walk reported stale success: {result}"
+    );
+    assert!(!result.contains("arrived"));
 }

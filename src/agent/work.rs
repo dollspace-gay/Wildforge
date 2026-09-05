@@ -233,6 +233,9 @@ impl Agent {
             self.pump_for(0.1);
             waited += 0.1;
         }
+        if !matches!(self.behavior, Behavior::Idle) {
+            return "still walking (timed out waiting for arrival)".into();
+        }
         self.events
             .iter()
             .rev()

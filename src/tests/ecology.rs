@@ -500,6 +500,40 @@ fn the_vulture_beats_the_clock_and_rot_feeds_the_field() {
 }
 
 #[test]
+fn a_starving_wolf_prefers_available_prey_to_a_player() {
+    let reg = base_reg();
+    let mut world = World::new(42, tmp_dir("wolf-available-prey"), reg.clone());
+    world.insert_empty_chunks_for_test([tchunk(0, 0)]);
+    pad(&mut world, &reg, 0, 15, 0, 15, 100);
+    world.day = 3 * crate::world::SEASON_DAYS;
+    let mut wolf = beast(&reg, "base:wolf", Vec3::new(6.5, 101.0, 8.5));
+    wolf.belly = crate::mobs::BELLY_DESPERATE - 100.0;
+    world.spawn_mob(wolf);
+    world.spawn_mob(beast(&reg, "base:deer", Vec3::new(12.5, 101.0, 8.5)));
+    let events = world.tick_mobs(&[ctx(Vec3::new(7.0, 101.0, 8.5))], 0.1, 0.05, &mut 17);
+    let wolf = world
+        .mobs()
+        .iter()
+        .find(|mob| mob.species == reg.animal_id("base:wolf").unwrap())
+        .unwrap();
+    assert!(
+        !wolf.bold,
+        "nearby animal prey must prevent desperation attacks on players"
+    );
+    assert_eq!(
+        wolf.state,
+        crate::mobs::MobState::Stalk,
+        "the wolf should stalk its animal prey"
+    );
+    assert!(
+        !events
+            .iter()
+            .any(|event| matches!(event, crate::mobs::MobEvent::HitPlayer { .. })),
+        "a player beside the wolf was bitten despite an available deer"
+    );
+}
+
+#[test]
 fn fish_stay_wet_and_the_rod_takes_the_real_one_first() {
     let reg = base_reg();
     let mut w = test_world_with("pond", reg.clone());
@@ -1324,4 +1358,91 @@ fn wings_beat_and_wingless_animals_hold_still() {
     let a = frame("base:deer", 0.0);
     let b2 = frame("base:deer", std::f32::consts::FRAC_PI_2);
     assert_eq!(a, b2, "a standing deer does not animate");
+}
+
+fn wolf_hunt_fixture(tag: &str, belly: f32) -> (World, crate::server::PlayerCtx) {
+    let reg = base_reg();
+    let mut world = World::new(42, tmp_dir(tag), reg.clone());
+    world.insert_empty_chunks_for_test([tchunk(0, 0)]);
+    pad(&mut world, &reg, 0, 15, 0, 15, 100);
+    world.day = 3 * crate::world::SEASON_DAYS;
+    let mut wolf = beast(&reg, "base:wolf", Vec3::new(6.5, 101.0, 8.5));
+    wolf.belly = belly;
+    world.spawn_mob(wolf);
+    (world, ctx(Vec3::new(7.0, 101.0, 8.5)))
+}
+
+#[test]
+fn a_wolf_ends_its_player_chase_when_animal_prey_appears() {
+    let (mut world, player) = wolf_hunt_fixture("wolf-new-prey", -999.0);
+    world.tick_mobs(&[player], 0.1, 0.05, &mut 17);
+    assert_eq!(world.mobs()[0].state, crate::mobs::MobState::Hunt);
+    world.spawn_mob(beast(&world.reg, "base:deer", Vec3::new(12.5, 101.0, 8.5)));
+    let events = world.tick_mobs(&[player], 0.1, 0.05, &mut 17);
+    assert_eq!(world.mobs()[0].state, crate::mobs::MobState::Stalk);
+    assert!(!world.mobs()[0].bold);
+    assert!(
+        !events
+            .iter()
+            .any(|event| matches!(event, crate::mobs::MobEvent::HitPlayer { .. }))
+    );
+}
+
+#[test]
+fn a_wolf_ends_its_player_chase_when_no_longer_starving() {
+    let (mut world, player) = wolf_hunt_fixture("wolf-fed-again", -999.0);
+    world.tick_mobs(&[player], 0.1, 0.05, &mut 17);
+    assert_eq!(world.mobs()[0].state, crate::mobs::MobState::Hunt);
+    world.mobs_mut()[0].belly = 480.0;
+    let events = world.tick_mobs(&[player], 0.1, 0.05, &mut 17);
+    assert_ne!(world.mobs()[0].state, crate::mobs::MobState::Hunt);
+    assert!(
+        !events
+            .iter()
+            .any(|event| matches!(event, crate::mobs::MobEvent::HitPlayer { .. }))
+    );
+}
+
+#[test]
+fn a_hungry_but_not_starving_wolf_does_not_hunt_players() {
+    let (mut world, player) = wolf_hunt_fixture("wolf-not-desperate", -1.0);
+    let events = world.tick_mobs(&[player], 0.1, 0.05, &mut 17);
+    assert!(!world.mobs()[0].bold);
+    assert_ne!(world.mobs()[0].state, crate::mobs::MobState::Hunt);
+    assert!(
+        !events
+            .iter()
+            .any(|event| matches!(event, crate::mobs::MobEvent::HitPlayer { .. }))
+    );
+}
+
+#[test]
+fn a_wounded_starving_wolf_keeps_fleeing() {
+    let (mut world, player) = wolf_hunt_fixture("wolf-wounded-flees", -999.0);
+    world.tick_mobs(&[player], 0.1, 0.05, &mut 17);
+    let definition = world.reg.animals[world.mobs()[0].species].clone();
+    world.mobs_mut()[0].hurt(&definition, 4.0, None, player.pos);
+    let events = world.tick_mobs(&[player], 0.1, 0.05, &mut 17);
+    assert_eq!(world.mobs()[0].state, crate::mobs::MobState::Flee);
+    assert!(
+        !events
+            .iter()
+            .any(|event| matches!(event, crate::mobs::MobEvent::HitPlayer { .. }))
+    );
+}
+
+#[test]
+fn a_frog_flees_players_even_when_hungry_at_night() {
+    let (mut world, player) = wolf_hunt_fixture("frog-flees-player", -999.0);
+    let mut frog = beast(&world.reg, "base:frog", Vec3::new(6.5, 101.0, 8.5));
+    frog.belly = -999.0;
+    world.replace_mobs(vec![frog]);
+    let events = world.tick_mobs(&[player], 0.1, 0.05, &mut 17);
+    assert_eq!(world.mobs()[0].state, crate::mobs::MobState::Flee);
+    assert!(!world.mobs()[0].bold);
+    assert!(
+        !events
+            .iter()
+            .any(|event| matches!(event, crate::mobs::MobEvent::HitPlayer { .. }))
+    );
 }
