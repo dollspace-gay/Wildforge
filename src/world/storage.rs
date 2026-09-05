@@ -274,9 +274,9 @@ impl World {
             ),
         );
         // Planetary seeded-chunk marks: magic followed by face/u/v records.
-        let mut buf = Vec::with_capacity(4 + self.mob_seeded.len() * 5);
+        let mut buf = Vec::with_capacity(4 + self.population.seeded_chunks().len() * 5);
         buf.extend_from_slice(b"WFA1");
-        for pos in &self.mob_seeded {
+        for pos in self.population.seeded_chunks() {
             buf.push(pos.face() as u8);
             buf.extend_from_slice(&pos.u().to_le_bytes());
             buf.extend_from_slice(&pos.v().to_le_bytes());
@@ -581,7 +581,7 @@ impl World {
                         u16::from_le_bytes([p[3], p[4]]),
                     )
                 {
-                    self.mob_seeded.insert(pos);
+                    self.population.record_seeded(pos);
                 }
             }
         }

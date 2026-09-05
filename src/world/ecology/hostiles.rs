@@ -82,11 +82,7 @@ impl World {
         if !self.ruleset().hostile_spawns {
             return;
         }
-        self.hostile_spawn_timer += dt;
-        if self.hostile_spawn_timer < 4.0 {
-            return;
-        }
-        self.hostile_spawn_timer = 0.0;
+        if !self.population.hostile_cycle(dt) { return; }
         self.grade_watchers();
         // The wardens are the spirit's immune response. Where the
         // heart is dead they simply stop coming — and the silence is
@@ -262,11 +258,7 @@ impl World {
         if !self.ruleset().nest_spawns {
             return;
         }
-        self.nest_spawn_timer += dt;
-        if self.nest_spawn_timer < 4.0 {
-            return;
-        }
-        self.nest_spawn_timer = 0.0;
+        if !self.population.nest_cycle(dt) { return; }
         if self.population.mobs().len() >= MOB_CAP {
             return;
         }

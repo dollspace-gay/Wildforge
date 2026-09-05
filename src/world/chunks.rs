@@ -196,7 +196,7 @@ impl World {
         }
         // Wildlife rolls once per chunk, ever (the mark persists with the
         // world so hunted animals stay gone across sessions).
-        if self.mob_seeded.insert(pos) {
+        if self.population.record_seeded(pos) {
             self.seed_wildlife(pos);
         }
         // A chunk seen for the first time is up to date; one loaded

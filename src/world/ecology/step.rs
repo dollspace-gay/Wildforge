@@ -401,14 +401,7 @@ impl World {
         let repop_season = fallback_player
             .map(|player| self.season_at_surface(player.surface()))
             .unwrap_or(fallback_season);
-        self.repop_timer += dt
-            * match repop_season {
-                0 => 2.0,
-                3 => 0.5,
-                _ => 1.0,
-            };
-        if self.repop_timer >= 16.0 {
-            self.repop_timer = 0.0;
+        if self.population.repopulation_cycle(dt, repop_season) {
             // One player's ring per cycle, chosen at random — the same shape
             // the warden spawner already uses. Restocking only ever followed
             // players.first(), so on a shared world every guest but one lived

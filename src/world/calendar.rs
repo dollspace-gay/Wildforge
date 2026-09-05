@@ -907,7 +907,7 @@ impl World {
                         for dv in 0..16 {
                             let pos = ChunkPos::new(cell.face, cu0 + du, cv0 + dv)
                                 .expect("regional ledger cells partition each face");
-                            self.mob_seeded.remove(&pos);
+                            self.population.forget_seeded(pos);
                         }
                     }
                     self.whispers

@@ -17,3 +17,8 @@ pass local query/effect contexts rather than a broad mutable world to helpers.
 Read [AGENTS.md](AGENTS.md). Final validation covers ecology/mob/projectile tests,
 NPC links and ID allocation, save/load, cargo/drop conservation, seam-aware
 movement, predator feeding eligibility, and the complete applicable Rust gates.
+
+Population also owns wildlife seeded-chunk marks and the distinct hostile, nest,
+and season-scaled repopulation cadences. World adoption and blessing coordinate
+mark insertion/removal; the population owner determines whether a spawn cycle is
+due. The WFA1 seeded-chunk sidecar bytes and iteration policy are unchanged.

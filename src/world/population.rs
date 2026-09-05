@@ -3,6 +3,8 @@
 //! Physical custody/accounting stays with World transaction coordination. This
 //! owner controls insertion, restoration, removal, and paired NPC/mob publication.
 
+use std::collections::HashSet;
+use crate::chunk::ChunkPos;
 use crate::entity::ItemEntity;
 use crate::mobs::{Mob, Projectile};
 use crate::npc::NpcInstance;
@@ -10,6 +12,10 @@ use crate::registry::Registry;
 use super::{LOOSE_ITEM_ID_BASE, MOB_CAP, NPC_CAP};
 
 pub(super) struct Population {
+    seeded_chunks: HashSet<ChunkPos>,
+    hostile_spawn_timer: f32,
+    nest_spawn_timer: f32,
+    repop_timer: f32,
     mobs: Vec<Mob>,
     npcs: Vec<NpcInstance>,
     projectiles: Vec<Projectile>,
@@ -21,7 +27,8 @@ pub(super) struct Population {
 
 impl Default for Population {
     fn default() -> Self {
-        Self { mobs: Vec::new(), npcs: Vec::new(), projectiles: Vec::new(),
+        Self { seeded_chunks: HashSet::new(), hostile_spawn_timer: 0.0,
+            nest_spawn_timer: 0.0, repop_timer: 0.0, mobs: Vec::new(), npcs: Vec::new(), projectiles: Vec::new(),
             loose_items: Vec::new(), next_mob_id: 1, next_projectile_id: 1,
             next_loose_item_id: LOOSE_ITEM_ID_BASE }
     }
@@ -213,5 +220,28 @@ impl Population {
         mob.id = self.next_mob_id;
         self.next_mob_id = self.next_mob_id.saturating_add(1);
         self.npcs.push(NpcInstance::new(definition, position, mob.id).with_def(index));
+    }
+}
+
+impl Population {
+    pub(super) fn seeded_chunks(&self) -> &HashSet<ChunkPos> { &self.seeded_chunks }
+    pub(super) fn record_seeded(&mut self, position: ChunkPos) -> bool { self.seeded_chunks.insert(position) }
+    pub(super) fn forget_seeded(&mut self, position: ChunkPos) { self.seeded_chunks.remove(&position); }
+
+    pub(super) fn hostile_cycle(&mut self, dt: f32) -> bool {
+        self.hostile_spawn_timer += dt;
+        if self.hostile_spawn_timer < 4.0 { return false; }
+        self.hostile_spawn_timer = 0.0;
+        true
+    }
+    pub(super) fn nest_cycle(&mut self, dt: f32) -> bool {
+        self.nest_spawn_timer += dt;
+        if self.nest_spawn_timer < 4.0 { return false; }
+        self.nest_spawn_timer = 0.0;
+        true
+    }
+    pub(super) fn repopulation_cycle(&mut self, dt: f32, season: usize) -> bool {
+        self.repop_timer += dt * match season { 0 => 2.0, 3 => 0.5, _ => 1.0 };
+        if self.repop_timer >= 16.0 { self.repop_timer = 0.0; true } else { false }
     }
 }

@@ -1079,9 +1079,6 @@ pub struct World {
     /// Industrial ire cadence (capability E12): seconds since the last
     /// one-second charge for running machines.
     industrial_ire_accum: f32,
-    /// Nest-spawn cadence (capability E9): seconds since the last nest
-    /// cycle. Independent of the hostile ring's own timer.
-    nest_spawn_timer: f32,
     /// Multiblock revalidations triggered by block edits since construction.
     /// Test-only: proves the 2c edit hook is scoped, not global.
     #[cfg(test)]
@@ -1171,10 +1168,6 @@ pub struct World {
     pub dungeon_runs: Vec<crate::world::dungeon::DungeonRun>,
     /// Per-run generation seed drift so two visits to one dungeon differ.
     run_seed: u32,
-    hostile_spawn_timer: f32,
-    /// Chunks whose wildlife roll already happened (persisted).
-    mob_seeded: HashSet<ChunkPos>,
-    repop_timer: f32,
     /// Game mode string, persisted in world.toml alongside seed/ire.
     pub mode: String,
     /// The client camera mode chosen for this world (`first`/`third`/`orbit`),
@@ -1536,7 +1529,6 @@ impl World {
             pending_drops: Vec::new(),
             perish_accum: 0.0,
             industrial_ire_accum: 0.0,
-            nest_spawn_timer: 0.0,
             station_work: HashMap::new(),
             belt_state: HashMap::new(),
             regional_ire: HashMap::new(),
@@ -1555,9 +1547,6 @@ impl World {
             last_entry_anchor: None,
             dungeon_runs: Vec::new(),
             run_seed: 0x5EED_0000,
-            hostile_spawn_timer: 0.0,
-            mob_seeded: HashSet::new(),
-            repop_timer: 0.0,
             mode: "survival".into(),
             camera: "first".into(),
             ire: 0.0,

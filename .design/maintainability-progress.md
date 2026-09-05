@@ -1768,3 +1768,13 @@ fixtures to named collection operations and cover IDs, NPC links, restoration,
 cargo/Current/material effects, drops, projectile vessels, unloaded residency,
 deterministic seeding, and predator food eligibility. All accepted results remain
 pending the end-of-implementation verification phase.
+
+
+## Population cadence and seeded residency (coding checkpoint; unverified)
+
+Wildlife seeded-chunk history and hostile/nest/repopulation timers now live with
+Population. Named mark insertion/removal operations preserve adoption and blessing
+order; distinct cadence operations preserve their thresholds, reset policy, and
+seasonal multipliers. Persistence still writes/reads the WFA1 sidecar with the
+same layout and iteration policy. Final seed-once, save restoration, rejected
+spawn budget, and seasonal cadence checks remain pending. No tests ran.
