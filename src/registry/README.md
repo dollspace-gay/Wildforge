@@ -14,7 +14,8 @@ their conserved content contracts. Their call order remains explicit.
 `schema/` owns raw documents, their defaults, and the parsed provider bundle.
 `loading.rs` reads base/mod files and preserves provider ordering before calling
 the linker. Embedded base paths still refer to the same authored files.
-Linking stages and atomic publication remain in progress.
+`linking/` contains material, observation/discovery, and magic/ecology
+interpretation. Registration passes and atomic publication remain in progress.
 
 Start with `runtime.rs`. See the [repository overview](../../README.md) for
 build prerequisites and complete checks. Commands below run from the repository root.

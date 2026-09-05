@@ -44,7 +44,7 @@ runtime comparisons. Cold/warm runtime measurements remain outstanding.
 | AC-12 tests/performance | Baseline suite passed; extraction focused gates passed | Full slice gates and reproducible measurements for affected paths |
 | AC-13 shutdown | Terrain, mesh, encoding, creation, entry, and homeland work have joined owners and failure tests | Dedicated shutdown; graphical close/capture and save-failure runtime proof |
 | AC-14 migration record | This file and separate baseline commits | Add implementation/result entries after each slice |
-| Folder guidance | 64 directories previously verified; new player_ops, worldgen, and registry/schema directories include guides | Final coverage and content identity checks after coding |
+| Folder guidance | 64 directories previously verified; new player_ops, worldgen, registry/schema, and registry/linking directories include guides | Final coverage and content identity checks after coding |
 
 ## Compatibility observations requiring explicit treatment
 
@@ -1110,3 +1110,13 @@ publication remain implementation work; final tests must cover every schema
 family, bad providers, dependency order, content hashes, runtime ID ordering,
 and hot reload/remap. The requirement audit above now distinguishes these
 unverified implementations from the older validated source evidence.
+
+
+## Typed content interpretation (implementation, unverified)
+
+Material classification/salvage, observation/discovery, and declarative magic
+interpretation moved into registry-scoped modules. They consume the extracted
+raw schemas, retain the existing qualified-name rules and validation errors,
+and return runtime definitions without game-state mutation. The new linking
+directory has guides. Remaining registration passes still live in the parent;
+no checks run and final schema/registry/runtime qualification remains pending.
