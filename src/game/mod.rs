@@ -22,6 +22,7 @@ mod interaction;
 mod inventory_ui;
 mod keymap;
 mod menus;
+mod mesh_jobs;
 mod remote;
 mod roster_ui;
 mod session;
@@ -677,7 +678,7 @@ struct Game {
     world_details: std::collections::HashMap<String, String>,
     world_problems: Vec<(String, String)>,
     gen_pool: Option<crate::terrain_jobs::TerrainJobs>,
-    mesh_pool: Option<streaming::MeshPool>,
+    mesh_pool: Option<mesh_jobs::MeshPool>,
     /// Start of this frame's streaming work (shared adopt+mesh budget).
     stream_t0: std::time::Instant,
     creative: bool,

@@ -4,63 +4,6 @@
 //! main thread only adopts finished chunks (light, seams, reconcile), captures
 //! immutable mesh inputs, and uploads completed meshes on a per-frame budget.
 
-use std::collections::HashSet;
-use std::sync::mpsc::{Receiver, Sender, channel};
-use std::sync::{Arc, Mutex};
-
-struct MeshJob {
-    input: mesher::ChunkMeshInput,
-    variants: atlas::TileVariants,
-    signature: MeshSignature,
-}
-
-type MeshSignature = Vec<(u16, Vec<u16>)>;
-type MeshResult = (ChunkPos, mesher::ChunkMesh, MeshSignature);
-
-pub(super) struct MeshPool {
-    req: Sender<MeshJob>,
-    done: Receiver<MeshResult>,
-    in_flight: HashSet<ChunkPos>,
-}
-
-impl MeshPool {
-    pub(super) fn new() -> Self {
-        let (req, req_rx) = channel::<MeshJob>();
-        let (done_tx, done) = channel();
-        let req_rx = Arc::new(Mutex::new(req_rx));
-        let workers = std::thread::available_parallelism()
-            .map(|count| (count.get() / 4).clamp(1, 2))
-            .unwrap_or(1);
-        for _ in 0..workers {
-            let req_rx = Arc::clone(&req_rx);
-            let done_tx = done_tx.clone();
-            std::thread::spawn(move || {
-                loop {
-                    let job = {
-                        let Ok(receiver) = req_rx.lock() else {
-                            return;
-                        };
-                        let Ok(job) = receiver.recv() else {
-                            return;
-                        };
-                        job
-                    };
-                    let position = job.input.position();
-                    let mesh = mesher::mesh_chunk_input(&job.input, &job.variants);
-                    if done_tx.send((position, mesh, job.signature)).is_err() {
-                        return;
-                    }
-                }
-            });
-        }
-        Self {
-            req,
-            done,
-            in_flight: HashSet::new(),
-        }
-    }
-}
-
 use super::*;
 use crate::terrain_jobs::Priority;
 
@@ -109,9 +52,8 @@ impl Game {
         // simultaneous zero made otherwise-ready captures hit the 3,000-frame
         // timeout on healthy worlds.
         let initial_mesh_in_flight = self.mesh_pool.as_ref().map_or(0, |pool| {
-            pool.in_flight
-                .iter()
-                .filter(|position| !self.renderer.has_chunk(**position))
+            pool.positions()
+                .filter(|position| !self.renderer.has_chunk(*position))
                 .count()
         });
         pending
@@ -162,6 +104,9 @@ impl Game {
         const ADOPT_BUDGET_MS: u128 = 3;
         let mut terrain_error = None;
         if let Some(pool) = &mut self.gen_pool {
+            if let Some(error) = pool.take_failure_notification() {
+                terrain_error = Some(format!("Terrain streaming stopped: {error}"));
+            }
             pool.cancel_queued(&|position| {
                 position.distance(center) <= f64::from(vd * CHUNK_X as i32) + 1.0
             });
@@ -246,11 +191,20 @@ impl Game {
             }
         }
 
+        if let Some(error) = self
+            .mesh_pool
+            .as_mut()
+            .and_then(|pool| pool.take_failure_notification())
+        {
+            eprintln!("mesh workers stopped: {error}");
+            self.set_screen(Screen::Paused);
+            self.toast(format!("Terrain drawing stopped: {error}"));
+        }
+
         let current_variant_signature = self.content.tile_variants.signature();
         let completed_meshes = if let Some(pool) = &mut self.mesh_pool {
             let mut completed = Vec::new();
-            while let Ok((position, mesh, signature)) = pool.done.try_recv() {
-                pool.in_flight.remove(&position);
+            while let Some((position, mesh, signature)) = pool.try_ready() {
                 completed.push((position, mesh, signature));
             }
             completed
@@ -291,12 +245,12 @@ impl Game {
             .map(|p| (p.distance(center) as i32, p))
             .collect();
         dirty.retain(|(_, position)| self.chunk_mesh_ready(*position, center, vd));
-        let mesh_in_flight = self
-            .mesh_pool
-            .as_ref()
-            .map(|pool| pool.in_flight.clone())
-            .unwrap_or_default();
-        dirty.retain(|(_, position)| !mesh_in_flight.contains(position));
+        dirty.retain(|(_, position)| {
+            !self
+                .mesh_pool
+                .as_ref()
+                .is_some_and(|pool| pool.contains(*position))
+        });
         dirty.sort_by_key(|(d, _)| *d);
         // Snapshot at most one job per frame and keep two total outstanding.
         // The old scoped threads were joined immediately, putting 40–60 ms of
@@ -304,28 +258,26 @@ impl Game {
         let available = self
             .mesh_pool
             .as_ref()
-            .map_or(0, |pool| 2usize.saturating_sub(pool.in_flight.len()));
+            .map_or(0, |pool| 2usize.saturating_sub(pool.pending_count()));
         let jobs = dirty
             .into_iter()
             .take(available.min(1))
             .filter_map(|(_, position)| {
-                mesher::ChunkMeshInput::capture(&self.server.world, position).map(|input| MeshJob {
-                    input,
-                    variants: self.content.tile_variants.clone(),
-                    signature: current_variant_signature.clone(),
+                mesher::ChunkMeshInput::capture(&self.server.world, position).map(|input| {
+                    (
+                        input,
+                        self.content.tile_variants.clone(),
+                        current_variant_signature.clone(),
+                    )
                 })
             })
             .collect::<Vec<_>>();
-        for job in jobs {
-            let position = job.input.position();
-            let sent = self.mesh_pool.as_mut().is_some_and(|pool| {
-                if pool.req.send(job).is_ok() {
-                    pool.in_flight.insert(position);
-                    true
-                } else {
-                    false
-                }
-            });
+        for (input, variants, signature) in jobs {
+            let position = input.position();
+            let sent = self
+                .mesh_pool
+                .as_mut()
+                .is_some_and(|pool| pool.request(input, variants, signature));
             if sent {
                 // This snapshot owns the current dirty state. Any subsequent
                 // edit flips it dirty again while the worker is running.

@@ -59,10 +59,20 @@ pub(crate) struct TerrainJobs {
     generation: GenerationId,
     workers: Vec<JoinHandle<()>>,
     failures: HashMap<ChunkPos, TerrainFailure>,
+    failure_reported: bool,
+    closed: bool,
 }
 
 impl TerrainJobs {
-    pub(crate) fn new(context: TerrainContext, policy: WorkerPolicy) -> Self {
+    pub(crate) fn new(context: TerrainContext, policy: WorkerPolicy) -> io::Result<Self> {
+        Self::with_spawner(context, policy, workers::spawn)
+    }
+
+    fn with_spawner(
+        context: TerrainContext,
+        policy: WorkerPolicy,
+        mut spawn: impl FnMut(String, workers::Task) -> io::Result<JoinHandle<()>>,
+    ) -> io::Result<Self> {
         let queue = Arc::new((Mutex::new(WorkQueue::default()), Condvar::new()));
         let (sender, ready) = channel();
         let mut jobs = Self {
@@ -71,6 +81,8 @@ impl TerrainJobs {
             generation: GenerationId::new(),
             workers: Vec::new(),
             failures: HashMap::new(),
+            failure_reported: false,
+            closed: false,
         };
         // Construct the owner before spawning: if spawning unwinds, Drop
         // still stops and joins every worker that was already started.
@@ -81,8 +93,9 @@ impl TerrainJobs {
             &sender,
             &jobs.generation,
             &mut jobs.workers,
-        );
-        jobs
+            &mut spawn,
+        )?;
+        Ok(jobs)
     }
 
     /// Deduplicate requests and promote entry terrain within the supplied cap.
@@ -150,22 +163,60 @@ impl TerrainJobs {
         self.failures.values()
     }
 
+    /// A worker-wide failure stops this session's queue and remains observable.
+    pub(crate) fn fatal_failure(&self) -> Option<Arc<io::Error>> {
+        match self.queue.0.lock() {
+            Ok(queue) => queue.failure(),
+            Err(poisoned) => {
+                let mut queue = poisoned.into_inner();
+                queue.fail(io::Error::other("terrain work queue poisoned"));
+                self.queue.1.notify_all();
+                queue.failure()
+            }
+        }
+    }
+
+    /// UI notification is one-shot; failure state itself remains retained.
+    pub(crate) fn take_failure_notification(&mut self) -> Option<Arc<io::Error>> {
+        if self.failure_reported {
+            return None;
+        }
+        let failure = self.fatal_failure()?;
+        self.failure_reported = true;
+        Some(failure)
+    }
+
+    /// Stop accepting work and cancel pending requests before joining workers.
+    pub(crate) fn stop(&self) {
+        let (lock, wake) = &*self.queue;
+        lock.lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .stop();
+        wake.notify_all();
+    }
+
+    #[cfg(test)]
+    pub(crate) fn panic_worker_for_test(&mut self) {
+        let queue = Arc::clone(&self.queue);
+        let (finished, done) = std::sync::mpsc::channel();
+        self.workers.push(std::thread::spawn(move || {
+            workers::supervise(&queue, || panic!("injected terrain worker failure"));
+            finished.send(()).unwrap();
+        }));
+        done.recv_timeout(std::time::Duration::from_secs(10))
+            .unwrap();
+    }
+
     /// Cancel queued work, wait for running preparation, and discard results.
     ///
     /// Returns a worker failure only after all handles have been joined. The
     /// world and its persistence state are never mutated during shutdown.
     pub(crate) fn shutdown(&mut self) -> io::Result<()> {
-        let (lock, wake) = &*self.queue;
-        let poisoned = {
-            let guard = lock.lock();
-            let poisoned = guard.is_err();
-            // Poisoned state is recovered only to stop and clear the queue;
-            // no further terrain execution or adoption is allowed.
-            let mut queue = guard.unwrap_or_else(std::sync::PoisonError::into_inner);
-            queue.stop();
-            wake.notify_all();
-            poisoned
-        };
+        if self.closed {
+            return Ok(());
+        }
+        self.stop();
+        let poisoned = self.queue.0.is_poisoned();
         let mut panicked = 0;
         for worker in self.workers.drain(..) {
             if worker.join().is_err() {
@@ -173,9 +224,15 @@ impl TerrainJobs {
             }
         }
         while self.ready.try_recv().is_ok() {}
+        self.closed = true;
         if poisoned || panicked != 0 {
             return Err(io::Error::other(format!(
                 "terrain shutdown: {panicked} worker panics; queue poisoned: {poisoned}"
+            )));
+        }
+        if let Some(failure) = self.fatal_failure() {
+            return Err(io::Error::other(format!(
+                "terrain shutdown after worker failure: {failure}"
             )));
         }
         Ok(())

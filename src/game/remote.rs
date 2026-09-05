@@ -306,7 +306,18 @@ impl Game {
                     );
                     world.set_remote(true);
                     self.gen_pool = None; // chunks come by wire
-                    self.mesh_pool = Some(crate::game::streaming::MeshPool::new());
+                    self.mesh_pool = match crate::game::mesh_jobs::MeshPool::new() {
+                        Ok(meshes) => Some(meshes),
+                        Err(error) => {
+                            eprintln!("guest: mesh workers could not start: {error}");
+                            self.mesh_pool = None;
+                            self.renderer.clear_chunks();
+                            self.in_world = false;
+                            self.set_screen(Screen::Title);
+                            self.toast(format!("Could not enter host world: {error}"));
+                            return; // local RemoteSession drops and disconnects
+                        }
+                    };
                     world.mode = mode.clone();
                     world.ire = ire;
                     r.my_id = your_id;

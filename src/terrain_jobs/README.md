@@ -24,5 +24,7 @@ Running preparation finishes before shutdown returns; it cannot mutate a world.
 Old-session results never release current queue capacity. Prepared results carry
 a storage revision invalidated by any attempted authoritative write to that
 chunk, so saved-and-unloaded edits also win over late preparation. Read failures
-retain their cause and are suppressed while interest remains; live
-startup/panic propagation remains tracked migration work.
+retain their cause and are suppressed while interest remains. Startup returns
+an I/O error and joins any workers already started. A panic or poisoned queue
+stops all further preparation/adoption and retains an observable fatal error;
+UI notification is one-shot while the host can refuse later arrivals too.
