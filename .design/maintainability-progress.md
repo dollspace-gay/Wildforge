@@ -43,7 +43,7 @@ runtime comparisons. Cold/warm runtime measurements remain outstanding.
 | AC-12 tests/performance | Baseline suite passed; extraction focused gates passed | Full slice gates and reproducible measurements for affected paths |
 | AC-13 shutdown | Existing detached terrain/mesh workers inspected | Owned shutdown, join/cancel, persistence failure tests |
 | AC-14 migration record | This file and separate baseline commits | Add implementation/result entries after each slice |
-| Folder guidance | Directory guides and tested coverage checker added | 53 maintained directories pass coverage; verify hash opt-out and enable CI check |
+| Folder guidance | 53 maintained directories documented; coverage CI and hash regressions pass | Recheck when adding directories |
 
 ## Compatibility observations requiring explicit treatment
 
@@ -120,6 +120,7 @@ named phase rather than treated as permanent exemptions.
 | `src/game/mod.rs` | 1112 | App composition still owns the remaining client fields | Phase 7 session/UI/presentation owners |
 | `src/game/session.rs` | 1059 | Entry adapters still coordinate the old client state | Phases 3 and 7 client session extraction |
 | `src/lib.rs` | 674 | Legacy CLI dispatch remains alongside the facade | Phase 7 app command extraction |
+| `src/tests/mod.rs` | 518 | Shared fixtures remain alongside test registration | Phase 7 scenario fixtures and test organization |
 | `src/net/transport.rs` | 1006 | Content inventory is extracted; QUIC lifecycle/discovery remain | Phases 3 and 8 session/transport boundaries |
 | `src/planet_atlas/climate.rs` | 2440 | Live-audit correction reuses the existing total helper; stage ownership remains debt | Phase 6 climate stage extraction |
 | `src/multiplayer/host/streaming.rs` | 462 | Within review ceiling; encoding/snapshot delivery still share the adapter | Phases 2 and 3 encoding/session ownership |
@@ -166,3 +167,37 @@ Still pending in Phase 2: typed missing/invalid/unreadable save outcomes,
 live worker/startup error propagation, owned mesh/encoding workers, caller-level
 world-switch/disconnect tests, and controlled runtime/GPU requalification.
 This lifetime checkpoint does not close the full shutdown acceptance criterion.
+
+## Checkpoint results at `4b9582a`
+
+Format, strict all-feature Clippy, MSRV 1.95, doctests (none defined), release
+build, and 15 serial agent tests pass. The full subsystem run has **1,027
+passes, 24 ignored, and five failures**. All five are the previously identified
+visual qualification source fingerprints; no new test failures remain. This
+is not a green full-suite claim. `remaining-gates.json` records exact commands,
+revision, exit codes, and timings under `target/maintainability/terrain-lifecycle/`.
+No unsafe boundary, public signature, dependency, MSRV, save codec, or protocol
+version changed. GPU/runtime qualification has not yet been performed on this
+checkpoint; the user playtest world and identities remain untouched.
+
+Local change sequence: `cc474a1` shared preparation; `db595e3` folder guidance
+and content identity; `65643ea` live water audit correction; `4b9582a` terrain
+shutdown/session rejection. None has been published.
+
+## Advisory baseline comparison
+
+`--base` now scans one immutable Git commit and the working tree with identical
+analyzer settings, without checking out or running base source. It reports
+new/grown/reduced/removed size findings, preserves Git-detected file renames,
+and compares exact clone-family IDs and occurrence locations. CI uses a pinned
+PR base SHA and keeps all findings advisory. Unknown/broken bases fail clearly.
+
+All 28 Python tests pass on Python 3.14.7 and 3.12.13. Tests include source
+renames, overwritten destinations, symlink exclusion, committed-versus-working
+bytes, clone moves/growth, mismatched thresholds, and invalid base scans.
+Actionlint, directory coverage, and whitespace checks pass. The full-tree
+comparison against `c6d9589` reports 102 files over 500 lines (baseline 103),
+71 clone candidate groups, three grown and three reduced size findings, and
+three moved clone families. These measurements do not imply a performance
+improvement or semantic elimination of every clone. Logs/reports are under
+`target/maintainability/delta-*`; the original baseline JSON is unchanged.

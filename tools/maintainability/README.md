@@ -5,6 +5,7 @@ Run from any directory with Python 3.10+ and Git:
 ```sh
 python3 tools/check_maintainability.py
 python3 tools/check_maintainability.py --format json
+python3 tools/check_maintainability.py --base <git-revision>
 python3 tools/check_maintainability.py --json-output /tmp/maintainability.json
 python3 -m unittest discover -s tools/tests -v
 ```
@@ -46,3 +47,25 @@ analysis, dependency-rule checker, or merge-blocking debt baseline in this versi
 
 The migration and later checks are specified in
 [the refactor plan](../../.design/maintainability-refactor.md).
+
+## Compare a change against its base
+
+`--base` resolves the supplied ref to one immutable commit before reading any
+source. The analyzer reads committed Git blobs directly, scans the current
+working tree with the same rules, and adds a complete `comparison` object to
+JSON plus a concise text summary. It does not check out or execute base code.
+
+File findings report new, grown, reduced, and removed size debt. Git-detected
+renames retain their previous path; an unchanged renamed file is identified
+explicitly. Untracked moves may appear as a removed file and a new file until
+staged, because Git has no tracked rename to compare yet. Clone families retain
+their exact-token IDs through moves and line shifts; changed occurrence counts
+are reported as grown/reduced, while changed tokens can appear as a removed
+family and a new family. These are finding changes, not semantic judgments.
+
+The comparison includes only files that exceed the soft warning on either
+side and clone families whose counts or locations changed. JSON retains both
+sets of clone locations. A broken/unknown base fails the scan, and differing
+analyzer versions or thresholds cannot be compared as equivalent measurements.
+CI compares pull requests against their pinned base SHA; push runs print the
+current inventory. Neither path makes size or duplication findings a merge gate.

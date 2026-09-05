@@ -9,6 +9,7 @@ import sys
 import tokenize
 
 from maintainability.report import render, scan
+from maintainability.revisions import comparison
 
 
 def arguments():
@@ -22,6 +23,7 @@ def arguments():
     parser.add_argument('--limit', type=int, default=20, help='human report entries per section')
     parser.add_argument('--format', choices=['text', 'json'], default='text')
     parser.add_argument('--json-output', type=Path, help='also write the complete machine report')
+    parser.add_argument('--base', help='compare against an immutable resolution of this Git revision')
     args = parser.parse_args()
     if not 0 < args.warn_lines <= args.review_lines:
         parser.error('require 0 < --warn-lines <= --review-lines')
@@ -34,6 +36,9 @@ def main():
     args = arguments()
     try:
         report = scan(args.root, args.warn_lines, args.review_lines, args.min_tokens, args.min_lines)
+        if args.base:
+            report['comparison'] = comparison(args.root, args.base, report, args.warn_lines,
+                                              args.review_lines, args.min_tokens, args.min_lines)
         encoded = json.dumps(report, indent=2) + '\n'
         if args.json_output:
             args.json_output.write_text(encoded, encoding='utf-8')

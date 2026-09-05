@@ -17,12 +17,21 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - name: Test maintainability analyzer
         run: python3 -m unittest discover -s tools/tests -v
       - name: Check directory guidance
         run: python3 tools/check_folder_guides.py
       - name: Advisory source size and duplication report
-        run: python3 tools/check_maintainability.py
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          if [ -n "$BASE_SHA" ]; then
+            python3 tools/check_maintainability.py --base "$BASE_SHA"
+          else
+            python3 tools/check_maintainability.py
+          fi
 
   quality:
     name: Format and Clippy
