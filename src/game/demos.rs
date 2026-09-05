@@ -197,9 +197,9 @@ impl Game {
             let stone = self.content.reg.block_id("base:stone").unwrap_or(AIR);
             let water = self.content.reg.block_id("base:water").unwrap_or(AIR);
             for y in by + 1..=by + 4 {
-                demo_set!(self.runtime.local().world, chart, bx, y, bz, stone);
+                demo_set!(self.runtime.local_mut().world, chart, bx, y, bz, stone);
             }
-            demo_set!(self.runtime.local().world, chart, bx, by + 5, bz, water);
+            demo_set!(self.runtime.local_mut().world, chart, bx, by + 5, bz, water);
             eprintln!(
                 "demo water source at ({bx},{},{bz}), spawn {:?}",
                 by + 5,
@@ -376,7 +376,7 @@ impl Game {
             for (dx, dz) in [(3, 0), (-3, 2), (0, 4), (2, -4)] {
                 let (x, z) = (spawn.x as i32 + dx, spawn.z as i32 + dz);
                 let y = demo_height!(self.runtime.local().world, chart, x, z);
-                demo_set!(self.runtime.local().world, chart, x, y + 1, z, torch);
+                demo_set!(self.runtime.local_mut().world, chart, x, y + 1, z, torch);
             }
         }
         // Dev: two pillars flanked by a blue and a red lamp — colored-shadow
@@ -393,22 +393,22 @@ impl Game {
                 // A neutral grey floor reads colored light far better than grass.
                 for dx in -8..=8 {
                     for dz in -6..=8 {
-                        demo_set!(self.runtime.local().world, chart, bx + dx, y, bz + dz, stone);
+                        demo_set!(self.runtime.local_mut().world, chart, bx + dx, y, bz + dz, stone);
                     }
                 }
                 // Two pillars as occluders.
                 for px in [-2i32, 2] {
                     for h in 1..=3 {
-                        demo_set!(self.runtime.local().world, chart, bx + px, y + h, bz, stone);
+                        demo_set!(self.runtime.local_mut().world, chart, bx + px, y + h, bz, stone);
                     }
                 }
             }
             // Low colored lamps to either side so shadows rake across the floor.
             if let Some(b) = blue {
-                demo_set!(self.runtime.local().world, chart, bx - 5, y + 2, bz, b);
+                demo_set!(self.runtime.local_mut().world, chart, bx - 5, y + 2, bz, b);
             }
             if let Some(r) = red {
-                demo_set!(self.runtime.local().world, chart, bx + 5, y + 2, bz, r);
+                demo_set!(self.runtime.local_mut().world, chart, bx + 5, y + 2, bz, r);
             }
         }
         // Dev: an enclosed cobblestone room with a 1-wide door and a 2x2 east
@@ -426,24 +426,24 @@ impl Game {
                         let shell =
                             dx == -4 || dx == 4 || dz == -4 || dz == 4 || dy == 0 || dy == 6;
                         let b = if shell { stone } else { AIR };
-                        demo_set!(self.runtime.local().world, chart, bx + dx, fy + dy, bz + dz, b);
+                        demo_set!(self.runtime.local_mut().world, chart, bx + dx, fy + dy, bz + dz, b);
                     }
                 }
             }
             // A 1-wide, 2-tall door in the +z wall.
-            demo_set!(self.runtime.local().world, chart, bx, fy + 1, bz + 4, AIR);
-            demo_set!(self.runtime.local().world, chart, bx, fy + 2, bz + 4, AIR);
+            demo_set!(self.runtime.local_mut().world, chart, bx, fy + 1, bz + 4, AIR);
+            demo_set!(self.runtime.local_mut().world, chart, bx, fy + 2, bz + 4, AIR);
             // A 2x2 window high in the +x (east) wall — the morning sun throws
             // a bright quad onto the floor that tracks across it.
             for wy in 3..=4 {
                 for wz in -1..=0 {
-                    demo_set!(self.runtime.local().world, chart, bx + 4, fy + wy, bz + wz, AIR);
+                    demo_set!(self.runtime.local_mut().world, chart, bx + 4, fy + wy, bz + wz, AIR);
                 }
             }
             if std::env::var("WILDFORGE_DEMO_ROOM").as_deref() == Ok("torch")
                 && let Some(torch) = self.content.reg.block_id("base:torch")
             {
-                demo_set!(self.runtime.local().world, chart, bx + 2, fy + 1, bz, torch);
+                demo_set!(self.runtime.local_mut().world, chart, bx + 2, fy + 1, bz, torch);
             }
             // Stand the player inside (this world has a saved position).
             self.player.pos = self
@@ -586,12 +586,12 @@ impl Game {
             if let Some(stone) = stone {
                 for dx in -9..=9 {
                     for dz in -7..=9 {
-                        demo_set!(self.runtime.local().world, chart, bx + dx, y, bz + dz, stone);
+                        demo_set!(self.runtime.local_mut().world, chart, bx + dx, y, bz + dz, stone);
                     }
                 }
                 for px in [-2i32, 2] {
                     for h in 1..=3 {
-                        demo_set!(self.runtime.local().world, chart, bx + px, y + h, bz, stone);
+                        demo_set!(self.runtime.local_mut().world, chart, bx + px, y + h, bz, stone);
                     }
                 }
             }
@@ -636,10 +636,10 @@ impl Game {
                 for dx in -10..=10i32 {
                     for dz in -4..=14i32 {
                         let (x, z) = (bx + dx, bz + dz);
-                        demo_set!(self.runtime.local().world, chart, x, y, z, grass);
+                        demo_set!(self.runtime.local_mut().world, chart, x, y, z, grass);
                         for h in 1..=8 {
                             if demo_get!(self.runtime.local().world, chart, x, y + h, z) != AIR {
-                                demo_set!(self.runtime.local().world, chart, x, y + h, z, AIR);
+                                demo_set!(self.runtime.local_mut().world, chart, x, y + h, z, AIR);
                             }
                         }
                     }
@@ -651,13 +651,13 @@ impl Game {
             {
                 let (sx, sz) = (bx - 4, bz + 6);
 
-                demo_set!(self.runtime.local().world, chart, sx, y + 1, sz, counter);
+                demo_set!(self.runtime.local_mut().world, chart, sx, y + 1, sz, counter);
                 for side in [-1i32, 1] {
-                    demo_set!(self.runtime.local().world, chart, sx + side, y + 1, sz, log);
-                    demo_set!(self.runtime.local().world, chart, sx + side, y + 2, sz, log);
+                    demo_set!(self.runtime.local_mut().world, chart, sx + side, y + 1, sz, log);
+                    demo_set!(self.runtime.local_mut().world, chart, sx + side, y + 2, sz, log);
                 }
                 for i in -1i32..=1 {
-                    demo_set!(self.runtime.local().world, chart, sx + i, y + 3, sz, planks);
+                    demo_set!(self.runtime.local_mut().world, chart, sx + i, y + 3, sz, planks);
                 }
                 let mut st = crate::world::StallState {
                     owner: [7; 16],
@@ -672,7 +672,7 @@ impl Game {
                     st.price = Some(ItemStack::new(&reg2, silver, 1));
                 }
                 demo_insert!(
-                    self.runtime.local().world,
+                    self.runtime.local_mut().world,
                     chart,
                     (sx, y + 1, sz),
                     crate::world::BlockEntity::Stall(st)
@@ -680,9 +680,9 @@ impl Game {
             }
             // A sign and a named waystone.
             if let Some(sign) = b("base:sign") {
-                demo_set!(self.runtime.local().world, chart, bx, y + 1, bz + 6, sign);
+                demo_set!(self.runtime.local_mut().world, chart, bx, y + 1, bz + 6, sign);
                 demo_insert!(
-                    self.runtime.local().world,
+                    self.runtime.local_mut().world,
                     chart,
                     (bx, y + 1, bz + 6),
                     crate::world::BlockEntity::Sign(crate::world::SignState {
@@ -695,9 +695,9 @@ impl Game {
                 );
             }
             if let Some(ws) = b("base:waystone") {
-                demo_set!(self.runtime.local().world, chart, bx + 3, y + 1, bz + 6, ws);
+                demo_set!(self.runtime.local_mut().world, chart, bx + 3, y + 1, bz + 6, ws);
                 demo_insert!(
-                    self.runtime.local().world,
+                    self.runtime.local_mut().world,
                     chart,
                     (bx + 3, y + 1, bz + 6),
                     crate::world::BlockEntity::Sign(crate::world::SignState {
@@ -727,8 +727,8 @@ impl Game {
                     for dz in 0..=3i32 {
                         // A sealed bowl: solid under the water so the
                         // pond can't drain into a cave.
-                        demo_set!(self.runtime.local().world, chart, bx + dx, y - 1, bz + dz, dirt);
-                        demo_set!(self.runtime.local().world, chart, bx + dx, y, bz + dz, water);
+                        demo_set!(self.runtime.local_mut().world, chart, bx + dx, y - 1, bz + dz, dirt);
+                        demo_set!(self.runtime.local_mut().world, chart, bx + dx, y, bz + dz, water);
                     }
                 }
                 let mut boat = demo_mob!(
@@ -808,18 +808,18 @@ impl Game {
                 for dx in -8..=8i32 {
                     for dz in -2..=16i32 {
                         let (x, z) = (bx + dx, bz + dz);
-                        demo_set!(self.runtime.local().world, chart, x, y, z, grass);
+                        demo_set!(self.runtime.local_mut().world, chart, x, y, z, grass);
                         for hh in 1..=6 {
                             if demo_get!(self.runtime.local().world, chart, x, y + hh, z) != AIR {
-                                demo_set!(self.runtime.local().world, chart, x, y + hh, z, AIR);
+                                demo_set!(self.runtime.local_mut().world, chart, x, y + hh, z, AIR);
                             }
                         }
                     }
                 }
             }
             if let (Some(rack), Some(torch)) = (b("base:smoking_rack"), b("base:torch")) {
-                demo_set!(self.runtime.local().world, chart, bx - 2, y + 1, bz + 4, torch);
-                demo_set!(self.runtime.local().world, chart, bx - 2, y + 2, bz + 4, rack);
+                demo_set!(self.runtime.local_mut().world, chart, bx - 2, y + 1, bz + 4, torch);
+                demo_set!(self.runtime.local_mut().world, chart, bx - 2, y + 2, bz + 4, rack);
                 let mut sm = crate::world::SmokerState::default();
                 if let (Some(raw), Some(smoked)) = (
                     reg2.item_id("base:raw_venison"),
@@ -829,7 +829,7 @@ impl Game {
                     sm.meat[1] = Some(ItemStack::new(&reg2, smoked, 1));
                 }
                 demo_insert!(
-                    self.runtime.local().world,
+                    self.runtime.local_mut().world,
                     chart,
                     (bx - 2, y + 2, bz + 4),
                     crate::world::BlockEntity::Smoker(sm),
@@ -839,11 +839,11 @@ impl Game {
             // line marks the settlement's edge; the wild stands just
             // beyond it.
             for _ in 0..12 {
-                demo_ire!(self.runtime.local().world, chart, bx, bz, 1.0);
+                demo_ire!(self.runtime.local_mut().world, chart, bx, bz, 1.0);
             }
             if let Some(torch) = b("base:torch") {
                 for dx in [0i32, 3, 6] {
-                    demo_set!(self.runtime.local().world, chart, bx + dx, y + 1, bz + 11, torch);
+                    demo_set!(self.runtime.local_mut().world, chart, bx + dx, y + 1, bz + 11, torch);
                 }
             }
             if let Some(ti) = reg2.animals.iter().position(|a| a.hostile) {
@@ -1215,10 +1215,10 @@ impl Game {
                 for dx in -10..=10i32 {
                     for dz in -2..=14i32 {
                         let (x, z) = (bx + dx, bz + dz);
-                        demo_set!(self.runtime.local().world, chart, x, y, z, grass);
+                        demo_set!(self.runtime.local_mut().world, chart, x, y, z, grass);
                         for hh in 1..=10 {
                             if demo_get!(self.runtime.local().world, chart, x, y + hh, z) != AIR {
-                                demo_set!(self.runtime.local().world, chart, x, y + hh, z, AIR);
+                                demo_set!(self.runtime.local_mut().world, chart, x, y + hh, z, AIR);
                             }
                         }
                     }
@@ -1456,7 +1456,7 @@ impl Game {
                         let y = demo_height!(self.runtime.local().world, chart, x, z);
                         for h in 1..=9 {
                             if demo_get!(self.runtime.local().world, chart, x, y + h, z) != AIR {
-                                demo_set!(self.runtime.local().world, chart, x, y + h, z, AIR);
+                                demo_set!(self.runtime.local_mut().world, chart, x, y + h, z, AIR);
                             }
                         }
                     }
@@ -1465,16 +1465,16 @@ impl Game {
                 for (px, pz) in [(4i32, 4i32), (-4, 6), (0, 10)] {
                     let (x, z) = (bx + px, bz + pz);
                     let y = demo_height!(self.runtime.local().world, chart, x, z);
-                    demo_set!(self.runtime.local().world, chart, x, y + 1, z, log);
-                    demo_set!(self.runtime.local().world, chart, x, y + 2, z, log);
-                    demo_set!(self.runtime.local().world, chart, x, y + 3, z, torch);
+                    demo_set!(self.runtime.local_mut().world, chart, x, y + 1, z, log);
+                    demo_set!(self.runtime.local_mut().world, chart, x, y + 2, z, log);
+                    demo_set!(self.runtime.local_mut().world, chart, x, y + 3, z, torch);
                 }
             }
             for (name, px, pz) in [("base:chest", 2i32, 7i32), ("base:stone_anvil", -2, 4)] {
                 if let Some(blk) = b(name) {
                     let (x, z) = (bx + px, bz + pz);
                     let y = demo_height!(self.runtime.local().world, chart, x, z);
-                    demo_set!(self.runtime.local().world, chart, x, y + 1, z, blk);
+                    demo_set!(self.runtime.local_mut().world, chart, x, y + 1, z, blk);
                 }
             }
             let reg = self.content.reg.clone();
@@ -1510,7 +1510,7 @@ impl Game {
                 .unwrap_or(spawn.y as i32);
             for dx in -7..=7i32 {
                 for dz in -7..=7i32 {
-                    demo_set!(self.runtime.local().world, chart, bx + dx, yf, bz + dz, stone);
+                    demo_set!(self.runtime.local_mut().world, chart, bx + dx, yf, bz + dz, stone);
                     let wall = dx.abs() == 7 || dz.abs() == 7;
                     for h in 1..=8 {
                         let b = if (wall && h <= 3) || h == 4 {
@@ -1519,29 +1519,29 @@ impl Game {
                             AIR
                         };
                         let b = if h > 4 { AIR } else { b };
-                        demo_set!(self.runtime.local().world, chart, bx + dx, yf + h, bz + dz, b);
+                        demo_set!(self.runtime.local_mut().world, chart, bx + dx, yf + h, bz + dz, b);
                     }
                 }
             }
             for px in [-3i32, 3] {
                 for h in 1..=3 {
-                    demo_set!(self.runtime.local().world, chart, bx + px, yf + h, bz + 3, stone);
+                    demo_set!(self.runtime.local_mut().world, chart, bx + px, yf + h, bz + 3, stone);
                 }
             }
             for (tx, tz) in [(-6i32, -6i32), (6, -6), (0, 6)] {
-                demo_set!(self.runtime.local().world, chart, bx + tx, yf + 1, bz + tz, torch);
+                demo_set!(self.runtime.local_mut().world, chart, bx + tx, yf + 1, bz + tz, torch);
             }
             // A red-glazed alcove: torch sealed behind a stained pane —
             // its pool outside should come out the color of the glass.
             if let Some(rg) = self.content.reg.block_id("base:red_glass") {
                 let (ax, az) = (bx + 4, bz - 4);
-                demo_set!(self.runtime.local().world, chart, ax, yf + 1, az, stone);
-                demo_set!(self.runtime.local().world, chart, ax, yf + 2, az, torch);
-                demo_set!(self.runtime.local().world, chart, ax, yf + 3, az, stone);
-                demo_set!(self.runtime.local().world, chart, ax - 1, yf + 2, az, stone);
-                demo_set!(self.runtime.local().world, chart, ax + 1, yf + 2, az, stone);
-                demo_set!(self.runtime.local().world, chart, ax, yf + 2, az - 1, stone);
-                demo_set!(self.runtime.local().world, chart, ax, yf + 2, az + 1, rg);
+                demo_set!(self.runtime.local_mut().world, chart, ax, yf + 1, az, stone);
+                demo_set!(self.runtime.local_mut().world, chart, ax, yf + 2, az, torch);
+                demo_set!(self.runtime.local_mut().world, chart, ax, yf + 3, az, stone);
+                demo_set!(self.runtime.local_mut().world, chart, ax - 1, yf + 2, az, stone);
+                demo_set!(self.runtime.local_mut().world, chart, ax + 1, yf + 2, az, stone);
+                demo_set!(self.runtime.local_mut().world, chart, ax, yf + 2, az - 1, stone);
+                demo_set!(self.runtime.local_mut().world, chart, ax, yf + 2, az + 1, rg);
             }
             // Stand in the room, whatever the terrain wanted.
             let inside = Vec3::new(bx as f32 + 0.5, yf as f32 + 1.2, bz as f32 + 0.5);
@@ -1574,10 +1574,10 @@ impl Game {
                 .unwrap_or(spawn.y as i32);
             for dx in -10..=10i32 {
                 for dz in -10..=10i32 {
-                    demo_set!(self.runtime.local().world, chart, bx + dx, yf, bz + dz, ice);
+                    demo_set!(self.runtime.local_mut().world, chart, bx + dx, yf, bz + dz, ice);
                 }
-                demo_set!(self.runtime.local().world, chart, bx + dx, yf + 1, bz + 10, ice);
-                demo_set!(self.runtime.local().world, chart, bx + dx, yf + 2, bz + 10, ice);
+                demo_set!(self.runtime.local_mut().world, chart, bx + dx, yf + 1, bz + 10, ice);
+                demo_set!(self.runtime.local_mut().world, chart, bx + dx, yf + 2, bz + 10, ice);
             }
             let strafe: f32 = std::env::var("WILDFORGE_DEMO_STRAFE")
                 .ok()
@@ -1614,18 +1614,18 @@ impl Game {
                     for dy in 0..=4i32 {
                         let edge = dx.abs() == 4 || dz.abs() == 3 || dy == 0 || dy == 4;
                         let b = if edge { stone } else { AIR };
-                        demo_set!(self.runtime.local().world, chart, bx + dx, yf + 1 + dy, bz + dz, b);
+                        demo_set!(self.runtime.local_mut().world, chart, bx + dx, yf + 1 + dy, bz + dz, b);
                     }
                 }
             }
             // The window in the far wall, glowing green.
             for dx in -2..=2i32 {
                 for dy in 2..=3i32 {
-                    demo_set!(self.runtime.local().world, chart, bx + dx, yf + 1 + dy, bz + 3, glow);
+                    demo_set!(self.runtime.local_mut().world, chart, bx + dx, yf + 1 + dy, bz + 3, glow);
                 }
             }
             // A torch on the outside sill: its beam crosses the pane.
-            demo_set!(self.runtime.local().world, chart, bx, yf + 2, bz + 5, torch);
+            demo_set!(self.runtime.local_mut().world, chart, bx, yf + 2, bz + 5, torch);
             let stand = Vec3::new(bx as f32 + 0.5, yf as f32 + 1.2, bz as f32 - 1.5);
             self.player.pos = self.player.pos.relocated_local(stand).unwrap();
             self.survival.spawn_point = self.player.pos;
@@ -1652,14 +1652,14 @@ impl Game {
                 .unwrap_or(spawn.y as i32);
             for dx in -10..=10i32 {
                 for dz in -10..=10i32 {
-                    demo_set!(self.runtime.local().world, chart, bx + dx, yf, bz + dz, stone);
+                    demo_set!(self.runtime.local_mut().world, chart, bx + dx, yf, bz + dz, stone);
                 }
                 for dy in 1..=6i32 {
-                    demo_set!(self.runtime.local().world, chart, bx + dx, yf + dy, bz - 8, stone);
+                    demo_set!(self.runtime.local_mut().world, chart, bx + dx, yf + dy, bz - 8, stone);
                 }
             }
             for dy in 1..=3i32 {
-                demo_set!(self.runtime.local().world, chart, bx + 3, yf + dy, bz - 4, stone);
+                demo_set!(self.runtime.local_mut().world, chart, bx + 3, yf + dy, bz - 4, stone);
             }
             let dist: f32 = std::env::var("WILDFORGE_DEMO_DIST")
                 .ok()
@@ -1684,9 +1684,9 @@ impl Game {
             // grass and trees don't intrude on the shadow.
             for dx in -11..=11 {
                 for dz in -9..=15 {
-                    demo_set!(self.runtime.local().world, chart, bx + dx, y, bz + dz, stone);
+                    demo_set!(self.runtime.local_mut().world, chart, bx + dx, y, bz + dz, stone);
                     for h in 1..=9 {
-                        demo_set!(self.runtime.local().world, chart, bx + dx, y + h, bz + dz, AIR);
+                        demo_set!(self.runtime.local_mut().world, chart, bx + dx, y + h, bz + dz, AIR);
                     }
                 }
             }
@@ -1696,7 +1696,7 @@ impl Game {
                     continue;
                 }
                 for h in 1..=5 {
-                    demo_set!(self.runtime.local().world, chart, bx + dx, y + h, bz, stone);
+                    demo_set!(self.runtime.local_mut().world, chart, bx + dx, y + h, bz, stone);
                 }
             }
             // Warm light on the far side of the wall — it blares through the
@@ -1723,7 +1723,7 @@ impl Game {
             let y = demo_height!(self.runtime.local().world, chart, cx, cz);
             for dx in -8..=8 {
                 for dz in -8..=8 {
-                    demo_set!(self.runtime.local().world, chart, cx + dx, y, cz + dz, water);
+                    demo_set!(self.runtime.local_mut().world, chart, cx + dx, y, cz + dz, water);
                 }
             }
         }
@@ -1748,7 +1748,7 @@ impl Game {
                 let (x, z) = (spawn.x as i32 + dx, spawn.z as i32 + dz);
                 let base = demo_height!(self.runtime.local().world, chart, x, z);
                 for i in 1..=h {
-                    demo_set!(self.runtime.local().world, chart, x, base + i, z, stone);
+                    demo_set!(self.runtime.local_mut().world, chart, x, base + i, z, stone);
                 }
             }
         }
@@ -1772,10 +1772,10 @@ impl Game {
                 for x in (spawn.x as i32 + 1)..=(spawn.x as i32 + 9) {
                     for z in (spawn.z as i32 + 1)..=(spawn.z as i32 + 15) {
                         for y in (floor_y - 2)..=floor_y {
-                            demo_set!(self.runtime.local().world, chart, x, y, z, floor);
+                            demo_set!(self.runtime.local_mut().world, chart, x, y, z, floor);
                         }
                         for y in (floor_y + 1)..=(floor_y + 14) {
-                            demo_set!(self.runtime.local().world, chart, x, y, z, AIR);
+                            demo_set!(self.runtime.local_mut().world, chart, x, y, z, AIR);
                         }
                     }
                 }
@@ -1787,11 +1787,11 @@ impl Game {
                             if rx == 0 && rz == 0 {
                                 continue;
                             }
-                            demo_set!(self.runtime.local().world, chart, sx + rx, sy + ly, sz + rz, fb);
+                            demo_set!(self.runtime.local_mut().world, chart, sx + rx, sy + ly, sz + rz, fb);
                         }
                     }
                     demo_set!(
-                        self.runtime.local().world,
+                        self.runtime.local_mut().world,
                         chart,
                         sx,
                         sy + ly,
@@ -1799,8 +1799,8 @@ impl Game {
                         crate::registry::AIR
                     );
                 }
-                demo_set!(self.runtime.local().world, chart, sx - 1, sy, sz, mouth);
-                demo_set!(self.runtime.local().world, chart, sx - 3, sy, sz + 2, anvil);
+                demo_set!(self.runtime.local_mut().world, chart, sx - 1, sy, sz, mouth);
+                demo_set!(self.runtime.local_mut().world, chart, sx - 3, sy, sz + 2, anvil);
                 // A second stack, already charged and burning.
                 let (lx, lz) = (sx, sz + 8);
                 let ly = floor_y + 1;
@@ -1810,11 +1810,11 @@ impl Game {
                             if rx == 0 && rz == 0 {
                                 continue;
                             }
-                            demo_set!(self.runtime.local().world, chart, lx + rx, ly + dy, lz + rz, fb);
+                            demo_set!(self.runtime.local_mut().world, chart, lx + rx, ly + dy, lz + rz, fb);
                         }
                     }
                     demo_set!(
-                        self.runtime.local().world,
+                        self.runtime.local_mut().world,
                         chart,
                         lx,
                         ly + dy,
@@ -1822,7 +1822,7 @@ impl Game {
                         crate::registry::AIR
                     );
                 }
-                demo_set!(self.runtime.local().world, chart, lx - 1, ly, lz, mouth);
+                demo_set!(self.runtime.local_mut().world, chart, lx - 1, ly, lz, mouth);
                 let reg2 = self.content.reg.clone();
                 if let (Some(iron), Some(coal)) = (
                     reg2.item_id("base:iron_ingot"),
@@ -1837,7 +1837,7 @@ impl Game {
                         st.fuel[i] = Some(ItemStack::new(&reg2, coal, 2));
                     }
                     demo_insert!(
-                        self.runtime.local().world,
+                        self.runtime.local_mut().world,
                         chart,
                         (lx - 1, ly, lz),
                         world::BlockEntity::Multiblock(st)
@@ -1847,7 +1847,7 @@ impl Game {
                 // A bloom resting on the anvil, ready for the hammer.
                 if let Some(bl) = reg2.item_id("base:steel_bloom") {
                     demo_anvil_put!(
-                        self.runtime.local().world,
+                        self.runtime.local_mut().world,
                         chart,
                         (sx - 3, sy, sz + 2),
                         ItemStack::new(&reg2, bl, 1),
@@ -1880,8 +1880,8 @@ impl Game {
                 let sy = demo_height!(self.runtime.local().world, chart, sx, sz);
                 for rx in 0..6i32 {
                     for rz in -2..=2i32 {
-                        demo_set!(self.runtime.local().world, chart, sx + rx, sy, sz + rz, dirt);
-                        demo_set!(self.runtime.local().world, chart, sx + rx, sy + 1, sz + rz, layer);
+                        demo_set!(self.runtime.local_mut().world, chart, sx + rx, sy, sz + rz, dirt);
+                        demo_set!(self.runtime.local_mut().world, chart, sx + rx, sy + 1, sz + rz, layer);
                     }
                 }
                 // A walker crossed the field on the diagonal.
@@ -1915,11 +1915,11 @@ impl Game {
                             if rx == 0 && rz == 0 {
                                 continue;
                             }
-                            demo_set!(self.runtime.local().world, chart, sx + rx, sy + ly, sz + rz, fb);
+                            demo_set!(self.runtime.local_mut().world, chart, sx + rx, sy + ly, sz + rz, fb);
                         }
                     }
                     demo_set!(
-                        self.runtime.local().world,
+                        self.runtime.local_mut().world,
                         chart,
                         sx,
                         sy + ly,
@@ -1927,8 +1927,8 @@ impl Game {
                         crate::registry::AIR
                     );
                 }
-                demo_set!(self.runtime.local().world, chart, sx - 1, sy, sz, kiln);
-                demo_set!(self.runtime.local().world, chart, sx - 3, sy, sz + 2, quern);
+                demo_set!(self.runtime.local_mut().world, chart, sx - 1, sy, sz, kiln);
+                demo_set!(self.runtime.local_mut().world, chart, sx - 3, sy, sz + 2, quern);
                 if let (Some(sand), Some(coal), Some(pow)) = (
                     reg.item_id("base:sand"),
                     reg.item_id("base:charcoal"),
@@ -1944,7 +1944,7 @@ impl Game {
                     }
                     st.reagent = Some(ItemStack::new(&reg, pow, 1));
                     demo_insert!(
-                        self.runtime.local().world,
+                        self.runtime.local_mut().world,
                         chart,
                         (sx - 1, sy, sz),
                         world::BlockEntity::Multiblock(st)
@@ -1980,7 +1980,7 @@ impl Game {
                         for dy in -1..=1i32 {
                             for dz in -1..=1i32 {
                                 demo_set!(
-                                    self.runtime.local().world,
+                                    self.runtime.local_mut().world,
                                     chart,
                                     tx2 - 1,
                                     ty2 + dy,
@@ -1989,7 +1989,7 @@ impl Game {
                                 );
                                 if dy != 0 || dz != 0 {
                                     demo_set!(
-                                        self.runtime.local().world,
+                                        self.runtime.local_mut().world,
                                         chart,
                                         tx2,
                                         ty2 + dy,
@@ -1999,8 +1999,8 @@ impl Game {
                                 }
                             }
                         }
-                        demo_set!(self.runtime.local().world, chart, tx2, ty2, z, torch);
-                        demo_set!(self.runtime.local().world, chart, tx2 + 1, ty2, z, *pane);
+                        demo_set!(self.runtime.local_mut().world, chart, tx2, ty2, z, torch);
+                        demo_set!(self.runtime.local_mut().world, chart, tx2 + 1, ty2, z, *pane);
                     }
                 }
                 // A stained window row so the tint shows in shots.
@@ -2018,8 +2018,8 @@ impl Game {
                 .enumerate()
                 {
                     if let Some(gb) = b(g) {
-                        demo_set!(self.runtime.local().world, chart, wx, wy, wz + i as i32, gb);
-                        demo_set!(self.runtime.local().world, chart, wx, wy + 1, wz + i as i32, gb);
+                        demo_set!(self.runtime.local_mut().world, chart, wx, wy, wz + i as i32, gb);
+                        demo_set!(self.runtime.local_mut().world, chart, wx, wy + 1, wz + i as i32, gb);
                     }
                 }
             }
@@ -2092,13 +2092,13 @@ impl Game {
             let (sx, sz) = (spawn.x as i32, spawn.z as i32);
             if let Some(os) = reg.block_id("base:offering_stone") {
                 let y = demo_height!(self.runtime.local().world, chart, sx - 3, sz - 5) + 1;
-                demo_set!(self.runtime.local().world, chart, sx - 3, y, sz - 5, os);
+                demo_set!(self.runtime.local_mut().world, chart, sx - 3, y, sz - 5, os);
                 let mut st = world::OfferingState::default();
                 if let Some(hw) = reg.item_id("base:heartwood") {
                     st.slots[0] = Some(ItemStack::new(&reg, hw, 2));
                 }
                 demo_insert!(
-                    self.runtime.local().world,
+                    self.runtime.local_mut().world,
                     chart,
                     (sx - 3, y, sz - 5),
                     world::BlockEntity::Offering(st)
@@ -2106,7 +2106,7 @@ impl Game {
             }
             if let Some(sap) = reg.block_id("base:oak_sapling") {
                 let y = demo_height!(self.runtime.local().world, chart, sx + 2, sz - 6) + 1;
-                demo_set!(self.runtime.local().world, chart, sx + 2, y, sz - 6, sap);
+                demo_set!(self.runtime.local_mut().world, chart, sx + 2, y, sz - 6, sap);
             }
             let ty = demo_height!(self.runtime.local().world, chart, sx + 6, sz - 8) + 1;
             self.runtime.local_mut().world.grow_tree_at(chart.block(sx + 6, ty, sz - 8), "oak", 3);
@@ -2121,7 +2121,7 @@ impl Game {
             let p = (spawn.x as i32 - 2, spawn.y as i32, spawn.z as i32);
             let reg = self.content.reg.clone();
             if let Some(cb) = reg.block_id("base:chest") {
-                demo_set!(self.runtime.local().world, chart, p.0, p.1, p.2, cb);
+                demo_set!(self.runtime.local_mut().world, chart, p.0, p.1, p.2, cb);
                 let mut st = world::ChestState::default();
                 for (i, (name, n)) in [
                     ("base:bread", 5),
@@ -2135,7 +2135,7 @@ impl Game {
                         st.slots[i * 4] = Some(ItemStack::new(&reg, item, *n));
                     }
                 }
-                demo_insert!(self.runtime.local().world, chart, p, world::BlockEntity::Chest(st));
+                demo_insert!(self.runtime.local_mut().world, chart, p, world::BlockEntity::Chest(st));
                 self.set_screen(Screen::Chest(chart.block_tuple(p)));
             }
         }
@@ -2376,9 +2376,9 @@ impl Game {
                 reg.item_id("base:raw_copper"),
                 reg.item_id("base:log"),
             ) {
-                demo_set!(self.runtime.local().world, chart, p.0, p.1, p.2, fb);
+                demo_set!(self.runtime.local_mut().world, chart, p.0, p.1, p.2, fb);
                 demo_insert!(
-                    self.runtime.local().world,
+                    self.runtime.local_mut().world,
                     chart,
                     p,
                     world::BlockEntity::Furnace(world::FurnaceState {
@@ -2427,10 +2427,10 @@ impl Game {
         for dx in -6..=6 {
             for dz in -2..=6 {
                 if dz <= 2 {
-                    demo_set!(self.runtime.local().world, chart, bx + dx, y - 1, bz + dz, stone);
+                    demo_set!(self.runtime.local_mut().world, chart, bx + dx, y - 1, bz + dz, stone);
                 }
                 for dy in 0..=6 {
-                    demo_set!(self.runtime.local().world, chart, bx + dx, y + dy, bz + dz, AIR);
+                    demo_set!(self.runtime.local_mut().world, chart, bx + dx, y + dy, bz + dz, AIR);
                 }
             }
         }

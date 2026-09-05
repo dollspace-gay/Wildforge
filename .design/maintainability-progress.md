@@ -1812,3 +1812,13 @@ accessors. Initialization cloning and save formats remain unchanged.
 No tests/format/build/analyzers ran. Final climate/dross routing, failure-abort,
 water conservation, machine/alchemy transfers, save/reload, and hardware weather
 captures remain required before this checkpoint is accepted.
+
+
+## Development-scene mutation adapter completion (coding checkpoint; unverified)
+
+The graphical runtime migration now passes mutable authority to the development
+scene macros that author blocks, metadata, entities, loose drops, workstation
+inputs, regional ire/bloom, and fire. Read-only height/block/standing macros retain
+read access. This completes an expansion-specific part of the source migration;
+scene geometry, operation order, and capture content are unchanged. No macro
+compilation, native staging, or GPU capture validation has run yet.
