@@ -131,7 +131,7 @@ def single_commit(commits: set[str], label: str) -> str:
     return next(iter(commits))
 
 
-def build_closeout_readability() -> dict[str, Any]:
+def build_closeout_readability(baseline_commit: str = STRATA_BASELINE_COMMIT) -> dict[str, Any]:
     cases = {
         "sandstone": ("sandstone-v4-near-noon-base", "sandstone-v12-prefog-overcast-gemini"),
         "limestone": ("limestone-v4-near-dawn-gemini", "limestone-v12-prefog-overcast-dusk"),
@@ -287,7 +287,7 @@ def build_closeout_readability() -> dict[str, Any]:
     return {
         "qualification_schema_version": QUALIFICATION_SCHEMA_VERSION,
         "kind": READABILITY_KIND,
-        "baseline_commit": STRATA_BASELINE_COMMIT,
+        "baseline_commit": baseline_commit,
         "after_commit": single_commit(commits, "closeout readability"),
         "source_reports": sorted(source_reports),
         "passed": passed,
@@ -299,7 +299,7 @@ def build_closeout_readability() -> dict[str, Any]:
     }
 
 
-def build_closeout_strata_performance() -> dict[str, Any]:
+def build_closeout_strata_performance(expected_baseline: str = STRATA_BASELINE_COMMIT) -> dict[str, Any]:
     samples: dict[str, list[float]] = {
         "baseline_draw": [],
         "baseline_sim": [],
@@ -321,9 +321,9 @@ def build_closeout_strata_performance() -> dict[str, Any]:
             samples[f"{phase}_sim"].append(float(telemetry["simulation_ms"]))
     baseline_commit = single_commit(phase_commits["baseline"], "closeout strata baseline performance")
     closeout_commit = single_commit(phase_commits["closeout"], "closeout strata performance")
-    if baseline_commit != STRATA_BASELINE_COMMIT:
+    if baseline_commit != expected_baseline:
         raise CloseoutEvidenceError(
-            "closeout baseline performance captures must come from the goal-2 baseline build"
+            "closeout baseline performance captures must come from the declared baseline build"
         )
     medians = {name: SHARED.percentile(values.copy(), 0.5) for name, values in samples.items()}
     draw_budget = max(0.30, medians["baseline_draw"] * 0.05)
@@ -355,6 +355,9 @@ def build_closeout_strata_performance() -> dict[str, Any]:
         "simulation_budget_basis": (
             "cross-arc: baseline executable predates the magic arc's"
             " simulation systems; draw keeps the goal-2 budget"
+            if expected_baseline == STRATA_BASELINE_COMMIT else
+            "unchanged cross-scene closeout budget; the separate strata-performance"
+            " qualification retains its 0.10 ms simulation gate"
         ),
         "maximum_closeout_draw_ms": max(samples["closeout_draw"]),
         "maximum_allowed_single_draw_ms": 2.0 * max(samples["baseline_draw"]),

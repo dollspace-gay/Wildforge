@@ -25,46 +25,7 @@ const COMPARISON_SCHEMA_VERSION: u32 = 1;
 #[cfg(test)]
 const CONVERSION_ID: &str = "python-stdlib-p6-rgb8-filter0-zlib9-v1";
 #[cfg(test)]
-const QUALIFICATION_SOURCES: &[&str] = &[
-    "base/textures/basalt.png",
-    "base/textures/granite.png",
-    "base/textures/limestone.png",
-    "base/textures/marble.png",
-    "base/textures/quartzite.png",
-    "base/textures/sandstone.png",
-    "base/textures/shale.png",
-    "base/textures/slate.png",
-    "build.rs",
-    "src/game/app.rs",
-    "src/game/capture.rs",
-    "src/game/content.rs",
-    "src/game/frame.rs",
-    "src/game/mod.rs",
-    "src/lib.rs",
-    "src/renderer/frame.rs",
-    "src/renderer/mod.rs",
-    "src/renderer/setup.rs",
-    "src/shader.wgsl",
-    "src/sky.rs",
-    "src/tests/rendering.rs",
-    "src/visual_capture.rs",
-    "tools/audit_tiles.py",
-    "tools/gen_base_tiles.py",
-    "tools/verify_visual_closeout.py",
-    "tools/verify_visual_polish.py",
-];
-#[cfg(test)]
-const GEODE_QUALIFICATION_SOURCES: &[&str] = &[
-    "docs/cracked-geode-capture-plan.md",
-    "src/geode_capture.rs",
-    "src/lib.rs",
-    "src/planet_atlas/geology.rs",
-    "src/visual_capture.rs",
-    "src/world/mod.rs",
-    "src/worldgen.rs",
-    "tools/verify_cracked_geode.py",
-    "tools/verify_visual_polish.py",
-];
+mod campaign;
 
 pub fn evidence_enabled() -> bool {
     std::env::var("WILDFORGE_VISUAL_EVIDENCE").as_deref() == Ok("1")
@@ -333,6 +294,7 @@ pub fn sidecar_text(
 #[serde(deny_unknown_fields)]
 struct VisualManifest {
     schema_version: u32,
+    date: String,
     status: String,
     evidence_commit: String,
     baseline_commit: String,
@@ -666,26 +628,7 @@ fn finite_fraction(value: f64) -> bool {
 
 #[cfg(test)]
 pub(crate) fn qualification_source_sha256(root: &Path) -> Result<String, String> {
-    source_set_sha256(root, QUALIFICATION_SOURCES)
-}
-
-#[cfg(test)]
-fn geode_qualification_source_sha256(root: &Path) -> Result<String, String> {
-    source_set_sha256(root, GEODE_QUALIFICATION_SOURCES)
-}
-
-#[cfg(test)]
-fn source_set_sha256(root: &Path, sources: &[&str]) -> Result<String, String> {
-    let mut source = Vec::new();
-    for relative in sources {
-        let bytes = fs::read(root.join(relative))
-            .map_err(|error| format!("read qualification source {relative}: {error}"))?;
-        source.extend_from_slice(relative.as_bytes());
-        source.push(0);
-        source.extend_from_slice(&(bytes.len() as u64).to_le_bytes());
-        source.extend_from_slice(&bytes);
-    }
-    Ok(sha256_hex(&source))
+    campaign::source_sha256(root)
 }
 
 #[cfg(test)]
@@ -810,11 +753,18 @@ fn validate_declared_evidence(
 }
 
 #[cfg(test)]
-fn validate_visual_polish_manifest_at(root: &Path, manifest_path: &Path) -> Result<(), String> {
+fn validate_visual_polish_manifest_at(
+    root: &Path,
+    manifest_path: &Path,
+    source_root: &Path,
+) -> Result<(), String> {
     let (_manifest_bytes, manifest): (Vec<u8>, VisualManifest) =
         read_toml(manifest_path, "visual-polish manifest")?;
-    if manifest.schema_version != 3 || manifest.status != "accepted" {
-        return Err("visual-polish manifest is not accepted schema 3 evidence".into());
+    if manifest.schema_version != 4
+        || manifest.status != "accepted"
+        || !campaign::valid_date(&manifest.date)
+    {
+        return Err("visual-polish manifest is not accepted schema 4 evidence".into());
     }
     if !valid_hex(&manifest.evidence_commit, 40)
         || !valid_hex(&manifest.baseline_commit, 40)
@@ -825,7 +775,7 @@ fn validate_visual_polish_manifest_at(root: &Path, manifest_path: &Path) -> Resu
     {
         return Err("visual-polish manifest identity is incomplete".into());
     }
-    let current_source = qualification_source_sha256(root)?;
+    let current_source = qualification_source_sha256(source_root)?;
     if current_source != manifest.qualification_source_sha256 {
         return Err(format!(
             "visual-polish evidence is stale relative to qualification source: manifest {}, current {current_source}",
@@ -838,7 +788,7 @@ fn validate_visual_polish_manifest_at(root: &Path, manifest_path: &Path) -> Resu
     {
         return Err("visual-polish conversion provenance is incomplete".into());
     }
-    let tool_path = root.join(safe_relative(&manifest.conversion_tool, "py")?);
+    let tool_path = source_root.join(safe_relative(&manifest.conversion_tool, "py")?);
     let tool_hash = sha256_hex(
         &fs::read(&tool_path)
             .map_err(|error| format!("read conversion tool {}: {error}", tool_path.display()))?,
@@ -1117,7 +1067,7 @@ fn validate_visual_polish_manifest_at(root: &Path, manifest_path: &Path) -> Resu
             &case.id,
             &case.sidecar,
             &case.report,
-            "strata-production-20260802",
+            &format!("strata-production-{}", manifest.date.replace('-', "")),
             expected_commit,
             (1280, 720),
         )?;
@@ -1185,7 +1135,7 @@ fn validate_visual_polish_manifest_at(root: &Path, manifest_path: &Path) -> Resu
             &declaration.id,
             &declaration.sidecar,
             &declaration.report,
-            "strata-performance-20260802",
+            &format!("strata-performance-{}", manifest.date.replace('-', "")),
             expected_commit,
             (1280, 720),
         )?;
@@ -1227,17 +1177,21 @@ fn validate_visual_polish_manifest_at(root: &Path, manifest_path: &Path) -> Resu
             return Err(format!("{kind} qualification is incomplete or failed"));
         }
     }
-    validate_cracked_geode_manifest(root, &manifest)?;
-    validate_closeout_manifest(root, &manifest)?;
+    validate_cracked_geode_manifest(root, &manifest, source_root)?;
+    validate_closeout_manifest(root, &manifest, source_root)?;
     Ok(())
 }
 
 #[cfg(test)]
-fn validate_cracked_geode_manifest(root: &Path, manifest: &VisualManifest) -> Result<(), String> {
-    const COMMIT: &str = "cc3d085a27b530942509ba01e0514a94ab0a7066";
-    const MAIN_SCENE: &str = "cracked-geode-20260805";
-    const PERFORMANCE_SCENE: &str = "cracked-geode-performance-20260805";
-    if manifest.geode_evidence_commit != COMMIT
+fn validate_cracked_geode_manifest(
+    root: &Path,
+    manifest: &VisualManifest,
+    source_root: &Path,
+) -> Result<(), String> {
+    let date = manifest.date.replace('-', "");
+    let scene = format!("cracked-geode-{date}");
+    let performance_scene = format!("cracked-geode-performance-{date}");
+    if !valid_hex(&manifest.geode_evidence_commit, 40)
         || !valid_hex(&manifest.geode_qualification_source_sha256, 64)
         || manifest.geode_verifier != "tools/verify_cracked_geode.py"
         || !valid_hex(&manifest.geode_verifier_sha256, 64)
@@ -1251,14 +1205,14 @@ fn validate_cracked_geode_manifest(root: &Path, manifest: &VisualManifest) -> Re
     {
         return Err("cracked-geode manifest provenance is incomplete".into());
     }
-    let current_source = geode_qualification_source_sha256(root)?;
+    let current_source = qualification_source_sha256(source_root)?;
     if current_source != manifest.geode_qualification_source_sha256 {
         return Err(format!(
             "cracked-geode evidence is stale relative to qualification source: manifest {}, current {current_source}",
             manifest.geode_qualification_source_sha256
         ));
     }
-    let verifier = root.join(safe_relative(&manifest.geode_verifier, "py")?);
+    let verifier = source_root.join(safe_relative(&manifest.geode_verifier, "py")?);
     let verifier_hash = sha256_hex(
         &fs::read(&verifier)
             .map_err(|error| format!("read geode verifier {}: {error}", verifier.display()))?,
@@ -1332,9 +1286,9 @@ fn validate_cracked_geode_manifest(root: &Path, manifest: &VisualManifest) -> Re
         &manifest.geode_performance_capture,
         &GeodeGroupExpectation {
             id_prefix: "geode",
-            scene: MAIN_SCENE,
-            performance_scene: PERFORMANCE_SCENE,
-            commit: COMMIT,
+            scene: &scene,
+            performance_scene: &performance_scene,
+            commit: &manifest.geode_evidence_commit,
             composition_report: &manifest.geode_composition_report,
             performance_report: &manifest.geode_performance_report,
             composition_kind: "cracked-geode-composition",
@@ -1660,21 +1614,26 @@ fn validate_geode_capture_group(
 }
 
 #[cfg(test)]
-fn validate_closeout_manifest(root: &Path, manifest: &VisualManifest) -> Result<(), String> {
-    const STRATA_SCENE: &str = "closeout-strata-20260806";
-    const STRATA_PERFORMANCE_SCENE: &str = "closeout-strata-performance-20260806";
-    const GEODE_SCENE: &str = "closeout-geode-20260806";
-    const GEODE_PERFORMANCE_SCENE: &str = "closeout-geode-performance-20260806";
+fn validate_closeout_manifest(
+    root: &Path,
+    manifest: &VisualManifest,
+    source_root: &Path,
+) -> Result<(), String> {
+    let date = manifest.date.replace('-', "");
+    let strata_scene = format!("closeout-strata-{date}");
+    let strata_performance_scene = format!("closeout-strata-performance-{date}");
+    let geode_scene = format!("closeout-geode-{date}");
+    let geode_performance_scene = format!("closeout-geode-performance-{date}");
     let closeout = &manifest.closeout;
     if !valid_hex(&closeout.commit, 40)
         || closeout.commit == manifest.baseline_commit
-        || closeout.date != "2026-08-06"
+        || closeout.date != manifest.date
         || closeout.verifier != "tools/verify_visual_closeout.py"
         || !valid_hex(&closeout.verifier_sha256, 64)
     {
         return Err("closeout identity is incomplete".into());
     }
-    let verifier = root.join(safe_relative(&closeout.verifier, "py")?);
+    let verifier = source_root.join(safe_relative(&closeout.verifier, "py")?);
     let verifier_hash = sha256_hex(
         &fs::read(&verifier)
             .map_err(|error| format!("read closeout verifier {}: {error}", verifier.display()))?,
@@ -1737,7 +1696,7 @@ fn validate_closeout_manifest(root: &Path, manifest: &VisualManifest) -> Result<
             &case.id,
             &case.sidecar,
             &case.report,
-            STRATA_SCENE,
+            &strata_scene,
             &closeout.commit,
             (1280, 720),
         )?;
@@ -1780,7 +1739,7 @@ fn validate_closeout_manifest(root: &Path, manifest: &VisualManifest) -> Result<
             &declaration.id,
             &declaration.sidecar,
             &declaration.report,
-            STRATA_PERFORMANCE_SCENE,
+            &strata_performance_scene,
             expected_commit,
             (1280, 720),
         )?;
@@ -1834,8 +1793,8 @@ fn validate_closeout_manifest(root: &Path, manifest: &VisualManifest) -> Result<
         &closeout.geode_performance_capture,
         &GeodeGroupExpectation {
             id_prefix: "closeout-geode",
-            scene: GEODE_SCENE,
-            performance_scene: GEODE_PERFORMANCE_SCENE,
+            scene: &geode_scene,
+            performance_scene: &geode_performance_scene,
             commit: &closeout.commit,
             composition_report: &closeout.geode_composition_report,
             performance_report: &closeout.geode_performance_report,
@@ -1939,7 +1898,12 @@ fn validate_closeout_manifest(root: &Path, manifest: &VisualManifest) -> Result<
 
 #[cfg(test)]
 pub(crate) fn validate_visual_polish_manifest(root: &Path) -> Result<(), String> {
-    validate_visual_polish_manifest_at(root, &root.join("screenshots/visual-polish.toml"))
+    let evidence = campaign::evidence_root(root)?;
+    validate_visual_polish_manifest_at(
+        &evidence,
+        &evidence.join("screenshots/visual-polish.toml"),
+        root,
+    )
 }
 
 #[cfg(test)]
@@ -1982,20 +1946,21 @@ mod tests {
 
     #[test]
     fn visual_polish_manifest_is_complete() {
-        let root = Path::new(env!("CARGO_MANIFEST_DIR"));
-        validate_visual_polish_manifest(root).unwrap();
+        let source_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+        validate_visual_polish_manifest(source_root).unwrap();
     }
 
     #[test]
     fn cracked_geode_capture_manifest_is_complete() {
-        let root = Path::new(env!("CARGO_MANIFEST_DIR"));
-        validate_visual_polish_manifest(root).unwrap();
+        let source_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+        validate_visual_polish_manifest(source_root).unwrap();
     }
 
     #[test]
     fn cracked_geode_capture_contains_host_shell_lining_and_heart() {
-        let root = Path::new(env!("CARGO_MANIFEST_DIR"));
-        validate_visual_polish_manifest(root).unwrap();
+        let source_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+        validate_visual_polish_manifest(source_root).unwrap();
+        let root = campaign::evidence_root(source_root).unwrap();
         let (_bytes, report): (Vec<u8>, GeodeCompositionReport) = read_toml(
             &root.join("screenshots/visual-polish/geode-composition.report.toml"),
             "cracked-geode composition",
@@ -2011,8 +1976,9 @@ mod tests {
 
     #[test]
     fn strata_capture_metrics_meet_readability_budget() {
-        let root = Path::new(env!("CARGO_MANIFEST_DIR"));
-        validate_visual_polish_manifest(root).unwrap();
+        let source_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+        validate_visual_polish_manifest(source_root).unwrap();
+        let root = campaign::evidence_root(source_root).unwrap();
         for path in [
             "screenshots/visual-polish/strata-readability.report.toml",
             "screenshots/visual-polish/strata-performance.report.toml",
@@ -2025,8 +1991,9 @@ mod tests {
 
     #[test]
     fn visual_polish_closeout_is_qualified() {
-        let root = Path::new(env!("CARGO_MANIFEST_DIR"));
-        validate_visual_polish_manifest(root).unwrap();
+        let source_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+        validate_visual_polish_manifest(source_root).unwrap();
+        let root = campaign::evidence_root(source_root).unwrap();
         let (_bytes, manifest): (Vec<u8>, VisualManifest) = read_toml(
             &root.join("screenshots/visual-polish.toml"),
             "visual-polish manifest",
@@ -2053,7 +2020,8 @@ mod tests {
 
     #[test]
     fn visual_polish_validator_rejects_incomplete_and_stale_manifests() {
-        let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+        let source_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+        let root = campaign::evidence_root(source_root).unwrap();
         let original = fs::read_to_string(root.join("screenshots/visual-polish.toml")).unwrap();
         let scratch = std::env::temp_dir().join(format!(
             "wildforge-visual-manifest-negative-{}",
@@ -2068,7 +2036,7 @@ mod tests {
             original.replacen("[[capture]]", "[[omitted]]", 1),
         )
         .unwrap();
-        assert!(validate_visual_polish_manifest_at(root, &incomplete).is_err());
+        assert!(validate_visual_polish_manifest_at(&root, &incomplete, source_root).is_err());
 
         let stale = scratch.join("stale.toml");
         let manifest: VisualManifest = toml::from_str(&original).unwrap();
@@ -2077,7 +2045,7 @@ mod tests {
             original.replacen(&manifest.qualification_source_sha256, &"0".repeat(64), 1),
         )
         .unwrap();
-        assert!(validate_visual_polish_manifest_at(root, &stale).is_err());
+        assert!(validate_visual_polish_manifest_at(&root, &stale, source_root).is_err());
         let _ = fs::remove_dir_all(&scratch);
     }
 }

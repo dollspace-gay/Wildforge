@@ -787,7 +787,10 @@ def named_stratum(report: dict[str, Any], rock: str, band: str) -> dict[str, Any
     return matches[0]
 
 
-def build_readability_qualification() -> dict[str, Any]:
+def build_readability_qualification(
+    baseline_commit: str = "60486636fcfacd36de75e970a79ff6f806a0e9ac",
+    after_commit: str = "b7a4498e059ce3a5a43997f2b7f3c207a55e9505",
+) -> dict[str, Any]:
     cases = {
         "sandstone": ("sandstone-v4-near-noon-base", "sandstone-v12-prefog-overcast-gemini"),
         "limestone": ("limestone-v4-near-dawn-gemini", "limestone-v12-prefog-overcast-dusk"),
@@ -931,8 +934,8 @@ def build_readability_qualification() -> dict[str, Any]:
     return {
         "qualification_schema_version": QUALIFICATION_SCHEMA_VERSION,
         "kind": "strata-readability",
-        "baseline_commit": "60486636fcfacd36de75e970a79ff6f806a0e9ac",
-        "after_commit": "b7a4498e059ce3a5a43997f2b7f3c207a55e9505",
+        "baseline_commit": baseline_commit,
+        "after_commit": after_commit,
         "source_reports": sorted(source_reports),
         "fog_endpoint_contract": "src/shader.wgsl sky_radiance(rd); mirrored by above_water_fog_is_monotonic_and_reaches_directional_sky",
         "passed": passed,
@@ -944,7 +947,10 @@ def build_readability_qualification() -> dict[str, Any]:
     }
 
 
-def build_performance_qualification() -> dict[str, Any]:
+def build_performance_qualification(
+    baseline_commit: str = "60486636fcfacd36de75e970a79ff6f806a0e9ac",
+    after_commit: str = "b7a4498e059ce3a5a43997f2b7f3c207a55e9505",
+) -> dict[str, Any]:
     samples: dict[str, list[float]] = {"baseline_draw": [], "baseline_sim": [], "after_draw": [], "after_sim": []}
     source_reports = []
     for phase in ("baseline", "after"):
@@ -969,8 +975,8 @@ def build_performance_qualification() -> dict[str, Any]:
     return {
         "qualification_schema_version": QUALIFICATION_SCHEMA_VERSION,
         "kind": "strata-performance",
-        "baseline_commit": "60486636fcfacd36de75e970a79ff6f806a0e9ac",
-        "after_commit": "b7a4498e059ce3a5a43997f2b7f3c207a55e9505",
+        "baseline_commit": baseline_commit,
+        "after_commit": after_commit,
         "source_reports": source_reports,
         "baseline_draw_ms": samples["baseline_draw"],
         "after_draw_ms": samples["after_draw"],

@@ -609,3 +609,28 @@ identical before/after SHA-256 inventories. No full migration acceptance is
 claimed: guest renegotiation, shared client and authority owners, remaining
 world/app/content/generation decomposition, dependency/complexity tools,
 controlled performance comparisons, and complete visual requalification remain.
+
+## Full visual campaign rebuild (in progress)
+
+The latest GitHub run at `6f1a442` finished with 1,087 subsystem passes and the
+same five visual-source freshness failures; the six other jobs passed. The
+failures reproduce locally. A full native GPU campaign is being rebuilt against
+the clean `main` baseline `8c1ec40`, using an isolated seed-20260802 world and
+separate saved inputs for each process. The previous August evidence stays in
+place. No qualification is accepted at this checkpoint.
+
+Category A (root cause): the validator now selects a separate complete campaign
+directory and fingerprints newly introduced source modules as well as existing
+ones. Schema 4 makes the campaign date explicit. The existing numeric gates and
+92-capture matrix remain required, together with both motion walkthroughs.
+Category B (local correctness): metric builders accept the actual baseline and
+candidate revisions instead of fixing every later report to August's binaries.
+The new driver records clean executable identities, isolated fixture inventories,
+raw artifact hashes, native GPU identity, and failed attempts. It refuses to
+publish incomplete or stale qualification.
+
+Development validation: three new Rust provenance tests pass, including Rust /
+Python fingerprint agreement; all 32 Python tests pass. Format, strict Clippy,
+Rust 1.95 checking, folder guidance (57 directories), and advisory analysis pass.
+The complete subsystem, agent, doctest, and release checks follow the accepted
+capture campaign. Work is isolated from the unfinished client-session slice.
