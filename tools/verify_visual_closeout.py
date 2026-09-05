@@ -14,12 +14,9 @@ written for review and the Rust-side CI validator.
 from __future__ import annotations
 
 import argparse
-import hashlib
 import importlib.util
 import json
-import math
 import sys
-import tomllib
 from pathlib import Path
 from typing import Any
 
@@ -63,32 +60,20 @@ SHARED = load_module("wildforge_visual_evidence", "verify_visual_polish.py")
 GEODE = load_module("wildforge_geode_evidence", "verify_cracked_geode.py")
 
 
-def sha256(data: bytes) -> str:
-    return hashlib.sha256(data).hexdigest()
+# The shared converter owns byte identity and deterministic scalar encoding.
+sha256 = SHARED.sha256
+write_atomic = SHARED.write_atomic
 
 
 def read_toml(path: Path) -> tuple[bytes, dict[str, Any]]:
-    try:
-        data = path.read_bytes()
-        return data, tomllib.loads(data.decode("utf-8"))
-    except (OSError, UnicodeError, tomllib.TOMLDecodeError) as error:
-        raise CloseoutEvidenceError(f"read {path}: {error}") from error
+    return SHARED.read_toml(path, error_type=CloseoutEvidenceError)
 
 
 def toml_value(value: Any) -> str:
-    if isinstance(value, bool):
-        return "true" if value else "false"
-    if isinstance(value, int):
-        return str(value)
-    if isinstance(value, float):
-        if not math.isfinite(value):
-            raise CloseoutEvidenceError("closeout reports cannot contain non-finite values")
-        return format(value, ".9f")
-    if isinstance(value, str):
-        return json.dumps(value, ensure_ascii=True)
-    if isinstance(value, list):
-        return "[" + ", ".join(toml_value(item) for item in value) + "]"
-    raise CloseoutEvidenceError(f"unsupported TOML value {type(value).__name__}")
+    return SHARED.toml_value(
+        value, error_type=CloseoutEvidenceError,
+        nonfinite_message="closeout reports cannot contain non-finite values",
+    )
 
 
 def render(report: dict[str, Any]) -> bytes:
@@ -105,13 +90,6 @@ def render(report: dict[str, Any]) -> bytes:
             lines.append(f"[[{key}]]")
             lines.extend(f"{k} = {toml_value(v)}" for k, v in row.items())
     return ("\n".join(lines) + "\n").encode()
-
-
-def write_atomic(path: Path, data: bytes) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    temporary = path.with_name(path.name + ".tmp")
-    temporary.write_bytes(data)
-    temporary.replace(path)
 
 
 def sidecar_commit(report: dict[str, Any], commits: set[str]) -> None:

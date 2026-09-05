@@ -1475,3 +1475,20 @@ No validation commands ran. Final checks must cover resize and target lifetime,
 bloom off/on, exposure overrides, UI/capture ordering, Naga/pipeline contracts,
 and fresh native GPU captures and timings. Other renderer and client/world
 ownership work remains in progress.
+
+
+## Shared qualification file and scalar helpers (coding checkpoint; unverified)
+
+Geode and closeout verification now use the existing shared visual-evidence
+converter for byte hashing, TOML reads, atomic report replacement, and scalar
+serialization. Typed error classes and each verifier's non-finite diagnostic
+remain explicit parameters; nine-decimal floats, ASCII quoting, bool/integer
+precedence, recursive lists, read exception causes, and report ordering are
+retained. The shared implementation stays in the already-recorded converter
+source so the existing converter hash continues to cover it. Different flat,
+family/stratum, and nested campaign report layouts remain separate policies.
+
+No Python tests, byte comparisons, reports, or campaigns ran. Final coverage
+must compare serialized fixtures, nested scalar failures, read/write failures,
+source freshness, and the full newly captured qualification campaign. Larger
+tool decomposition and architecture checks remain implementation work.

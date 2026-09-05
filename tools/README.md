@@ -24,3 +24,8 @@ python3 -m unittest discover -s tools/tests -v
 
 Read [AGENTS.md](AGENTS.md) before changing this area. For a structural migration,
 run the complete applicable gates and record evidence in the migration record.
+
+The visual-polish converter is the shared owner of evidence byte hashes, TOML
+reads, deterministic scalar serialization, and report replacement. Geode and
+closeout verifiers retain their own error types and qualification rules while
+using those same helpers. Their different report table layouts remain explicit.

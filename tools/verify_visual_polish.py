@@ -73,20 +73,28 @@ def quoted(value: str) -> str:
     return json.dumps(value, ensure_ascii=True)
 
 
-def toml_value(value: Any) -> str:
+def toml_value(
+    value: Any,
+    *,
+    error_type: type[RuntimeError] = EvidenceError,
+    nonfinite_message: str = "reports cannot contain non-finite metrics",
+) -> str:
     if isinstance(value, bool):
         return "true" if value else "false"
     if isinstance(value, int):
         return str(value)
     if isinstance(value, float):
         if not math.isfinite(value):
-            raise EvidenceError("reports cannot contain non-finite metrics")
+            raise error_type(nonfinite_message)
         return format(value, ".9f")
     if isinstance(value, str):
         return quoted(value)
     if isinstance(value, list):
-        return "[" + ", ".join(toml_value(item) for item in value) + "]"
-    raise EvidenceError(f"unsupported TOML value {type(value).__name__}")
+        return "[" + ", ".join(
+            toml_value(item, error_type=error_type, nonfinite_message=nonfinite_message)
+            for item in value
+        ) + "]"
+    raise error_type(f"unsupported TOML value {type(value).__name__}")
 
 
 def render_report(report: dict[str, Any]) -> str:
@@ -119,12 +127,14 @@ def render_tables(report: dict[str, Any], tables: tuple[str, ...]) -> str:
     return "\n".join(lines) + "\n"
 
 
-def read_toml(path: Path) -> tuple[bytes, dict[str, Any]]:
+def read_toml(
+    path: Path, *, error_type: type[RuntimeError] = EvidenceError
+) -> tuple[bytes, dict[str, Any]]:
     try:
         data = path.read_bytes()
         parsed = tomllib.loads(data.decode("utf-8"))
     except (OSError, UnicodeError, tomllib.TOMLDecodeError) as error:
-        raise EvidenceError(f"read {path}: {error}") from error
+        raise error_type(f"read {path}: {error}") from error
     return data, parsed
 
 

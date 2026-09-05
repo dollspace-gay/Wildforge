@@ -9,13 +9,9 @@ small deterministic TOML acceptance reports for review and Rust-side CI gates.
 from __future__ import annotations
 
 import argparse
-import hashlib
 import importlib.util
-import json
-import math
 import statistics
 import sys
-import tomllib
 from pathlib import Path
 from typing import Any
 
@@ -50,47 +46,25 @@ def load_shared_tool() -> Any:
 SHARED = load_shared_tool()
 
 
-def sha256(data: bytes) -> str:
-    return hashlib.sha256(data).hexdigest()
+# The shared converter owns byte identity and deterministic scalar encoding.
+sha256 = SHARED.sha256
+write_atomic = SHARED.write_atomic
+quoted = SHARED.quoted
 
 
 def read_toml(path: Path) -> tuple[bytes, dict[str, Any]]:
-    try:
-        data = path.read_bytes()
-        return data, tomllib.loads(data.decode("utf-8"))
-    except (OSError, UnicodeError, tomllib.TOMLDecodeError) as error:
-        raise GeodeEvidenceError(f"read {path}: {error}") from error
-
-
-def quoted(value: str) -> str:
-    return json.dumps(value, ensure_ascii=True)
+    return SHARED.read_toml(path, error_type=GeodeEvidenceError)
 
 
 def toml_value(value: Any) -> str:
-    if isinstance(value, bool):
-        return "true" if value else "false"
-    if isinstance(value, int):
-        return str(value)
-    if isinstance(value, float):
-        if not math.isfinite(value):
-            raise GeodeEvidenceError("qualification reports cannot contain non-finite values")
-        return format(value, ".9f")
-    if isinstance(value, str):
-        return quoted(value)
-    if isinstance(value, list):
-        return "[" + ", ".join(toml_value(item) for item in value) + "]"
-    raise GeodeEvidenceError(f"unsupported TOML value {type(value).__name__}")
+    return SHARED.toml_value(
+        value, error_type=GeodeEvidenceError,
+        nonfinite_message="qualification reports cannot contain non-finite values",
+    )
 
 
 def render(report: dict[str, Any]) -> bytes:
     return ("\n".join(f"{key} = {toml_value(value)}" for key, value in report.items()) + "\n").encode()
-
-
-def write_atomic(path: Path, data: bytes) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    temporary = path.with_name(path.name + ".tmp")
-    temporary.write_bytes(data)
-    temporary.replace(path)
 
 
 def require_capture(stem: str) -> tuple[Path, bytes, dict[str, Any], Path, bytes, dict[str, Any]]:
