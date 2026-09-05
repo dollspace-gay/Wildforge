@@ -201,3 +201,14 @@ comparison against `c6d9589` reports 102 files over 500 lines (baseline 103),
 three moved clone families. These measurements do not imply a performance
 improvement or semantic elimination of every clone. Logs/reports are under
 `target/maintainability/delta-*`; the original baseline JSON is unchanged.
+
+## Immutable chunk reader extraction
+
+The previous goal turn made concrete progress: committed worker ownership,
+folder guidance, audit correction, and baseline-delta tooling with their tests.
+The next slice extracts `ChunkLoader` unchanged into
+`src/world/storage/reader.rs`, with local storage-domain guides. All 12 terrain
+worker tests pass after the move; codec bytes, palette rules, and the existing
+legacy-placeholder repair are unchanged. This structural checkpoint precedes
+the separate missing/corrupt/unreadable read correction. Directory coverage is
+now 54 maintained directories. Full slice/runtime acceptance remains pending.
