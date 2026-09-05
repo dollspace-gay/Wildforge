@@ -18,6 +18,7 @@ mod camera;
 mod chunk;
 mod client_session;
 mod config;
+mod content_files;
 mod crafting;
 mod dedicated;
 mod discovery;

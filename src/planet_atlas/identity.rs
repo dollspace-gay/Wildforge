@@ -37,7 +37,7 @@ pub fn genesis_content_hash(mods_dir: &Path) -> u64 {
     }
     extend(env!("CARGO_PKG_VERSION").as_bytes());
     extend(&ATLAS_ALGORITHM_VERSION.to_le_bytes());
-    extend(&crate::net::content_hash(mods_dir).to_le_bytes());
+    extend(&crate::content_files::content_hash(mods_dir).to_le_bytes());
     hash
 }
 

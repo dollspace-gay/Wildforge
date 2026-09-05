@@ -139,7 +139,7 @@ pub(in crate::planet_atlas) fn validate_manifest(manifest: &AtlasManifest, produ
             manifest.format_version, ATLAS_FORMAT_VERSION
         )));
     }
-    if manifest.topology != crate::world::WORLD_TOPOLOGY
+    if manifest.topology != crate::planet::WORLD_TOPOLOGY
         || manifest.face_blocks != FACE_BLOCKS
         || manifest.topology_version != 1
         || (manifest.planet_radius - PLANET_RADIUS).abs() > 0.001

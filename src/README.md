@@ -4,6 +4,10 @@
 
 lib.rs assembles the single package; main.rs dispatches into it. Server simulation, world state, content, clients, transport, and rendering have separate responsibilities.
 
+`content_files.rs` owns the historical mod file inventory and content hash for
+both genesis compatibility and network transfer, without depending on transport.
+`planet.rs` owns the serialized topology identity used by world and atlas saves.
+
 Start with `alchemy.rs`, `arcane.rs`, `arcane_ecology.rs`, `arcane_geography.rs`, `audio.rs`, `bounce.rs`, `camera.rs`, `chunk.rs`. See the [repository overview](../README.md) for
 build prerequisites and complete checks. Commands below run from the repository root.
 

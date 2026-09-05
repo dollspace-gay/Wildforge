@@ -506,8 +506,7 @@ pub struct FurnaceState {
     pub burn_speed: f32,
 }
 
-/// Stable save-format identifiers for the finite planetary world.
-pub const WORLD_TOPOLOGY: &str = "cube_sphere_v1";
+pub use crate::planet::WORLD_TOPOLOGY;
 // Version 10 makes visible biome terrain obey the atlas's zonal climate and
 // requires physically backed water before applying riparian vegetation.
 pub const WORLD_GENERATOR_VERSION: u32 = 10;

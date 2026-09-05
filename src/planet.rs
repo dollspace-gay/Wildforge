@@ -11,6 +11,9 @@ use serde::{Deserialize, Deserializer, Serialize};
 
 use crate::chunk::{CHUNK_X, CHUNK_Y, CHUNK_Z};
 
+/// Stable save-format identity for the six-chart planetary topology.
+pub const WORLD_TOPOLOGY: &str = "cube_sphere_v1";
+
 pub const FACE_BLOCKS: u16 = 8192;
 pub const FACE_CHUNKS: u16 = FACE_BLOCKS / CHUNK_X as u16;
 pub const SURFACE_FACES: usize = 6;

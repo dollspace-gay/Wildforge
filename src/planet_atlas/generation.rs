@@ -244,7 +244,7 @@ impl PlanetAtlas {
         let manifest = AtlasManifest {
             format_version: ATLAS_FORMAT_VERSION,
             seed,
-            topology: crate::world::WORLD_TOPOLOGY.to_string(),
+            topology: crate::planet::WORLD_TOPOLOGY.to_string(),
             face_blocks: FACE_BLOCKS,
             atlas_cell_blocks: FACE_BLOCKS / side,
             atlas_face_side: side,

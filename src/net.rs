@@ -17,9 +17,7 @@ pub use protocol::{
 #[path = "net/handshake.rs"]
 mod handshake;
 
-#[path = "net/content.rs"]
-mod content;
-pub use content::{collect_mod_files, content_hash};
+pub use crate::content_files::{collect_mod_files, content_hash};
 
 #[path = "net/transport.rs"]
 mod transport;

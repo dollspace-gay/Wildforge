@@ -4,7 +4,7 @@
 
 protocol.rs defines wire values; handshake.rs authenticates admission;
 transport.rs owns hosting, framing, and discovery; client.rs owns the guest
-endpoint, runtime, and stream tasks; content.rs owns mod hashes and transfers.
+endpoint, runtime, and stream tasks; `../content_files.rs` owns mod hashes and transfer inventories.
 
 Guest snapshot reconstruction belongs to `client_session/`, which owns stream
 generations across Welcome and reconnect. This directory retains snapshot wire

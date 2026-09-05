@@ -1339,3 +1339,16 @@ Selection predicates/ties, artifact names, report fields, colors, layer order,
 and dense aggregation order are retained. Final comparison of diagnostic
 artifacts, census totals, map registration, qualification coordinates, pinned
 atlas output, and fresh GPU evidence remains deferred with the full test phase.
+
+
+## Generation dependency direction (coding checkpoint; unverified)
+
+Mod file identity/inventory now lives in a transport-independent root module;
+network callers retain the same public facade exports, and genesis hashes call
+the shared owner directly. The existing characterization tests moved with that
+owner, without new cases or execution. Topology's serialized identity now lives
+with planet geometry, with the world facade re-exporting its prior name. Atlas
+generation and manifest compatibility no longer depend on authoritative world
+or network modules for these constants/helpers. Paths, bytes, exclusions,
+sorting, and topology values are unchanged. Final identity/API/codec checks
+remain deferred with the rest of validation.
