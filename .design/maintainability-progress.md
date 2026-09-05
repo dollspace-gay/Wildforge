@@ -1020,3 +1020,18 @@ state echoes retain their existing order and policy. The new directory has
 local guides and explicit imports. This extraction preserves the old payment
 matching behavior; identity-bearing barter and malformed stack handling need
 separate correction and final verification. No checks run for this checkpoint.
+
+
+## Barter preserves physical payment instances (implementation, unverified)
+
+Category A: the extracted legacy purchase copied the seller's price template
+into the till while deleting buyer items matched only by definition. That loses
+buyer durability/Current identities and can duplicate the template identity.
+The transaction now stages the buyer and six till slots, transfers actual buyer
+stacks, rejects malformed/non-singular durable stock, and commits only when the
+whole price fits. Normal currency retains first-fit placement; different durable
+instances need separate till slots. Insufficient funds/capacity leave all live
+state unchanged. Sale overflow remains the adapter's ordinary delivery path.
+This correction is separate from the preceding shared-body extraction. Identity,
+conservation, capacity, and local/network parity tests are deferred to the final
+verification stage as requested; no acceptance claim is made here.
