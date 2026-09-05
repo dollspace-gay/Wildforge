@@ -44,7 +44,8 @@ def environment(row: dict, output: str | None) -> dict[str, str]:
         "WILDFORGE_LOOK": f"{camera['yaw']},{camera['pitch']}",
         "WILDFORGE_SHOT_ALTITUDE": "0",
         "WILDFORGE_TIME": str(weather["time_of_day"]),
-        "WILDFORGE_DAY": str(weather["day"]), "WILDFORGE_WEATHER": weather["weather"],
+        "WILDFORGE_DAY": str(weather["day"]),
+        "WILDFORGE_WEATHER": weather["precipitation"] if weather["weather"] == "precipitation" else weather["weather"],
         "WILDFORGE_VIEW_DIST": str(render["view_distance_chunks"]),
         "WILDFORGE_SHOT_SIZE": f"{render['width']}x{render['height']}",
         "WILDFORGE_SHOT_MIN_FRAME": "1200" if "performance" in row["id"] else "180",
@@ -70,6 +71,16 @@ def validate_sidecar(path: Path, row: dict, revision: str) -> dict:
         raise ValueError(f"{row['id']}: unsettled capture")
     if metadata["capture_id"] != row["id"] or metadata["scene_id"] != row["scene"]:
         raise ValueError(f"{row['id']}: wrong capture identity")
+    template = row["template"]
+    for key in ("name", "seed", "generator_version", "atlas_format_version", "atlas_algorithm_version"):
+        if metadata["world"][key] != template["world"][key]:
+            raise ValueError(f"{row['id']}: captured world {key} differs from the requested scene")
+    for key in ("width", "height", "pack", "view_distance_chunks", "lights", "point_grid", "stark", "bloom"):
+        if render[key] != template["render"][key]:
+            raise ValueError(f"{row['id']}: captured render {key} differs from the requested scene")
+    for key in ("weather", "precipitation"):
+        if metadata["environment"][key] != template["environment"][key]:
+            raise ValueError(f"{row['id']}: captured {key} differs from the requested scene")
     return metadata
 
 

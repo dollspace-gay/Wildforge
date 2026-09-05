@@ -26,6 +26,8 @@ const COMPARISON_SCHEMA_VERSION: u32 = 1;
 const CONVERSION_ID: &str = "python-stdlib-p6-rgb8-filter0-zlib9-v1";
 #[cfg(test)]
 mod campaign;
+#[cfg(test)]
+mod native;
 
 pub fn evidence_enabled() -> bool {
     std::env::var("WILDFORGE_VISUAL_EVIDENCE").as_deref() == Ok("1")
@@ -684,14 +686,20 @@ fn validate_strata_metrics(report: &VisualReport, label: &str) -> Result<(), Str
 }
 
 #[cfg(test)]
+struct EvidenceExpectation<'a> {
+    scene: &'a str,
+    commit: &'a str,
+    size: (u32, u32),
+    native: &'a native::NativeIdentity,
+}
+
+#[cfg(test)]
 fn validate_declared_evidence(
     root: &Path,
     declaration_id: &str,
     sidecar_value: &str,
     report_value: &str,
-    expected_scene: &str,
-    expected_commit: &str,
-    expected_size: (u32, u32),
+    expected: &EvidenceExpectation<'_>,
 ) -> Result<(CaptureMetadata, VisualReport), String> {
     let sidecar_relative = safe_relative(sidecar_value, "toml")?;
     let report_relative = safe_relative(report_value, "toml")?;
@@ -711,19 +719,16 @@ fn validate_declared_evidence(
     let metadata = &sidecar.metadata;
     if metadata.schema_version != CAPTURE_SCHEMA_VERSION
         || metadata.capture_id != declaration_id
-        || metadata.scene_id != expected_scene
-        || metadata.build.commit != expected_commit
+        || metadata.scene_id != expected.scene
+        || metadata.build.commit != expected.commit
         || metadata.build.dirty
         || metadata.world.seed != 20_260_802
         || metadata.world.generator_version != crate::world::WORLD_GENERATOR_VERSION
         || metadata.world.atlas_format_version != crate::planet_atlas::ATLAS_FORMAT_VERSION
         || metadata.world.atlas_algorithm_version != crate::planet_atlas::ATLAS_ALGORITHM_VERSION
-        || metadata.world.atlas_content_hash != "010c5397ca037176"
         || metadata.world.atlas_genesis_checksum != "b053756eee79d7e7"
-        || (metadata.render.width, metadata.render.height) != expected_size
-        || metadata.render.adapter != "NVIDIA GeForce RTX 3090 [Dx12, DiscreteGpu]"
-        || metadata.render.backend != "Dx12"
-        || !metadata.render.hardware
+        || (metadata.render.width, metadata.render.height) != expected.size
+        || !expected.native.matches(metadata)
         || !metadata.telemetry.settled
         || metadata.telemetry.settled_frames < crate::game::SHOT_SETTLE_FRAMES
         || metadata.family.is_empty()
@@ -735,7 +740,7 @@ fn validate_declared_evidence(
     if report.report_schema_version != REPORT_SCHEMA_VERSION
         || report.capture_schema_version != CAPTURE_SCHEMA_VERSION
         || report.capture_id != declaration_id
-        || report.scene_id != expected_scene
+        || report.scene_id != expected.scene
         || report.sidecar != sidecar_value
         || report.sidecar_sha256 != sha256_hex(&sidecar_bytes)
         || report.width != metadata.render.width
@@ -961,6 +966,7 @@ fn validate_visual_polish_manifest_at(
 
     let first = &captures[0];
     let second = &captures[1];
+    let native = native::NativeIdentity::from_capture(first)?;
     if first.capture_id == second.capture_id
         || first.scene_id != second.scene_id
         || first.build != second.build
@@ -1067,9 +1073,12 @@ fn validate_visual_polish_manifest_at(
             &case.id,
             &case.sidecar,
             &case.report,
-            &format!("strata-production-{}", manifest.date.replace('-', "")),
-            expected_commit,
-            (1280, 720),
+            &EvidenceExpectation {
+                scene: &format!("strata-production-{}", manifest.date.replace('-', "")),
+                commit: expected_commit,
+                size: (1280, 720),
+                native: &native,
+            },
         )?;
         let expected_pack = if case.pack == "base" { "" } else { &case.pack };
         if metadata.world.name != "visual-polish-strata-baseline"
@@ -1135,9 +1144,12 @@ fn validate_visual_polish_manifest_at(
             &declaration.id,
             &declaration.sidecar,
             &declaration.report,
-            &format!("strata-performance-{}", manifest.date.replace('-', "")),
-            expected_commit,
-            (1280, 720),
+            &EvidenceExpectation {
+                scene: &format!("strata-performance-{}", manifest.date.replace('-', "")),
+                commit: expected_commit,
+                size: (1280, 720),
+                native: &native,
+            },
         )?;
         if metadata.world.name != "visual-polish-strata-perf"
             || metadata.environment.weather != "clear"
@@ -1177,8 +1189,8 @@ fn validate_visual_polish_manifest_at(
             return Err(format!("{kind} qualification is incomplete or failed"));
         }
     }
-    validate_cracked_geode_manifest(root, &manifest, source_root)?;
-    validate_closeout_manifest(root, &manifest, source_root)?;
+    validate_cracked_geode_manifest(root, &manifest, source_root, &native)?;
+    validate_closeout_manifest(root, &manifest, source_root, &native)?;
     Ok(())
 }
 
@@ -1187,6 +1199,7 @@ fn validate_cracked_geode_manifest(
     root: &Path,
     manifest: &VisualManifest,
     source_root: &Path,
+    native: &native::NativeIdentity,
 ) -> Result<(), String> {
     let date = manifest.date.replace('-', "");
     let scene = format!("cracked-geode-{date}");
@@ -1230,6 +1243,8 @@ fn validate_cracked_geode_manifest(
         "cracked-geode preparation",
     )?;
     if site.get("site_id").and_then(toml::Value::as_str) != Some("cracked-geode")
+        || site.get("atlas_content_hash").and_then(toml::Value::as_str)
+            != Some(native.content_hash.as_str())
         || site.get("deposit_id").and_then(toml::Value::as_integer) != Some(48)
         || site.get("host_geology").and_then(toml::Value::as_str) != Some("limestone")
         || site
@@ -1285,6 +1300,7 @@ fn validate_cracked_geode_manifest(
         &manifest.geode_capture,
         &manifest.geode_performance_capture,
         &GeodeGroupExpectation {
+            native,
             id_prefix: "geode",
             scene: &scene,
             performance_scene: &performance_scene,
@@ -1299,6 +1315,7 @@ fn validate_cracked_geode_manifest(
 
 #[cfg(test)]
 struct GeodeGroupExpectation<'a> {
+    native: &'a native::NativeIdentity,
     id_prefix: &'a str,
     scene: &'a str,
     performance_scene: &'a str,
@@ -1346,9 +1363,12 @@ fn validate_geode_capture_group(
             &declaration.id,
             &declaration.sidecar,
             &declaration.report,
-            expected.scene,
-            expected.commit,
-            (1920, 1080),
+            &EvidenceExpectation {
+                scene: expected.scene,
+                commit: expected.commit,
+                size: (1920, 1080),
+                native: expected.native,
+            },
         )?;
         let expected_world = if declaration.id == sealed_id {
             "visual-polish-geode-sealed"
@@ -1431,9 +1451,12 @@ fn validate_geode_capture_group(
             &declaration.id,
             &declaration.sidecar,
             &declaration.report,
-            expected.performance_scene,
-            expected.commit,
-            (1280, 720),
+            &EvidenceExpectation {
+                scene: expected.performance_scene,
+                commit: expected.commit,
+                size: (1280, 720),
+                native: expected.native,
+            },
         )?;
         if metadata.world.name != format!("visual-polish-geode-{}", declaration.phase)
             || metadata.render.pack != "gemini"
@@ -1618,6 +1641,7 @@ fn validate_closeout_manifest(
     root: &Path,
     manifest: &VisualManifest,
     source_root: &Path,
+    native: &native::NativeIdentity,
 ) -> Result<(), String> {
     let date = manifest.date.replace('-', "");
     let strata_scene = format!("closeout-strata-{date}");
@@ -1696,9 +1720,12 @@ fn validate_closeout_manifest(
             &case.id,
             &case.sidecar,
             &case.report,
-            &strata_scene,
-            &closeout.commit,
-            (1280, 720),
+            &EvidenceExpectation {
+                scene: &strata_scene,
+                commit: &closeout.commit,
+                size: (1280, 720),
+                native,
+            },
         )?;
         let expected_pack = if case.pack == "base" { "" } else { &case.pack };
         if metadata.world.name != "visual-polish-strata-baseline"
@@ -1739,9 +1766,12 @@ fn validate_closeout_manifest(
             &declaration.id,
             &declaration.sidecar,
             &declaration.report,
-            &strata_performance_scene,
-            expected_commit,
-            (1280, 720),
+            &EvidenceExpectation {
+                scene: &strata_performance_scene,
+                commit: expected_commit,
+                size: (1280, 720),
+                native,
+            },
         )?;
         if metadata.world.name != "visual-polish-strata-perf"
             || metadata.environment.weather != "clear"
@@ -1792,6 +1822,7 @@ fn validate_closeout_manifest(
         &closeout.geode_capture,
         &closeout.geode_performance_capture,
         &GeodeGroupExpectation {
+            native,
             id_prefix: "closeout-geode",
             scene: &geode_scene,
             performance_scene: &geode_performance_scene,

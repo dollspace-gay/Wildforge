@@ -56,6 +56,22 @@ class CampaignTests(unittest.TestCase):
                     self.assertEqual(capture[0], Path(row["sidecar"]))
                     self.assertEqual(capture[3], Path(row["report"]))
 
+    def test_precipitation_metadata_maps_to_native_weather_input_and_checks_output(self):
+        _, rows = plan(self.root, "2026-09-05")
+        rainy = [row for row in rows if row["template"]["environment"]["weather"] == "precipitation"]
+        self.assertEqual(len(rainy), 6)
+        for row in rainy:
+            self.assertEqual(environment(row, "capture.ppm")["WILDFORGE_WEATHER"], "rain")
+        row = rainy[0]
+        metadata = copy.deepcopy(row["template"])
+        metadata["capture_id"], metadata["scene_id"] = row["id"], row["scene"]
+        metadata["environment"].update(weather="clear", precipitation="none")
+        with tempfile.TemporaryDirectory() as temporary:
+            path = Path(temporary) / "capture.toml"
+            path.write_text(render(metadata))
+            with self.assertRaisesRegex(ValueError, "captured weather"):
+                validate_sidecar(path, row, metadata["build"]["commit"])
+
     def test_sidecar_rejects_wrong_build_software_gpu_and_unsettled_frames(self):
         _, rows = plan(self.root, "2026-09-05")
         row = rows[0]

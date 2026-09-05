@@ -643,3 +643,22 @@ for both scenes. Failed and superseded probes remain in ignored working storage;
 they are not accepted qualification. Input tracing remains opt-in, and numeric
 gates and ordinary gameplay behavior are unchanged. The final full campaign must
 use the clean revision containing these corrections.
+
+The `e949183` campaign completed all 92 captures and both 28-frame motion walks;
+every numeric qualification passed. Rust validation then exposed the remaining
+hard-coded RTX 3090/DX12 and old content identity. Its generated publication was
+retained in ignored working storage instead of being committed as a passing
+result. Category A: native identity now belongs to the campaign foundation and
+is required consistently across baseline, candidate, geode, and closeout captures;
+the located site's content identity must agree too. Discrete hardware and the
+existing numeric budgets remain mandatory. A new clean source campaign follows
+validation of this correction against the complete recorded dataset.
+
+The same full validation also identified six rain scenes captured as clear:
+the diagnostic category `precipitation` must be translated to the game's `rain`
+input. The driver now checks actual world, render, and weather axes immediately
+after capture. Six fresh diagnostic rain captures pass both readability gates,
+and the entire Rust manifest validator passes against that completed diagnostic
+dataset and its original source snapshot. Two native-identity regression tests
+and all 35 Python tests pass. The temporary external-dataset diagnostic hook was
+removed before committing; its logs and captured inputs remain in working storage.
