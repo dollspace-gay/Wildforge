@@ -25,6 +25,9 @@ and `history.rs` define the layer schemas. `generation.rs` coordinates stages,
 `manifest.rs` owns compatibility; `codec/` and `storage/` own serialization and
 committed persistence. The parent retains the public atlas facade.
 
+`water_cycle/` separates exact mass arithmetic, custody records/operations,
+audits, initial finite reservoirs, and versioned checkpoint encoding.
+
 Start with `biomes.rs`, `climate.rs`, `diagnostics.rs`, `geology.rs`, `hydrology.rs`, `water_cycle.rs`. See the [repository overview](../../README.md) for
 build prerequisites and complete checks. Commands below run from the repository root.
 
