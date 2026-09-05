@@ -45,6 +45,7 @@ mod registry_tests;
 mod rendering;
 mod soil;
 mod template;
+mod terrain_io;
 mod water_cycle;
 mod workings;
 mod world;

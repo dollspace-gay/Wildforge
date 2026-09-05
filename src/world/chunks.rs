@@ -16,9 +16,9 @@ impl World {
         if self.remote {
             return false; // guests receive chunks, they don't make them
         }
-        let loaded = self.try_load_chunk(pos);
-        let fresh = loaded.is_none();
-        let chunk = loaded.unwrap_or_else(|| self.generator.generate(pos, &self.reg));
+        let Some((chunk, fresh)) = self.prepare_chunk(pos, None) else {
+            return false;
+        };
         self.adopt_chunk(pos, chunk, fresh);
         true
     }
@@ -31,12 +31,30 @@ impl World {
         if self.chunks.contains_key(&pos) || self.remote {
             return false;
         }
-        if let Some(saved) = self.try_load_chunk(pos) {
-            self.adopt_chunk(pos, saved, false);
-        } else {
-            self.adopt_chunk(pos, chunk, true);
-        }
+        let Some((chunk, fresh)) = self.prepare_chunk(pos, Some(chunk)) else {
+            return false;
+        };
+        self.adopt_chunk(pos, chunk, fresh);
         true
+    }
+
+    fn prepare_chunk(&self, pos: ChunkPos, generated: Option<Chunk>) -> Option<(Chunk, bool)> {
+        match self.try_load_chunk(pos) {
+            Ok(ChunkRead::Present(chunk)) => Some((chunk, false)),
+            Ok(source @ (ChunkRead::Missing | ChunkRead::LegacyPlaceholder)) => {
+                if matches!(source, ChunkRead::LegacyPlaceholder) {
+                    eprintln!("world: repairing legacy all-placeholder chunk {pos:?}");
+                }
+                Some((
+                    generated.unwrap_or_else(|| self.generator.generate(pos, &self.reg)),
+                    true,
+                ))
+            }
+            Err(error) => {
+                eprintln!("world: cannot read chunk {pos:?}; saved data left intact: {error}");
+                None
+            }
+        }
     }
 
     /// Adopt a worker result whose saved-vs-generated decision was already

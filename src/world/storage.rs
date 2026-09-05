@@ -1,7 +1,8 @@
 //! Mob/chunk persistence, planetary chunk streaming, saves, and registry remapping.
 
+mod decoder;
 mod reader;
-pub(crate) use reader::ChunkLoader;
+pub(crate) use reader::{ChunkLoader, ChunkRead};
 
 use super::*;
 
@@ -708,7 +709,7 @@ impl World {
         }
     }
 
-    pub(super) fn try_load_chunk(&self, pos: ChunkPos) -> Option<Chunk> {
+    pub(super) fn try_load_chunk(&self, pos: ChunkPos) -> std::io::Result<ChunkRead> {
         self.chunk_loader().load(pos)
     }
 }

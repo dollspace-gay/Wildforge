@@ -1,5 +1,6 @@
 //! Session identity and provenance attached to every prepared terrain result.
 
+use std::io;
 use std::sync::Arc;
 
 use crate::chunk::{Chunk, ChunkPos};
@@ -23,6 +24,7 @@ impl GenerationId {
 pub(crate) enum ChunkOrigin {
     Saved,
     Generated,
+    RepairedPlaceholder,
 }
 
 /// A pure worker result awaiting an authoritative adoption decision.
@@ -35,6 +37,16 @@ pub(crate) struct PreparedChunk {
 
 impl PreparedChunk {
     pub(crate) fn is_fresh(&self) -> bool {
-        self.origin == ChunkOrigin::Generated
+        self.origin != ChunkOrigin::Saved
     }
 }
+
+/// A retained read failure; it carries the same session identity as successful work.
+#[derive(Clone, Debug)]
+pub(crate) struct TerrainFailure {
+    pub(crate) position: ChunkPos,
+    pub(crate) source: Arc<io::Error>,
+    pub(super) generation: GenerationId,
+}
+
+pub(super) type Completion = Result<PreparedChunk, TerrainFailure>;
