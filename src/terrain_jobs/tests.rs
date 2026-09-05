@@ -34,12 +34,7 @@ impl Drop for TestDirectory {
 
 fn jobs(world: &World, policy: WorkerPolicy) -> TerrainJobs {
     TerrainJobs::new(
-        TerrainContext::new(
-            world.seed,
-            Arc::clone(&world.reg),
-            world.planet_atlas(),
-            world.chunk_loader(),
-        ),
+        TerrainContext::new(world.seed, world.planet_atlas(), world.chunk_loader()),
         policy,
     )
     .unwrap()
@@ -232,3 +227,6 @@ fn authoritative_adoption_preserves_material_and_water_accounting_exactly_once()
 
 #[path = "lifecycle_tests.rs"]
 mod lifecycle;
+
+#[path = "context_tests.rs"]
+mod context;

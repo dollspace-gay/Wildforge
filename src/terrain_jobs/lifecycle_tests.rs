@@ -107,12 +107,7 @@ fn partial_startup_failure_joins_every_worker_already_started() {
     let exited = Arc::new(AtomicUsize::new(0));
     let mut count = 0;
     let result = TerrainJobs::with_spawner(
-        TerrainContext::new(
-            world.seed,
-            Arc::clone(&world.reg),
-            None,
-            world.chunk_loader(),
-        ),
+        TerrainContext::new(world.seed, None, world.chunk_loader()),
         WorkerPolicy::Dedicated,
         |name, task| {
             count += 1;

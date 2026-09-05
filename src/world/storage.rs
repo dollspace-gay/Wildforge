@@ -3,8 +3,7 @@
 mod decoder;
 mod reader;
 mod region_store;
-pub(crate) use reader::{ChunkLoader, ChunkRead};
-pub(crate) use region_store::ChunkRevision;
+pub(crate) use reader::{ChunkLoader, ChunkRead, ChunkRevision};
 pub(super) use region_store::RegionStore;
 
 use super::*;
@@ -706,7 +705,7 @@ impl World {
     pub(crate) fn chunk_loader(&self) -> ChunkLoader {
         ChunkLoader {
             store: self.region_store.clone(),
-            load_remap: self.load_remap.clone(),
+            load_remap: Arc::clone(&self.load_remap),
             reg: Arc::clone(&self.reg),
             palette_stale: self.palette_stale,
         }
@@ -1012,7 +1011,7 @@ impl World {
             let ready = report.record("block palette", path, self.write_palette());
             if ready {
                 self.palette_stale = false;
-                self.load_remap = self.read_palette_remap();
+                self.load_remap = Arc::new(self.read_palette_remap());
             }
             ready
         } else {
@@ -1120,7 +1119,7 @@ impl World {
             chunk.compact();
             chunk.dirty = true;
         }
-        self.load_remap = self.read_palette_remap();
+        self.load_remap = Arc::new(self.read_palette_remap());
         // Re-resolve gated positions (spec 2.5) against the new registry's
         // gate list by their sealed block; a gate whose def was removed (or
         // whose sealed block changed) stops gating rather than softlocking

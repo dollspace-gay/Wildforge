@@ -10,6 +10,11 @@ finished meshes, and uploads them through the existing renderer. Startup/runtime
 worker failures reach the entry screen or pause notification; native GPU proof
 is required in addition to worker buffer/lifecycle tests.
 
+Terrain streaming compares the live immutable preparation context before using
+its worker owner. Mesh completion retains the input registry and variant signature;
+the pool discards mismatched results and releases their slots before the adapter
+checks the live chunk's dirty state and performs the existing GPU upload.
+
 `world_loading.rs` owns one creation or entry operation until its worker joins.
 `world_loading_work.rs` prepares a private world; `world_loading_ui.rs` maps
 requests and terminal outcomes to screens and session adoption. UI state holds

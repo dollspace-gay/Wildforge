@@ -66,6 +66,10 @@ struct MeshBorderCell {
 }
 
 impl ChunkMeshInput {
+    pub(crate) fn registry(&self) -> &Arc<Registry> {
+        &self.reg
+    }
+
     pub fn capture(world: &World, pos: ChunkPos) -> Option<Self> {
         let mut center = world.chunk(pos)?.mesh_snapshot();
         let origin = pos.block_origin();

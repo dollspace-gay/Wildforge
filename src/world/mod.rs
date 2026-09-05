@@ -1052,7 +1052,7 @@ pub struct World {
     save_dir: PathBuf,
     region_store: storage::RegionStore,
     /// stored-id -> runtime-id remap for chunks loaded from disk.
-    load_remap: Vec<BlockId>,
+    load_remap: Arc<Vec<BlockId>>,
     /// The saved palette no longer matches this registry, so every chunk
     /// that loads has to be rewritten in current ids before the palette on
     /// disk is replaced. Cleared by the first full save of the session.
@@ -1535,7 +1535,7 @@ impl World {
             seed,
             region_store: storage::RegionStore::new(save_dir.clone()),
             save_dir,
-            load_remap: Vec::new(),
+            load_remap: Arc::new(Vec::new()),
             // A world with no save behind it has no palette on disk
             // either, so the first save owes one. `load_or_create`
             // replaces this with the answer for an existing save.

@@ -10,6 +10,12 @@ the shared FIFO snapshot owner with at most 32 queued/running/ready jobs.
 Both queues stop before host shutdown joins either set of workers. Cancelled
 encoding requests release their keys so later interest can retry them.
 
+`HostChunkState` binds the working pool or startup failure to its requested
+context. A context replacement joins the old terrain/encoding workers and drops
+their cache and pending revisions together. Matching failures remain observable
+without retrying each pump. This boundary protects prepared payloads; live guest
+content negotiation remains the responsibility of session admission.
+
 Start with `streaming.rs`. See the [repository overview](../../../README.md) for
 build prerequisites and complete checks. Commands below run from the repository root.
 

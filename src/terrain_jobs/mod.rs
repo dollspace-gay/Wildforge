@@ -37,23 +37,29 @@ pub(crate) struct TerrainContext {
 }
 
 impl TerrainContext {
-    pub(crate) fn new(
-        seed: u32,
-        registry: Arc<Registry>,
-        atlas: Option<Arc<PlanetAtlas>>,
-        loader: ChunkLoader,
-    ) -> Self {
+    pub(crate) fn new(seed: u32, atlas: Option<Arc<PlanetAtlas>>, loader: ChunkLoader) -> Self {
         Self {
             seed,
-            registry,
+            registry: Arc::clone(loader.registry()),
             atlas,
             loader,
         }
+    }
+
+    pub(crate) fn matches(&self, other: &Self) -> bool {
+        self.seed == other.seed
+            && self.loader.matches(&other.loader)
+            && match (&self.atlas, &other.atlas) {
+                (Some(left), Some(right)) => Arc::ptr_eq(left, right),
+                (None, None) => true,
+                _ => false,
+            }
     }
 }
 
 /// Owns terrain requests and completions for one world session.
 pub(crate) struct TerrainJobs {
+    context: TerrainContext,
     queue: Arc<(Mutex<WorkQueue>, Condvar)>,
     ready: Receiver<Completion>,
     generation: GenerationId,
@@ -73,21 +79,11 @@ impl TerrainJobs {
         policy: WorkerPolicy,
         mut spawn: impl FnMut(String, workers::Task) -> io::Result<JoinHandle<()>>,
     ) -> io::Result<Self> {
-        let queue = Arc::new((Mutex::new(WorkQueue::default()), Condvar::new()));
-        let (sender, ready) = channel();
-        let mut jobs = Self {
-            queue,
-            ready,
-            generation: GenerationId::new(),
-            workers: Vec::new(),
-            failures: HashMap::new(),
-            failure_reported: false,
-            closed: false,
-        };
+        let (mut jobs, sender) = Self::empty(context, WorkQueue::default());
         // Construct the owner before spawning: if spawning unwinds, Drop
         // still stops and joins every worker that was already started.
         workers::start(
-            &context,
+            &jobs.context,
             policy,
             &jobs.queue,
             &sender,
@@ -96,6 +92,58 @@ impl TerrainJobs {
             &mut spawn,
         )?;
         Ok(jobs)
+    }
+
+    fn empty(
+        context: TerrainContext,
+        queue: WorkQueue,
+    ) -> (Self, std::sync::mpsc::Sender<Completion>) {
+        let queue = Arc::new((Mutex::new(queue), Condvar::new()));
+        let (sender, ready) = channel();
+        let jobs = Self {
+            context,
+            queue,
+            ready,
+            generation: GenerationId::new(),
+            workers: Vec::new(),
+            failures: HashMap::new(),
+            failure_reported: false,
+            closed: false,
+        };
+        (jobs, sender)
+    }
+
+    pub(crate) fn context(&self) -> &TerrainContext {
+        &self.context
+    }
+
+    /// Join the obsolete pool before starting the new one. A failed restart
+    /// retains the requested context and its error, so callers do not retry
+    /// every frame or fall back to synchronous generation.
+    pub(crate) fn reconfigure(&mut self, context: TerrainContext, policy: WorkerPolicy) {
+        self.reconfigure_with_spawner(context, policy, workers::spawn);
+    }
+
+    fn reconfigure_with_spawner(
+        &mut self,
+        context: TerrainContext,
+        policy: WorkerPolicy,
+        spawn: impl FnMut(String, workers::Task) -> io::Result<JoinHandle<()>>,
+    ) {
+        if self.context.matches(&context) {
+            return;
+        }
+        if let Err(error) = self.shutdown() {
+            eprintln!("terrain context retired: {error}");
+        }
+        match Self::with_spawner(context.clone(), policy, spawn) {
+            Ok(jobs) => *self = jobs,
+            Err(error) => {
+                let mut queue = WorkQueue::default();
+                queue.fail(error);
+                *self = Self::empty(context, queue).0;
+            }
+        }
     }
 
     /// Deduplicate requests and promote entry terrain within the supplied cap.

@@ -182,7 +182,7 @@ impl World {
         w.ire = ire;
         w.day = day;
         w.clock = day as f64 * crate::server::DAY_LENGTH as f64;
-        w.load_remap = w.read_palette_remap();
+        w.load_remap = Arc::new(w.read_palette_remap());
         w.palette_stale = !w.palette_matches_registry();
         // The arcane journal commits before sparse item-owner files. If a
         // process stopped between those two durable writes, roll an

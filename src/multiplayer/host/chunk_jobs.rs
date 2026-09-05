@@ -7,7 +7,6 @@ use crate::background::SnapshotJobs;
 use std::time::{Duration, Instant};
 
 use crate::chunk::{Chunk, ChunkPos};
-use crate::registry::Registry;
 use crate::server::Server;
 use crate::terrain_jobs::{Priority, TerrainContext, TerrainJobs, WorkerPolicy};
 
@@ -18,6 +17,85 @@ type EncodeRequest = (ChunkPos, u64, Chunk);
 type EncodedChunk = (ChunkPos, u64, Vec<u8>);
 const ADOPT_PER_PUMP: usize = 2;
 const ADOPT_BUDGET: Duration = Duration::from_millis(4);
+
+enum ContextState {
+    Ready(Box<HostChunkJobs>),
+    Failed {
+        context: TerrainContext,
+        error: Arc<std::io::Error>,
+    },
+}
+
+/// The requested context owns both a working pool and a retained startup
+/// failure. Replacing content retires encoders and caches before any new send.
+#[derive(Default)]
+pub(super) struct HostChunkState {
+    current: Option<ContextState>,
+    failure_reported: bool,
+}
+
+impl HostChunkState {
+    pub(super) fn ensure_context(&mut self, context: TerrainContext) {
+        self.ensure_with(context, HostChunkJobs::new);
+    }
+
+    fn ensure_with(
+        &mut self,
+        context: TerrainContext,
+        make: impl FnOnce(TerrainContext) -> std::io::Result<HostChunkJobs>,
+    ) {
+        let existing = match &self.current {
+            Some(ContextState::Ready(jobs)) => Some(jobs.terrain.context()),
+            Some(ContextState::Failed { context, .. }) => Some(context),
+            None => None,
+        };
+        if existing.is_some_and(|existing| existing.matches(&context)) {
+            return;
+        }
+        // Drop joins both kinds of worker. In-flight encodings and cached
+        // payloads contain the old registry's IDs and cannot cross this boundary.
+        self.current = None;
+        self.failure_reported = false;
+        self.current = Some(match make(context.clone()) {
+            Ok(jobs) => ContextState::Ready(Box::new(jobs)),
+            Err(error) => ContextState::Failed {
+                context,
+                error: Arc::new(error),
+            },
+        });
+    }
+
+    pub(super) fn as_ref(&self) -> Option<&HostChunkJobs> {
+        match &self.current {
+            Some(ContextState::Ready(jobs)) => Some(jobs),
+            _ => None,
+        }
+    }
+
+    pub(super) fn as_mut(&mut self) -> Option<&mut HostChunkJobs> {
+        match &mut self.current {
+            Some(ContextState::Ready(jobs)) => Some(jobs),
+            _ => None,
+        }
+    }
+
+    pub(super) fn failure(&self) -> Option<Arc<std::io::Error>> {
+        match &self.current {
+            Some(ContextState::Ready(jobs)) => jobs.fatal_failure(),
+            Some(ContextState::Failed { error, .. }) => Some(Arc::clone(error)),
+            None => None,
+        }
+    }
+
+    pub(super) fn take_failure_notification(&mut self) -> Option<Arc<std::io::Error>> {
+        if self.failure_reported {
+            return None;
+        }
+        let failure = self.failure()?;
+        self.failure_reported = true;
+        Some(failure)
+    }
+}
 
 /// Renderer-independent cold terrain workers for a host. Generation is pure;
 /// only the simulation thread adopts results and commits world side effects.
@@ -45,16 +123,8 @@ impl HostChunkJobs {
         self.terrain.failures()
     }
 
-    pub(super) fn new(
-        seed: u32,
-        reg: Arc<Registry>,
-        atlas: Option<Arc<crate::planet_atlas::PlanetAtlas>>,
-        loader: crate::world::ChunkLoader,
-    ) -> std::io::Result<Self> {
-        let terrain = TerrainJobs::new(
-            TerrainContext::new(seed, reg, atlas, loader),
-            WorkerPolicy::Dedicated,
-        )?;
+    pub(super) fn new(context: TerrainContext) -> std::io::Result<Self> {
+        let terrain = TerrainJobs::new(context, WorkerPolicy::Dedicated)?;
         let encoder = SnapshotJobs::new(
             "chunk-encode",
             2,
@@ -160,3 +230,7 @@ impl Drop for HostChunkJobs {
         }
     }
 }
+
+#[cfg(test)]
+#[path = "chunk_context_tests.rs"]
+mod tests;

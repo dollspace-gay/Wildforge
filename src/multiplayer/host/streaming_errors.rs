@@ -1,7 +1,6 @@
 //! Map retained terrain/worker failures to the existing guest refusal contract.
 
 use super::HostSession;
-use super::chunk_jobs::HostChunkJobs;
 use std::collections::HashSet;
 
 impl HostSession {
@@ -43,16 +42,10 @@ impl HostSession {
 
     /// A failed worker pool cannot admit or continue guests on missing terrain.
     pub(super) fn refuse_failed_workers(&mut self) -> bool {
-        if self.chunk_jobs_error.is_none() {
-            self.chunk_jobs_error = self
-                .chunk_jobs
-                .as_ref()
-                .and_then(HostChunkJobs::fatal_failure);
-            if let Some(error) = &self.chunk_jobs_error {
-                eprintln!("host: terrain workers stopped: {error}");
-            }
+        if let Some(error) = self.chunk_jobs.take_failure_notification() {
+            eprintln!("host: terrain preparation stopped: {error}");
         }
-        let Some(error) = self.chunk_jobs_error.clone() else {
+        let Some(error) = self.chunk_jobs.failure() else {
             return false;
         };
         let affected: HashSet<_> = self

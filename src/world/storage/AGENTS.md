@@ -15,3 +15,8 @@ Route live region reads and writes through RegionStore. Preserve per-region
 parallelism, invalidate watched chunk revisions before writes, and never give
 workers authoritative write access. Revision tokens and weak region/watch maps
 must stay bounded by active work. Test edits saved and unloaded before adoption.
+
+Prepared terrain is tied to its decoding registry and palette as well as its
+saved bytes. Replace palette snapshots instead of mutating shared tables. A
+loader predating the first palette publication must never replace a saved edit
+with the legacy placeholder-repair result it derives from obsolete context.

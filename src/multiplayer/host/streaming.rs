@@ -1,10 +1,8 @@
 //! Guest terrain delivery and perception-bounded world snapshots.
 
 use std::collections::HashSet;
-use std::sync::Arc;
 
 use super::HostSession;
-use super::chunk_jobs::HostChunkJobs;
 use crate::chunk::ChunkPos;
 use crate::net::{self, MobSnap, S2C, batch_snapshot};
 use crate::planet::EntityPos;
@@ -52,7 +50,7 @@ impl HostSession {
                     position.distance(*center) <= f64::from(*radius * 16) + 1.0
                 })
         };
-        if let Some(jobs) = &mut self.chunk_jobs {
+        if let Some(jobs) = self.chunk_jobs.as_mut() {
             jobs.cancel_queued(&wanted);
             for pending in self.pending_guests.values() {
                 for &pos in &pending.required {
@@ -62,7 +60,7 @@ impl HostSession {
                 }
             }
         }
-        if let Some(jobs) = &mut self.chunk_jobs {
+        if let Some(jobs) = self.chunk_jobs.as_mut() {
             jobs.drain_into(server, &wanted);
         }
         self.refuse_failed_terrain();
@@ -287,7 +285,7 @@ impl HostSession {
     pub(super) fn stream_chunk(&mut self, server: &mut Server, id: u32, pos: ChunkPos) {
         if !server.world.has_chunk(pos) {
             self.ensure_chunk_jobs(server);
-            if let Some(jobs) = &mut self.chunk_jobs {
+            if let Some(jobs) = self.chunk_jobs.as_mut() {
                 jobs.enqueue(pos, false);
             }
             return;
@@ -326,20 +324,12 @@ impl HostSession {
     }
 
     fn ensure_chunk_jobs(&mut self, server: &Server) {
-        if self.chunk_jobs.is_none() && self.chunk_jobs_error.is_none() {
-            match HostChunkJobs::new(
+        self.chunk_jobs
+            .ensure_context(crate::terrain_jobs::TerrainContext::new(
                 server.world.seed,
-                Arc::clone(&server.world.reg),
                 server.world.planet_atlas(),
                 server.world.chunk_loader(),
-            ) {
-                Ok(jobs) => self.chunk_jobs = Some(jobs),
-                Err(error) => {
-                    eprintln!("host: terrain workers could not start: {error}");
-                    self.chunk_jobs_error = Some(Arc::new(error));
-                }
-            }
-        }
+            ));
     }
 
     fn send_snapshot(&self, id: u32, parts: Vec<Vec<u8>>) {

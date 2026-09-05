@@ -119,7 +119,8 @@ named phase rather than treated as permanent exemptions.
 | File | Current lines | Domain and reason | Next review |
 |---|---:|---|---|
 | `src/game/mod.rs` | 1079 | App composition still owns the remaining client fields | Phase 7 session/UI/presentation owners |
-| `src/game/session.rs` | 794 | Entry adapters still coordinate the old client state | Phases 3 and 7 client session extraction |
+| `src/game/session.rs` | 793 | Entry adapters still coordinate the old client state | Phases 3 and 7 client session extraction |
+| `src/mesher.rs` | 903 | Snapshot registry identity query accompanies the existing CPU mesh implementation | Phase 7 mesh/input ownership |
 | `src/lib.rs` | 674 | Legacy CLI dispatch remains alongside the facade | Phase 7 app command extraction |
 | `src/tests/mod.rs` | 518 | Shared fixtures remain alongside test registration | Phase 7 scenario fixtures and test organization |
 | `src/net/transport.rs` | 1006 | Content inventory is extracted; QUIC lifecycle/discovery remain | Phases 3 and 8 session/transport boundaries |
@@ -127,7 +128,7 @@ named phase rather than treated as permanent exemptions.
 | `src/world/mod.rs` | 4267 | Composes the new region owner; remaining world domains still share fields | Phase 5 domain ownership |
 | `src/world/chunks.rs` | 1205 | Revision validation wraps the existing adoption side-effect sequence | Phase 5 chunk/residency domain |
 | `src/world/persistence.rs` | 420 | Cancellable open still coordinates legacy domain initialization | Phase 5 persistence/domain ownership |
-| `src/world/storage.rs` | 1224 | Delegates chunk I/O; sidecars, save orchestration, and remapping remain | Phase 5 persistence ownership |
+| `src/world/storage.rs` | 1223 | Delegates chunk I/O; sidecars, save orchestration, and remapping remain | Phase 5 persistence ownership |
 | `src/world/spawn.rs` | 1592 | Fingerprints use coordinated reads; trial/qualification orchestration remains | Phases 5 and 6 entry/genesis ownership |
 
 The host streaming adapter is now 371 lines after extracting its private job
@@ -477,3 +478,44 @@ therefore does not establish graceful capture shutdown. Dedicated shutdown,
 in-world save-failure/close and session-switch scenarios, content/palette worker
 invalidation, controlled performance evidence, five complete visual
 requalifications, and the remaining Phase 3–8 ownership migrations stay open.
+
+## Registry and palette context ownership (in verification)
+
+Prepared terrain now retains its decoding registry and shared palette snapshot
+alongside the saved-region revision. The authoritative adoption boundary rejects
+obsolete context without save reads. Loader clones share the remap allocation;
+every existing palette refresh replaces it. Terrain context construction derives
+generation's registry from the loader, preventing divergent generation/decode IDs.
+
+The graphical terrain owner compares seed/atlas/registry/palette/session context
+before scheduling or adopting work. A replacement joins the old pool and starts
+one new generation; failed startup is retained against that requested context.
+The host's `HostChunkState` owns its pool or startup failure in one place and
+retires encoders, pending revisions, and cached payloads with their context.
+Matching failures cannot cause an endless per-frame or per-pump startup loop.
+Mesh completion also retains the input registry in addition to the variant
+signature, releasing and discarding stale results before the existing live-chunk
+and GPU-upload checks. Worker counts and adoption budgets are unchanged.
+
+Focused verification passes: 20 terrain queue/worker/context scenarios, 3 host
+context/cache/failure scenarios, 2 actual CPU mesh-buffer scenarios, and 4 saved
+I/O/real QUIC refusal scenarios. Strict all-target/all-feature Clippy passes.
+An initial new fixture expected a saved chunk without modifying it; it was
+corrected to persist an actual block edit before eviction, preserving the
+regression's saved-byte and stale-repair assertions. No disk/wire codec,
+dependency, exported API, MSRV, shader, or GPU upload implementation changed.
+Meshing remains on CPU and the existing wgpu renderer performs the actual GPU
+work; native reload/capture verification and the broad clean gates follow.
+
+The source-size/clone scan still reports 119 files above 400 lines, 102 above
+500, and 71 exact-token clone groups. New context test files and affected worker
+owners are below 400. All 55 maintained directories retain their guides.
+
+Remaining correctness boundaries are explicit: session admission must negotiate
+changed live content for guests, and persistence palette publication still needs
+its own domain owner. The current palette writer replaces the global numeric-ID
+table before rewriting all unresident chunks; worker snapshot invalidation cannot
+by itself make a reordered saved palette safe. These remain active migration
+work, alongside caller-level switch/disconnect/save-failure runtime scenarios,
+controlled performance evidence, five full visual requalifications, and the
+remaining Phase 3–8 domains and tooling. No full migration acceptance is claimed.
