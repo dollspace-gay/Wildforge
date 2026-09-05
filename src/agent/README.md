@@ -11,8 +11,8 @@ build prerequisites and complete checks. Commands below run from the repository 
 
 The agent is an ordinary guest. Preserve entry readiness, terrain clearance, authoritative inventory, and honest timeout results. Do not add privileged game shortcuts.
 
-`client_session/` owns admission, host content mapping, and snapshot reconstruction
-for both guest adapters. The agent selects decoded-terrain readiness; it does not
+`client_session/` owns admission, host content mapping, entity reconstruction, and
+ordered terrain application for both guest adapters. The agent selects decoded-terrain readiness; it does not
 require a rendered frame. Keep breadcrumb trails, perception, navigation,
 movement cadence, and MCP responses here; discard shared receiver state and
 queued terrain when Welcome starts a new session.

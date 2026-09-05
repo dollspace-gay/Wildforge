@@ -3,8 +3,8 @@
 mod admission;
 mod assembly;
 mod palette;
+mod replica;
 mod session;
-mod snapshots;
 mod terrain;
 
 pub(crate) use admission::PresentationRequirement;

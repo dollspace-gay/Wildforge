@@ -60,12 +60,7 @@ fn welcome_replaces_maps_receivers_and_both_kinds_of_queued_terrain() {
     session.queue_chunk(center, chunk_bytes(&reg));
     session.queue_block(block, stone.0, 0, 0, 0);
     assert!(session.has_queued_chunk(center));
-    assert!(
-        session
-            .snapshots()
-            .players(Snapshot::whole(90, vec![]))
-            .is_some()
-    );
+    assert!(session.players(Snapshot::whole(90, vec![])).is_some());
     session.begin(
         ContentMap::empty(Arc::clone(&reg)),
         "replacement".into(),
@@ -78,12 +73,7 @@ fn welcome_replaces_maps_receivers_and_both_kinds_of_queued_terrain() {
     assert!(session.apply_terrain(&mut next_world, 8).is_empty());
     assert_eq!(next_world.get_block_at(block), registry::AIR);
     assert_eq!(session.content().item(stone.0), None);
-    assert!(
-        session
-            .snapshots()
-            .players(Snapshot::whole(0, vec![]))
-            .is_some()
-    );
+    assert!(session.players(Snapshot::whole(0, vec![])).is_some());
     assert!(!session.take_ready());
 }
 

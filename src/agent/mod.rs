@@ -391,7 +391,7 @@ impl Agent {
                     .queue_block(pos, id, meta, salt_mass, soil_salinity);
             }
             net::S2C::Players(part) => {
-                let Some(list) = self.session.snapshots().players(part) else {
+                let Some(list) = self.session.players(part) else {
                     return;
                 };
                 let present: std::collections::HashSet<u32> =
@@ -419,23 +419,9 @@ impl Agent {
                 }
             }
             net::S2C::Mobs(part) => {
-                let Some(snaps) = self.session.snapshots().mobs(part) else {
-                    return;
-                };
-                let mobs = snaps
-                    .into_iter()
-                    .filter(|s| (s.species as usize) < self.reg.animals.len())
-                    .map(|s| {
-                        let mut m = crate::mobs::Mob::new_at(s.species as usize, s.pos, s.yaw);
-                        m.id = s.id;
-                        m.growth = s.growth;
-                        m.health = s.health;
-                        m.hurt_flash = s.hurt;
-                        m.fed = s.fed;
-                        m
-                    })
-                    .collect();
-                self.world.replace_mobs(mobs);
+                if let Some(mobs) = self.session.mobs(part) {
+                    self.world.replace_mobs(mobs);
+                }
             }
             net::S2C::TimeIre { time, ire, day } => {
                 self.time_of_day = time;
@@ -636,40 +622,19 @@ impl Agent {
                 ));
             }
             net::S2C::Bolts(part) => {
-                if let Some(snaps) = self.session.snapshots().bolts(part) {
-                    self.world.replace_projectiles(
-                        snaps
-                            .into_iter()
-                            .map(|snap| crate::mobs::Projectile {
-                                stable_id: snap.id,
-                                pos: snap.pos,
-                                vel: snap.vel,
-                                tile: snap.tile,
-                                damage: 0.0,
-                                damage_type: None,
-                                age: snap.age,
-                                from_player: false,
-                                drop_item: None,
-                                preparation_payload: None,
-                                owner: 0,
-                            })
-                            .collect(),
-                    );
+                if let Some(projectiles) = self.session.bolts(part) {
+                    self.world.replace_projectiles(projectiles);
                 }
             }
             net::S2C::LooseItems(part) => {
-                if let Some(snaps) = self.session.snapshots().loose_items(part) {
-                    let items = snaps
-                        .into_iter()
-                        .filter_map(|snap| self.session.content().loose_item(&snap))
-                        .collect();
+                if let Some(items) = self.session.loose_items(part) {
                     self.world.replace_loose_items(items);
                 }
             }
             // The agent takes whatever ring the host grants; it has no
             // renderer, so there is no fog to keep honest.
             net::S2C::ViewDistance { .. } => {}
-            // Containers, cargo, bolts, falling sand: not yet part of
+            // Containers, cargo, falling sand: not yet part of
             // the agent's world-model (fast follows).
             net::S2C::Container { .. }
             | net::S2C::MachineContainer { .. }

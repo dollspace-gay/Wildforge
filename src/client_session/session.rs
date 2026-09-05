@@ -5,16 +5,19 @@ use std::time::Instant;
 
 use super::admission::{Admission, AdmissionError, PresentationRequirement};
 use super::palette::ContentMap;
-use super::snapshots::Snapshots;
+use super::replica::EntitySnapshots;
 use super::terrain::TerrainInbox;
 use crate::chunk::ChunkPos;
+use crate::entity::ItemEntity;
+use crate::mobs::{Mob, Projectile};
+use crate::net::{BoltSnap, FallSnap, LooseItemSnap, MobSnap, PlayerSnap, Snapshot};
 use crate::planet::{BlockPos, EntityPos};
 use crate::registry::{BlockId, Registry};
-use crate::world::World;
+use crate::world::{FallingBlock, World};
 
 pub(crate) struct GuestSession {
     content: ContentMap,
-    snapshots: Snapshots,
+    entities: EntitySnapshots,
     admission: Admission,
     terrain: TerrainInbox,
 }
@@ -27,7 +30,7 @@ impl GuestSession {
     ) -> Self {
         Self {
             content: ContentMap::empty(registry),
-            snapshots: Snapshots::default(),
+            entities: EntitySnapshots::default(),
             admission: Admission::new(requirement, now),
             terrain: TerrainInbox::default(),
         }
@@ -43,7 +46,7 @@ impl GuestSession {
         now: Instant,
     ) {
         self.content = content;
-        self.snapshots = Snapshots::default();
+        self.entities = EntitySnapshots::default();
         self.terrain = TerrainInbox::default();
         self.admission.begin(world_name, spawn, now);
     }
@@ -56,8 +59,33 @@ impl GuestSession {
         self.content.rebind(registry);
     }
 
-    pub(crate) fn snapshots(&mut self) -> &mut Snapshots {
-        &mut self.snapshots
+    fn entity_input(&mut self) -> Option<(&mut EntitySnapshots, &ContentMap)> {
+        self.admission
+            .receives_world()
+            .then_some((&mut self.entities, &self.content))
+    }
+
+    pub(crate) fn players(&mut self, part: Snapshot<PlayerSnap>) -> Option<Vec<PlayerSnap>> {
+        self.entity_input()?.0.players(part)
+    }
+
+    pub(crate) fn mobs(&mut self, part: Snapshot<MobSnap>) -> Option<Vec<Mob>> {
+        let (entities, content) = self.entity_input()?;
+        entities.mobs(part, content.registry())
+    }
+
+    pub(crate) fn bolts(&mut self, part: Snapshot<BoltSnap>) -> Option<Vec<Projectile>> {
+        self.entity_input()?.0.bolts(part)
+    }
+
+    pub(crate) fn loose_items(&mut self, part: Snapshot<LooseItemSnap>) -> Option<Vec<ItemEntity>> {
+        let (entities, content) = self.entity_input()?;
+        entities.loose_items(part, content)
+    }
+
+    pub(crate) fn falling(&mut self, part: Snapshot<FallSnap>) -> Option<Vec<FallingBlock>> {
+        let (entities, content) = self.entity_input()?;
+        entities.falling(part, content)
     }
 
     pub(crate) fn admission(&self) -> &Admission {
@@ -106,7 +134,7 @@ impl GuestSession {
     pub(crate) fn close(&mut self) {
         self.admission.close();
         self.terrain = TerrainInbox::default();
-        self.snapshots = Snapshots::default();
+        self.entities = EntitySnapshots::default();
     }
 
     pub(crate) fn has_queued_chunk(&self, position: ChunkPos) -> bool {

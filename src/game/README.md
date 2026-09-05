@@ -34,6 +34,11 @@ the entry mesh is uploaded; keep interpolation and UI responses here. Content
 reload rebinds the retained host palette to the new local registry before
 subsequent network state is interpreted.
 
+Shared entity reconstruction supplies authoritative mob fields, projectiles,
+loose items, and falling blocks. Presentation updates mob yaw and animation
+phase from interpolation spans after reconstruction; it must preserve host
+identity, canonical position, health, growth, and feeding state.
+
 ## Focused checks
 
 ```sh

@@ -445,6 +445,14 @@ impl Mob {
         }
     }
 
+    /// Apply the presentation pose when reconstructing a guest replica. Keep
+    /// the initial facing state consistent with construction at this yaw.
+    pub(crate) fn present_replica_at(&mut self, yaw: f32, phase: f32) {
+        self.yaw = yaw;
+        self.charge_yaw = yaw;
+        self.anim_phase = phase;
+    }
+
     /// One taming meal: rolls the requirement on the first feeding
     /// (3-5, deterministic per mob), counts up, and returns true the
     /// moment trust lands.

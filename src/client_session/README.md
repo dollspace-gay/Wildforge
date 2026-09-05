@@ -18,7 +18,12 @@ The map retains the host's names across local content reload. Rebinding resolves
 those same names against the replacement registry, including removed and
 reinstalled definitions; the wire numbers remain owned by the host.
 
-`snapshots.rs` owns the five independent stream receivers for a connection.
+`replica.rs` owns the five independent entity stream receivers for a connection
+and converts complete snapshots into local mobs, projectiles, loose items, and
+falling blocks. Both adapters consume the same values; graphical interpolation
+applies its presentation pose afterward. Replica projectiles cannot deal damage
+or mint drops. Entity streams require Welcome and stop when admission closes.
+
 `assembly.rs` keeps one bounded incomplete generation per stream, rejects old,
 duplicate, or inconsistent fragments, and understands the wrapping host counter.
 Welcome replaces all receivers together. Packet geometry is checked before a
@@ -31,9 +36,10 @@ requires decoded terrain; graphics additionally supplies its first-frame
 milestone. Residency is acknowledged only after the real chunk decoder inserts
 the chunk. Welcome starts a new admission epoch, and invalid transitions close it.
 
-Replica ownership and content renegotiation are still being migrated from the
-two adapters under the maintainability plan. Guests receive authoritative data;
-this layer must not acquire generation or persistence capabilities.
+World-domain replica ownership and content renegotiation are still being
+migrated from the two adapters under the maintainability plan. Guests receive
+authoritative data; this layer must not acquire generation or persistence
+capabilities.
 
 Run `cargo test --locked client_session::` for focused checks and all serial
 agent scenarios for protocol integration. Graphical session changes also require

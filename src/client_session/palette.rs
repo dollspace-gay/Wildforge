@@ -51,6 +51,10 @@ impl ContentMap {
         self.registry = registry;
     }
 
+    pub(super) fn registry(&self) -> &Registry {
+        &self.registry
+    }
+
     pub(crate) fn block(&self, wire: u16) -> BlockId {
         self.blocks
             .get(usize::from(wire))

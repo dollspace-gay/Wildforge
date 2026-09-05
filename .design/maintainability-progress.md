@@ -887,3 +887,27 @@ strict all-target/all-feature Clippy pass after the two-field correction
 (`client-session-entity-fields-{agent,clippy}.log`). This fix is separate from
 the forthcoming entity receiver/conversion extraction; broader source and GPU
 qualification remain outstanding.
+
+## Shared entity receiver and conversion owner
+
+`client_session::EntitySnapshots` replaces the raw receiver holder with shared
+reconstruction of mobs, projectiles, loose items, and falling blocks. Both
+adapters consume the same local values. The session exposes typed stream methods
+instead of mutable receiver access, and streams cannot apply before Welcome or
+after closure. Unknown species/items are omitted, unknown blocks use the bound
+registry's placeholder, and host instance IDs and payload fields are preserved.
+Replica projectiles retain zero damage and no drop/payload authority.
+
+Graphical interpolation remains in its consumer. `Mob::present_replica_at` keeps
+the presentation yaw, initial facing, and animation phase consistent with the
+former construction path without exposing private mob fields. Agent navigation
+and its existing selection of observed entity kinds are unchanged. The prior
+health/hurt correction remains separately recorded in `ff6ccca`.
+
+All 34 focused session tests, 19 serial agent scenarios, 25 multiplayer tests,
+23 mob tests, and 14 archetype tests pass. Strict all-target/all-feature Clippy,
+Rust 1.95 checking, format, advisory analysis, and folder guidance also pass.
+Logs use `target/maintainability/client-session-replica-*`. New replica and test
+modules contain 107 and 247 lines; the session owner contains 179 lines.
+World-domain authority separation, shared events/outgoing requests, content
+transfer failures, and new native guest/full GPU qualification remain open.

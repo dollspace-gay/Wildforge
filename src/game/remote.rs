@@ -396,7 +396,7 @@ impl Game {
                     }
                 }
                 net::S2C::Players(part) => {
-                    let Some(list) = r.session.snapshots().players(part) else {
+                    let Some(list) = r.session.players(part) else {
                         continue;
                     };
                     // Anyone the host stopped mentioning has walked out of
@@ -450,40 +450,29 @@ impl Game {
                     r.player_age = 0.0;
                 }
                 net::S2C::Mobs(part) => {
-                    let Some(snaps) = r.session.snapshots().mobs(part) else {
+                    let Some(mut mobs) = r.session.mobs(part) else {
                         continue;
                     };
                     let t = (r.mob_age / r.mob_interval.max(0.001)).clamp(0.0, 1.0);
                     let mut lerps = std::collections::HashMap::new();
-                    let mobs = snaps
-                        .into_iter()
-                        .filter(|s| (s.species as usize) < self.content.reg.animals.len())
-                        .map(|s| {
-                            let render_pos = s.pos.render_pos();
-                            let (cur, phase) = match r.mob_lerp.get(&s.id) {
-                                Some(l) if s.id != 0 => (l.at(t), l.phase),
-                                _ => ((render_pos, s.yaw), 0.0),
-                            };
-                            lerps.insert(
-                                s.id,
-                                Lerp {
-                                    from: cur.0,
-                                    to: render_pos,
-                                    from_yaw: cur.1,
-                                    to_yaw: s.yaw,
-                                    phase,
-                                },
-                            );
-                            let mut m = mobs::Mob::new_at(s.species as usize, s.pos, cur.1);
-                            m.id = s.id;
-                            m.growth = s.growth;
-                            m.hurt_flash = s.hurt;
-                            m.fed = s.fed; // "won't take food" — gates guest feeding
-                            m.health = s.health;
-                            m.anim_phase = phase;
-                            m
-                        })
-                        .collect();
+                    for mob in &mut mobs {
+                        let render_pos = mob.pos.render_pos();
+                        let (cur, phase) = match r.mob_lerp.get(&mob.id) {
+                            Some(lerp) if mob.id != 0 => (lerp.at(t), lerp.phase),
+                            _ => ((render_pos, mob.yaw), 0.0),
+                        };
+                        lerps.insert(
+                            mob.id,
+                            Lerp {
+                                from: cur.0,
+                                to: render_pos,
+                                from_yaw: cur.1,
+                                to_yaw: mob.yaw,
+                                phase,
+                            },
+                        );
+                        mob.present_replica_at(cur.1, phase);
+                    }
                     self.server.world.replace_mobs(mobs);
                     r.mob_lerp = lerps; // dead mobs' spans fall away
                     r.mob_interval = r.mob_age.clamp(0.03, 0.3);
@@ -493,51 +482,19 @@ impl Game {
                     r.granted_view_dist = chunks.max(1) as i32;
                 }
                 net::S2C::Falling(part) => {
-                    let Some(snaps) = r.session.snapshots().falling(part) else {
-                        continue;
-                    };
-                    let falling = snaps
-                        .into_iter()
-                        .map(|f| world::FallingBlock {
-                            pos: f.pos,
-                            vel: 0.0,
-                            block: r.session.content().block(f.block),
-                        })
-                        .collect();
-                    self.server.world.replace_falling_blocks(falling);
+                    if let Some(falling) = r.session.falling(part) {
+                        self.server.world.replace_falling_blocks(falling);
+                    }
                 }
                 net::S2C::Bolts(part) => {
-                    let Some(snaps) = r.session.snapshots().bolts(part) else {
-                        continue;
-                    };
-                    let projectiles = snaps
-                        .into_iter()
-                        .map(|s| mobs::Projectile {
-                            stable_id: s.id,
-                            pos: s.pos,
-                            // Dead-reckoned between snapshots below.
-                            vel: s.vel,
-                            tile: s.tile,
-                            damage: 0.0,
-                            damage_type: None,
-                            age: s.age,
-                            from_player: false,
-                            drop_item: None,
-                            preparation_payload: None,
-                            owner: 0,
-                        })
-                        .collect();
-                    self.server.world.replace_projectiles(projectiles);
+                    if let Some(projectiles) = r.session.bolts(part) {
+                        self.server.world.replace_projectiles(projectiles);
+                    }
                 }
                 net::S2C::LooseItems(part) => {
-                    let Some(snaps) = r.session.snapshots().loose_items(part) else {
-                        continue;
-                    };
-                    let items = snaps
-                        .into_iter()
-                        .filter_map(|snap| r.session.content().loose_item(&snap))
-                        .collect();
-                    self.server.world.replace_loose_items(items);
+                    if let Some(items) = r.session.loose_items(part) {
+                        self.server.world.replace_loose_items(items);
+                    }
                 }
                 net::S2C::TimeIre { time, ire, day } => {
                     self.server.time_of_day = time;
