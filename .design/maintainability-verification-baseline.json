@@ -1,0 +1,129 @@
+{
+  "revision": "c6d9589833e3cb7276fbe26d20290faf024b0532",
+  "checks": [
+    {
+      "name": "format",
+      "command": [
+        "cargo",
+        "fmt",
+        "--all",
+        "--",
+        "--check"
+      ],
+      "exit_code": 0,
+      "seconds": 1.2925968309864402
+    },
+    {
+      "name": "clippy",
+      "command": [
+        "cargo",
+        "clippy",
+        "--locked",
+        "--all-targets",
+        "--all-features",
+        "--",
+        "-D",
+        "warnings"
+      ],
+      "exit_code": 0,
+      "seconds": 10.732294058951084
+    },
+    {
+      "name": "msrv",
+      "command": [
+        "cargo",
+        "+1.95.0",
+        "check",
+        "--locked",
+        "--all-targets"
+      ],
+      "exit_code": 0,
+      "seconds": 40.88217394100502
+    },
+    {
+      "name": "subsystems",
+      "command": [
+        "cargo",
+        "test",
+        "--locked",
+        "--all-targets",
+        "--",
+        "--skip",
+        "tests::agent::"
+      ],
+      "exit_code": 0,
+      "seconds": 184.73303913802374
+    },
+    {
+      "name": "agents",
+      "command": [
+        "cargo",
+        "test",
+        "--locked",
+        "tests::agent::",
+        "--",
+        "--test-threads=1"
+      ],
+      "exit_code": 0,
+      "seconds": 34.66923298698384
+    },
+    {
+      "name": "doctests",
+      "command": [
+        "cargo",
+        "test",
+        "--locked",
+        "--doc"
+      ],
+      "exit_code": 0,
+      "seconds": 2.070141507021617
+    },
+    {
+      "name": "release",
+      "command": [
+        "cargo",
+        "build",
+        "--locked",
+        "--release"
+      ],
+      "exit_code": 0,
+      "seconds": 47.527895665029064
+    }
+  ],
+  "schema_version": 1,
+  "scope": "pre-migration baseline; runtime measurements still pending",
+  "binary_sha256": "26b692b17185ecfb481e2ba905d1debc0300a81ce3c7768402f3db745317847d",
+  "msrv": "1.95",
+  "protocol": 46,
+  "disk_chunk_codec": "WFC8",
+  "wire_chunk_codec": "WFC9",
+  "region_codec": "WFR2",
+  "atlas_versions": {
+    "format": 6,
+    "algorithm": 7,
+    "dynamic": 3,
+    "water_cycle": 1,
+    "history": 1,
+    "geology": 1
+  },
+  "public_entrypoints": [
+    "run",
+    "alchemy",
+    "planet",
+    "planet_atlas"
+  ],
+  "test_counts": {
+    "subsystems_passed": 1017,
+    "subsystems_ignored": 24,
+    "serial_agents_passed": 15,
+    "doctests": 0
+  },
+  "public_module_source_sha256": {
+    "src/lib.rs": "51206e08e0e1a195d34166db18dd64174d2b05be0c17a28915202bced4224b44",
+    "src/alchemy.rs": "f10482b04810172dba2494b7d26acb054378f6beaee60e5f2ccf34f844b3cd56",
+    "src/planet.rs": "4be75a1695d073eda9021eb611037ff5b3b755c80c62801cc9f29c3608ee87f7",
+    "src/planet_atlas.rs": "0504ffb3d836bfdf71c28bb727413dd676fef96d834b7693422aeec1e1b696af"
+  },
+  "world_generator_version": 10,
+  "minimum_supported_world_generator_version": 9
+}

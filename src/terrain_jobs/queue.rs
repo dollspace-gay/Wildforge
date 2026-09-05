@@ -52,6 +52,9 @@ impl WorkQueue {
     }
 
     pub(super) fn take(&mut self) -> Option<ChunkPos> {
+        if self.stopped {
+            return None;
+        }
         self.entry.pop_front().or_else(|| self.ordinary.pop_front())
     }
 
@@ -78,6 +81,9 @@ impl WorkQueue {
 
     pub(super) fn stop(&mut self) {
         self.stopped = true;
+        self.entry.clear();
+        self.ordinary.clear();
+        self.pending.clear();
     }
 
     pub(super) fn is_stopped(&self) -> bool {
@@ -149,8 +155,14 @@ mod tests {
     #[test]
     fn stopped_queues_reject_new_work() {
         let mut queue = WorkQueue::default();
+        queue.request(pos(1), Priority::Entry, 3);
+        queue.request(pos(2), Priority::Ordinary, 3);
+        queue.request(pos(3), Priority::Ordinary, 3);
+        assert_eq!(queue.take(), Some(pos(1)));
         queue.stop();
         assert!(queue.is_stopped());
+        assert_eq!(queue.take(), None, "queued terrain is cancelled");
+        assert_eq!(queue.pending_count(), 0);
         assert!(!queue.request(pos(1), Priority::Entry, 2));
     }
 }
