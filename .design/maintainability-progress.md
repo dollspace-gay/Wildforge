@@ -1613,3 +1613,21 @@ has both guides. No validation ran. Final fixtures must compare legacy queries,
 chunk/atlas outputs, seams, ties, cache/request order, and worker counts. This
 supplies the biome observation needed for graphical replica migration; graphical
 runtime ownership and the final campaign remain open.
+
+## Calendar and machine read capabilities (coding checkpoint; unverified)
+
+CalendarView holds copied astronomical inputs and shares sun, daylight, seasons,
+moon, and progress formulas; World forwards these observations. Ire bands and
+seasonal wants retain one pure implementation. This establishes the same reads
+for the graphical replica without transferring calendar mutation to consumers.
+
+BlockRead now separates shape/stat/capability and machine-recognition inputs
+from BlockStore mutation, ledger, and output operations. World and local
+structures implement the split contracts with unchanged method bodies. Named
+machine, glassworks, and stall checks have shared read-only entry points, so
+replica UI need not implement physical mutation just to inspect a shape.
+
+No validation ran. Final Rust/API checks must update applicable trait imports
+and test fixtures, and verify calendar boundaries, machine recognition/rotation,
+structure/world parity, and unchanged firing/accounting. Graphical ownership
+migration continues; these source checkpoints do not accept its criteria.

@@ -30,7 +30,7 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use super::multiblock::{BlockStore, MachineKind, Rotation};
+use super::multiblock::{BlockRead, BlockStore, MachineKind, Rotation};
 use super::template::Template;
 use super::*;
 use crate::inventory::ItemStack;
@@ -246,7 +246,7 @@ fn compose_rotation(a: Rotation, b: Rotation) -> Rotation {
     }
 }
 
-impl BlockStore for LocalStructure {
+impl BlockRead for LocalStructure {
     type Pos = (i32, i32, i32);
 
     fn get_block(&self, pos: Self::Pos) -> BlockId {
@@ -265,10 +265,6 @@ impl BlockStore for LocalStructure {
 
     fn block_entities(&self) -> &HashMap<Self::Pos, BlockEntity> {
         &self.block_entities
-    }
-
-    fn block_entities_mut(&mut self) -> &mut HashMap<Self::Pos, BlockEntity> {
-        &mut self.block_entities
     }
 
     fn reg(&self) -> &Arc<Registry> {
@@ -293,6 +289,12 @@ impl BlockStore for LocalStructure {
     /// exempt from the world's storm dousing.
     fn weather_at(&self, _at: BlockPos) -> LocalWeatherSample {
         LocalWeatherSample::default()
+    }
+}
+
+impl BlockStore for LocalStructure {
+    fn block_entities_mut(&mut self) -> &mut HashMap<Self::Pos, BlockEntity> {
+        &mut self.block_entities
     }
 
     fn swap_block_keep_entity(&mut self, pos: Self::Pos, block_name: &str) {

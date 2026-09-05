@@ -42,3 +42,8 @@ bounded host weather, arcane, item, and apparatus data. `replication.rs` defines
 the shared incoming mutation contract; its World adapter is temporary until
 graphical migration finishes. Replica block updates share resident writes and
 support classification with authority, without spawning drops or simulation.
+
+`CalendarView` shares astronomical/seasonal observations without simulation
+mutation. `block_store.rs` separates read-only machine recognition (`BlockRead`)
+from physical mutation (`BlockStore`). Shape/stat/capability queries and machine
+validation use the read contract; firing and accounting require the extension.

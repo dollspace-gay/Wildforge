@@ -23,7 +23,9 @@ use crate::worldgen::Generator;
 const LOOSE_ITEM_ID_BASE: u64 = 1u64 << 62;
 
 mod alchemy;
+mod block_store;
 mod calendar;
+mod calendar_view;
 mod chunks;
 mod discovery;
 pub(crate) use discovery::ObservationTarget;
@@ -1354,13 +1356,13 @@ impl World {
     /// client and every replay agrees. Constant across a given day (it steps at
     /// dawn), so "tonight is a full moon" is a fixed, plannable fact.
     pub fn moon_cycle(&self) -> f32 {
-        (self.day % LUNAR_DAYS) as f32 / LUNAR_DAYS as f32
+        self.calendar_view().moon_cycle()
     }
 
     /// Illuminated fraction of the moon, 0..1 (0 = new/dark, 1 = full/bright).
     /// Drives moonlight strength and the disc's lit sliver.
     pub fn moon_illumination(&self) -> f32 {
-        0.5 * (1.0 - (self.moon_cycle() * std::f32::consts::TAU).cos())
+        self.calendar_view().moon_illumination()
     }
 
     /// The named phase band for the current day — the discrete signal game

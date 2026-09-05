@@ -3,17 +3,20 @@
 use super::*;
 
 impl World {
+    pub(super) fn calendar_view(&self) -> super::calendar_view::CalendarView {
+        super::calendar_view::CalendarView::new(self.day, self.clock, self.long_winter)
+    }
+
     fn orbital_day(&self) -> f64 {
         self.clock / f64::from(crate::server::DAY_LENGTH)
     }
 
     pub fn sun_direction(&self) -> glam::DVec3 {
-        let day = self.orbital_day();
-        crate::planet_atlas::solar_direction(day, day.fract())
+        self.calendar_view().sun_direction()
     }
 
     pub fn latitude_at_surface(&self, pos: crate::planet::SurfacePos) -> f64 {
-        crate::planet_atlas::latitude_longitude(crate::planet::surface_to_unit(pos.center())).0
+        super::calendar_view::CalendarView::latitude(pos)
     }
 
     /// The local temperature for a particular orbital day. Offline crop
@@ -38,17 +41,11 @@ impl World {
     /// Local astronomical season. The Long Winter is a supernatural thermal
     /// anomaly, so it suppresses growth everywhere without freezing the orbit.
     pub fn season_at_surface(&self, pos: crate::planet::SurfacePos) -> usize {
-        if self.long_winter {
-            return 3;
-        }
-        crate::planet_atlas::local_season(self.day, self.latitude_at_surface(pos))
+        self.calendar_view().season_at(pos)
     }
 
     pub fn daylight_at_surface(&self, pos: crate::planet::SurfacePos) -> f32 {
-        let elevation = self
-            .sun_direction()
-            .dot(crate::planet::surface_to_unit(pos.center())) as f32;
-        (elevation * 2.5 + 0.5).clamp(0.12, 1.0)
+        self.calendar_view().daylight_at(pos)
     }
 
     pub fn weather_at_surface(
@@ -538,7 +535,7 @@ impl World {
 
     /// 0..1 through the current season.
     pub fn season_progress(&self) -> f32 {
-        (self.day % SEASON_DAYS) as f32 / SEASON_DAYS as f32
+        self.calendar_view().season_progress()
     }
 
     /// Does the local atmospheric column currently deliver snow?
@@ -890,12 +887,7 @@ impl World {
     }
 
     fn tier_of(ire: f32) -> usize {
-        match ire {
-            x if x < 20.0 => 0,
-            x if x < 50.0 => 1,
-            x if x < 80.0 => 2,
-            _ => 3,
-        }
+        super::calendar_view::ire_tier(ire)
     }
 
     /// The tier as this ground feels it: the world's mood shifted by
@@ -1002,12 +994,7 @@ impl World {
     }
 
     fn want_for_season(season: usize) -> (usize, &'static str) {
-        match season {
-            0 => (0, "The wild stirs. Seeds and saplings are welcome."),
-            1 => (1, "The wild thirsts. Carried water is welcome."),
-            2 => (2, "The wild gathers. First fruits are welcome."),
-            _ => (3, "The wild hungers. Food is welcome."),
-        }
+        super::calendar_view::seasonal_want(season)
     }
 
     /// Does a stack satisfy the season's want?

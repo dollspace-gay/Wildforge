@@ -1,7 +1,7 @@
 //! Falling blocks, multiblock machines, clamps, anvils, and archaeology.
 
 use super::multiblock::{
-    BlockConstraint, BlockStore, MachineKind, MatchResult, MultiblockShape, Rotation, ShapeCell,
+    BlockConstraint, BlockRead, BlockStore, MachineKind, MatchResult, MultiblockShape, Rotation, ShapeCell,
     fold_capabilities, fold_stats, match_shape, modules_in_category, pos_within_extent,
     shape_extent,
 };
@@ -231,9 +231,7 @@ impl World {
     /// core beside the mouth wrapped in a 3-wide, 3-tall firebrick
     /// ring (23 firebrick + the mouth), open on top. Returns the core.
     pub fn check_bloomery_at(&self, pos: BlockPos) -> Option<BlockPos> {
-        self.machine_kind("base:bloomery")
-            .validate(self, pos)
-            .map(|result| result.core)
+        check_machine_at(self, "base:bloomery", pos)
     }
 
     /// Validate the forge: the firebrick stack with a forge mouth,
@@ -242,9 +240,7 @@ impl World {
     /// stone anvil within three blocks of the mouth. A building, not
     /// a block: the workshop is the capital (economy plan, leg 2).
     pub fn check_forge_at(&self, pos: BlockPos) -> Option<BlockPos> {
-        self.machine_kind("base:forge")
-            .validate(self, pos)
-            .map(|result| result.core)
+        check_machine_at(self, "base:forge", pos)
     }
 
     /// Light a charged forge. Errors name what's missing. The generic
@@ -263,28 +259,19 @@ impl World {
     /// draft doubles what each fuel fires, and weather means nothing
     /// (economy plan, leg 2 — same capital rule as the forge).
     pub fn check_glassworks_at(&self, pos: BlockPos) -> Option<BlockPos> {
-        let core = self.check_kiln_at(pos)?;
-        if has_chimney_at(self, core) {
-            Some(core)
-        } else {
-            None
-        }
+        check_glassworks_at(self, pos)
     }
 
     /// The same stack with a separator in its mouth splits the mixed
     /// rare-earth powder instead (mechanization stage 6).
     #[cfg_attr(not(test), allow(dead_code))]
     pub fn check_separator_at(&self, pos: BlockPos) -> Option<BlockPos> {
-        self.machine_kind("base:separator")
-            .validate(self, pos)
-            .map(|result| result.core)
+        check_machine_at(self, "base:separator", pos)
     }
 
     /// The same stack with a kiln in its mouth fires glass instead.
     pub fn check_kiln_at(&self, pos: BlockPos) -> Option<BlockPos> {
-        self.machine_kind("base:kiln")
-            .validate(self, pos)
-            .map(|result| result.core)
+        check_machine_at(self, "base:kiln", pos)
     }
 
     /// Validate a market stall at its counter: two log posts (two
@@ -292,7 +279,7 @@ impl World {
     /// three-wide awning of solid or glass at post-top height. A
     /// stall trades only while it stands (trade & travel, stage 3).
     pub fn check_stall_at(&self, pos: BlockPos) -> bool {
-        match_shape(self, pos, &stall_shape()).is_some()
+        check_stall_at(self, pos)
     }
 
     /// Light a charged bloomery. Errors name what's missing.
@@ -680,6 +667,21 @@ impl World {
     // ---------------- wildlife ----------------
 }
 
+/// Shared machine-recognition queries for authority and read-only scenes.
+pub(super) fn check_machine_at<B: BlockRead>(store: &B, name: &str, pos: B::Pos) -> Option<B::Pos> {
+    let kind = store.reg().machine_kind(name).unwrap_or_default();
+    kind.validate(store, pos).map(|result| result.core)
+}
+
+pub(super) fn check_glassworks_at<B: BlockRead>(store: &B, pos: B::Pos) -> Option<B::Pos> {
+    let core = check_machine_at(store, "base:kiln", pos)?;
+    has_chimney_at(store, core).then_some(core)
+}
+
+pub(super) fn check_stall_at<B: BlockRead>(store: &B, pos: B::Pos) -> bool {
+    match_shape(store, pos, &stall_shape()).is_some()
+}
+
 impl MachineKind {
     /// The two mouth blocks a kind routes its craft through: the handed
     /// and lit faces of its mouth station. The lit face only exists for
@@ -696,7 +698,7 @@ impl MachineKind {
     /// Validate this kind's full shell at `anchor`: the firebrick stack,
     /// the mouth block, and — for the forge handler — the chimney and anvil.
     /// Returns the match result (core + folded cell map) on success.
-    pub fn validate<B: BlockStore>(self, store: &B, anchor: B::Pos) -> Option<MatchResult<B::Pos>> {
+    pub fn validate<B: BlockRead>(self, store: &B, anchor: B::Pos) -> Option<MatchResult<B::Pos>> {
         let def = store.reg().machine(self)?;
         let shape = stack_shape(&self.mouth(store.reg()));
         let matched = match_shape(store, anchor, &shape)?;
@@ -727,7 +729,7 @@ impl MachineKind {
     /// The axis-aligned block-cell region (relative to `anchor`) that an
     /// edit must fall inside to warrant revalidating this instance. Covers
     /// the shell cells, the core, the forge's chimney, and its anvil scan.
-    pub fn edit_region<B: BlockStore>(
+    pub fn edit_region<B: BlockRead>(
         self,
         store: &B,
         _anchor: B::Pos,
@@ -870,7 +872,7 @@ fn stall_shape() -> MultiblockShape {
 /// Three more courses of firebrick ring over the stack, flue open — the
 /// chimney that turns a station into a workshop. Rain never reaches a
 /// chimneyed fire.
-fn has_chimney_at<B: BlockStore>(store: &B, core: B::Pos) -> bool {
+fn has_chimney_at<B: BlockRead>(store: &B, core: B::Pos) -> bool {
     let shape = chimney_shape();
     match_shape(store, core, &shape).is_some()
 }
@@ -990,7 +992,7 @@ pub(super) fn revalidate_machines_around<B: BlockStore>(store: &mut B, pos: B::P
     anchors.len()
 }
 
-impl BlockStore for World {
+impl BlockRead for World {
     type Pos = BlockPos;
 
     fn get_block(&self, pos: BlockPos) -> BlockId {
@@ -1016,10 +1018,6 @@ impl BlockStore for World {
         &self.block_entities
     }
 
-    fn block_entities_mut(&mut self) -> &mut HashMap<BlockPos, BlockEntity> {
-        &mut self.block_entities
-    }
-
     fn reg(&self) -> &Arc<Registry> {
         &self.reg
     }
@@ -1035,6 +1033,12 @@ impl BlockStore for World {
 
     fn weather_at(&self, at: BlockPos) -> LocalWeatherSample {
         self.weather_at_surface(at.surface())
+    }
+}
+
+impl BlockStore for World {
+    fn block_entities_mut(&mut self) -> &mut HashMap<BlockPos, BlockEntity> {
+        &mut self.block_entities
     }
 
     fn swap_block_keep_entity(&mut self, pos: BlockPos, block_name: &str) {
