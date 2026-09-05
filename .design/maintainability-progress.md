@@ -1702,3 +1702,13 @@ move. Final regression work must prove no inventory cost on rejection, local
 operation preservation, actual furnace admission/click echo, script authority,
 and no guest generation, save, stable-ID allocation, or physical simulation.
 No tests or validation ran; the implementation-first schedule remains active.
+
+
+## Unicode observation correction (coding checkpoint; unverified)
+
+The shared receiver previously truncated ecology text at byte 240 unconditionally,
+which panics when that byte lies inside a UTF-8 code point. The same bounded
+240-byte policy now rounds down to a character boundary. ASCII and shorter
+messages are unchanged. Final receiver regressions must include multibyte text
+crossing the limit, short Unicode, and empty text for both guest adapters.
+No tests ran during this implementation checkpoint.

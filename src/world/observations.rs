@@ -42,7 +42,9 @@ impl ReplicaObservations {
         self.arcane_bands = bands.map(|band| band.min(4));
         self.arcane_dominant = dominant.min(crate::arcane::BASE_RESONANCES.len() as u8);
         self.ecology = ecology.map(|(mut text, damped)| {
-            text.truncate(240);
+            let mut end = text.len().min(240);
+            while !text.is_char_boundary(end) { end -= 1; }
+            text.truncate(end);
             (text, damped)
         });
     }
