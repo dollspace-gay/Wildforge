@@ -937,7 +937,7 @@ def build_readability_qualification(
         "baseline_commit": baseline_commit,
         "after_commit": after_commit,
         "source_reports": sorted(source_reports),
-        "fog_endpoint_contract": "src/shader.wgsl sky_radiance(rd); mirrored by above_water_fog_is_monotonic_and_reaches_directional_sky",
+        "fog_endpoint_contract": "src/shader/sky.wgsl sky_radiance(rd); mirrored by above_water_fog_is_monotonic_and_reaches_directional_sky",
         "passed": passed,
         "retention": retention,
         "silhouette": silhouette,

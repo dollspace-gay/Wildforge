@@ -19,3 +19,7 @@ cargo test --locked tests::rendering::
 
 Read [AGENTS.md](AGENTS.md) before changing this area. For a structural migration,
 run the complete applicable gates and record evidence in the migration record.
+
+The world shader is the compile-time aggregate `crate::shader::WORLD` from
+`src/shader/`; production and validation share its source. Shader units own
+bindings, geometry, shadows/light, sky/fog, materials, and pass entry points.

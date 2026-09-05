@@ -283,7 +283,7 @@ fn above_water_fog_is_monotonic_and_reaches_directional_sky() {
         toward_sun
     );
 
-    let shader = include_str!("../shader.wgsl");
+    let shader = crate::shader::WORLD;
     assert!(shader.contains("smoothstep(u.cam.w * 0.90, u.cam.w * 1.0, dist)"));
     assert!(shader.contains("select(sky_radiance(rd), u.sky.rgb, u.misc.x > 0.5)"));
 }
@@ -1347,7 +1347,7 @@ fn atlas_derives_tinted_player_variants() {
 #[test]
 fn wgsl_shaders_validate() {
     for (name, src) in [
-        ("shader.wgsl", include_str!("../shader.wgsl")),
+        ("shader.wgsl", crate::shader::WORLD),
         ("post.wgsl", include_str!("../post.wgsl")),
     ] {
         let module = naga::front::wgsl::parse_str(src)

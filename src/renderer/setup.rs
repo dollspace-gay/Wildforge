@@ -202,7 +202,7 @@ impl Renderer {
 
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("shader"),
-            source: wgpu::ShaderSource::Wgsl(include_str!("../shader.wgsl").into()),
+            source: wgpu::ShaderSource::Wgsl(crate::shader::WORLD.into()),
         });
         // The point-shadow pass has its own group-0 uniform (per-face matrix +
         // light position), so it lives in a separate module.

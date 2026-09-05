@@ -55,6 +55,7 @@ mod ruleset;
 mod screens;
 mod script;
 mod server;
+mod shader;
 mod skills;
 mod sky;
 mod stats;

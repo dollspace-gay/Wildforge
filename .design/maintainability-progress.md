@@ -1431,3 +1431,18 @@ must cover simultaneous readers, cloned registries/jobs, independent transfer
 contents, cache edits, failed copy/validation/publication, final-reader cleanup,
 and unchanged content hashes. The extra per-transfer disk copy is deliberate;
 entry timing and native integration remain in the deferred validation phase.
+
+
+## Deterministic world shader composition (coding checkpoint; unverified)
+
+The world WGSL source is split at complete declarations into binding, vertex,
+shadow, lighting, sky/fog, material, terrain-fragment, diagnostic, line, and UI
+units. One compile-time concatenation feeds the renderer and existing Naga/
+fog fixtures. No runtime file loading, generated checked-in aggregate, pipeline
+change, or CPU rendering path is introduced. Units retain their original bytes
+and order by construction; source references and folder guidance are updated.
+
+Only existing test source references changed; no tests or validation commands
+ran. Byte equivalence, Naga validation, uniform/binding contracts, and fresh
+hardware captures/timings remain required in the final phase. Other renderer
+setup/frame/post ownership and remaining client domains are still open.
