@@ -33,18 +33,18 @@ runtime comparisons. Cold/warm runtime measurements remain outstanding.
 | AC-1 compatibility | Existing repairs and planning separated into commits | Baseline gates; per-slice save/codec/genesis/API checks |
 | AC-2 authority/replica | Existing `World::remote` guard | Distinct owners and bounded read APIs |
 | AC-3 terrain jobs | Shared owned `TerrainJobs`, observable errors, saved revision checks, and owned homeland trials | Content/palette context invalidation; caller and runtime qualification |
-| AC-4 common client | Shared content mapping, snapshot reconstruction, and admission state; focused and real QUIC entry regressions pass | Complete session/replica lifetime ownership, content transfer failures, and native guest proofs |
-| AC-5 player operations | Stall-sale clone inspected | Shared domain operations and adapter parity |
+| AC-4 common client | Shared admission, mappings, entity reconstruction, terrain ordering, roster, content publication, and domain updates implemented; earlier source has focused/QUIC evidence | Finish request and replica ownership; final transfer/reconnect/native qualification |
+| AC-5 player operations | Shared stall, craft/repair, conservation effects, and armor exchange implemented | Remaining action domains; final rejection/conservation/adapter parity tests |
 | AC-6 world domains | Domain fields/methods inventoried | Encapsulation, explicit transaction coordination |
-| AC-7 generation stages | Existing pure `Generator` boundary | Stage extraction and deterministic order tests |
-| AC-8 app/content/render/tools | Existing module tree and clone report | Cohesive owners and affected runtime/codec checks |
+| AC-7 generation stages | Explicit chunk stages, intermediate maps, and independent generation query modules implemented | Atlas decomposition; final pinned output and worker-order checks |
+| AC-8 app/content/render/tools | Registry definitions, schemas, loading, and graph validation owners extracted | Registry linker/publication, app/UI/render/tool owners, final runtime/codec checks |
 | AC-9 source size | Advisory 400/500 report and baseline | Reduce migrated debt; explain any real exceptions |
 | AC-10 clone analyzer | 18 tests passed in planning; complete JSON snapshot | Maintain analyzer coverage as tooling evolves |
 | AC-11 dependency boundaries | Direction specified in plan | Dependency checker with violating fixtures |
 | AC-12 tests/performance | Baseline suite passed; extraction focused gates passed | Full slice gates and reproducible measurements for affected paths |
 | AC-13 shutdown | Terrain, mesh, encoding, creation, entry, and homeland work have joined owners and failure tests | Dedicated shutdown; graphical close/capture and save-failure runtime proof |
 | AC-14 migration record | This file and separate baseline commits | Add implementation/result entries after each slice |
-| Folder guidance | 62 maintained directories documented; coverage and content identity regressions pass | Recheck when adding directories |
+| Folder guidance | 64 directories previously verified; new player_ops, worldgen, and registry/schema directories include guides | Final coverage and content identity checks after coding |
 
 ## Compatibility observations requiring explicit treatment
 
@@ -1092,3 +1092,21 @@ checkpoint with no tests/build/lint execution under the requested schedule.
 Raw TOML schemas, loader/linker stages, atomic registry publication, and their
 final remap/hot-reload/determinism verification remain open; the registry and
 full refactor are not accepted yet.
+
+
+## Raw registry schemas and loader (implementation, unverified)
+
+Raw deserialization types and provider bundles now live in `registry/schema/`,
+organized by content domain with separate file envelopes. Schema fields and
+helpers are visible within the registry boundary; runtime definition names stay
+on the existing facade. `loading.rs` owns file parsing, embedded base documents,
+provider dependency ordering, and dispatch into linking. Its include paths were
+adjusted for the source move to retain the same base files. Raw field names,
+serde defaults, compatibility alternatives, load order, and WORLD_API_VERSION
+are unchanged by this extraction. New schema directory guidance is included.
+
+No tests/build/lint execution at this checkpoint. Linking passes and atomic
+publication remain implementation work; final tests must cover every schema
+family, bad providers, dependency order, content hashes, runtime ID ordering,
+and hot reload/remap. The requirement audit above now distinguishes these
+unverified implementations from the older validated source evidence.

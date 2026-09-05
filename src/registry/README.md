@@ -11,7 +11,10 @@ names and owns raw loading/linking during the remaining migration.
 their conserved content contracts. Their call order remains explicit.
 `runtime.rs` holds lookups, `policy.rs` resolves runtime content policy, and
 `placeholders.rs` restores saved content names/payloads before remapping.
-Raw deserialization, linking stages, and atomic publication remain in progress.
+`schema/` owns raw documents, their defaults, and the parsed provider bundle.
+`loading.rs` reads base/mod files and preserves provider ordering before calling
+the linker. Embedded base paths still refer to the same authored files.
+Linking stages and atomic publication remain in progress.
 
 Start with `runtime.rs`. See the [repository overview](../../README.md) for
 build prerequisites and complete checks. Commands below run from the repository root.
