@@ -9,7 +9,7 @@
 //! and a lie about a mechanic is worse than silence.
 
 use super::*;
-use crate::ItemStack;
+use crate::inventory::ItemStack;
 use crate::registry::{ArmorSlot, NUTRIENTS, Registry, ToolKind};
 
 const TITLE: [f32; 4] = [1.0, 0.98, 0.92, 1.0];

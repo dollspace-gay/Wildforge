@@ -2,7 +2,9 @@
 
 # Engine source
 
-lib.rs assembles the single package; main.rs dispatches into it. Server simulation, world state, content, clients, transport, and rendering have separate responsibilities.
+lib.rs assembles the single package; main.rs dispatches into it. `app/` owns
+process command selection and terminal adapters, while `game/` owns the windowed
+event loop and presentation dependencies. Server simulation, world state, content, clients, transport, and rendering have separate responsibilities.
 
 `content_files.rs` owns the historical mod file inventory and content hash for
 both genesis compatibility and network transfer, without depending on transport.

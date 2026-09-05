@@ -36,7 +36,34 @@ mod ui;
 mod world_loading;
 mod world_loading_ui;
 
-use crate::*;
+use crate::{atlas, audio, bounce, config, crafting, entity, identity, inventory, lights, mesher, mobs, mp, net, particles, physics, raycast, registry, renderer, script, server, style, visual_capture, world, worldgen};
+
+use std::path::PathBuf;
+use std::sync::Arc;
+use std::time::Instant;
+
+use glam::Vec3;
+use winit::application::ApplicationHandler;
+use winit::dpi::{LogicalSize, PhysicalSize};
+use winit::event::{
+    DeviceEvent, DeviceId, ElementState, MouseButton, MouseScrollDelta, WindowEvent,
+};
+use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop};
+use winit::keyboard::{KeyCode, PhysicalKey};
+use winit::window::{CursorGrabMode, Fullscreen, Window, WindowId};
+
+use crate::audio::{Audio, BreakMat, Sfx};
+use crate::camera::Camera;
+use crate::chunk::{CHUNK_X, ChunkPos, SEA_LEVEL};
+use crate::config::Config;
+use crate::entity::ItemEntity;
+use crate::inventory::{HOTBAR_SLOTS, Inventory, ItemStack, TOTAL_SLOTS};
+use crate::physics::{EYE_HEIGHT, Player};
+use crate::registry::{AIR, ItemId, Registry, ToolKind};
+use crate::renderer::FrameInput;
+use crate::ui::UiBatch;
+use crate::world::World;
+
 const GEN_BUDGET: usize = 4; // chunk generations per frame (256-tall gen is pricey)
 pub(crate) const SHOT_SETTLE_FRAMES: u64 = 10;
 const SHOT_FIXED_DT: f32 = 1.0 / 60.0;

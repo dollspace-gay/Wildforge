@@ -1352,3 +1352,16 @@ generation and manifest compatibility no longer depend on authoritative world
 or network modules for these constants/helpers. Paths, bytes, exclusions,
 sorting, and topology values are unchanged. Final identity/API/codec checks
 remain deferred with the rest of validation.
+
+
+## Process command ownership (coding checkpoint; unverified)
+
+The library facade now delegates process dispatch to `app/`. Command precedence
+is explicit in one ordered selector, followed by domain adapters for audits,
+geography, creation, common-entry preparation, qualification, and runtime launch.
+Existing argument interpretation, usage messages, exit statuses, defaults, and
+operation order are retained. Window/audio/input imports moved to the graphical
+client, whose root no longer imports the whole crate. New app folder guidance
+records the boundary. Client child imports and narrower state ownership remain
+open. No validation commands ran; CLI contracts, Rust gates, native evidence,
+and fresh GPU qualification remain deferred until coding is complete.
