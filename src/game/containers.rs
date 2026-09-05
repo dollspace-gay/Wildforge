@@ -61,118 +61,30 @@ impl Game {
                 size: self.interaction.craft_size as u8,
             });
         }
-        let reg = self.content.reg.clone();
-        let n2 = self.interaction.craft_size * self.interaction.craft_size;
-        if let Some(repair) = crafting::match_repair(&reg, &self.interaction.craft_grid[..n2]) {
-            if self.ui_state.held_stack.is_some() {
-                return;
-            }
-            let consumed_part = self.interaction.craft_grid[repair.part_slot];
-            self.ui_state.held_stack = Some(repair.output);
-            crafting::consume_repair(&mut self.interaction.craft_grid[..n2], &repair);
-            if self.multiplayer.remote.is_none()
-                && let Some(stack) = consumed_part
-                && stack.arcane_id != 0
-                && let Some(pos) = self.player.pos.block()
-            {
-                self.server.world.retire_arcane_stack_at(
-                    pos,
-                    ItemStack { count: 1, ..stack },
-                    "charged repair part consumed",
-                );
-            }
-            if let Some(ledger) = &mut self.server.world.material_ledger
-                && let Err(error) = ledger.record_recipe_loss(&repair.scale_loss)
-            {
-                eprintln!("materials: repair scale accounting failed: {error}");
-            }
-            self.sfx(Sfx::Craft);
-            return;
-        }
-        let Some(recipe) = crafting::match_recipe(
+        let Ok(effects) = crate::player_ops::craft::take_result(
             &reg,
-            &self.interaction.craft_grid[..n2],
             self.interaction.craft_size,
+            &mut self.interaction.craft_grid,
+            &mut self.inventory,
+            &mut self.ui_state.held_stack,
         ) else {
             return;
         };
-        let out = ItemStack::new(&reg, recipe.output, recipe.count);
-        let recipe_loss = recipe.loss.clone();
-        let recipe_byproducts = recipe.byproducts.clone();
-        let charged_inputs = self.interaction.craft_grid[..n2]
-            .iter()
-            .flatten()
-            .filter(|stack| stack.arcane_id != 0)
-            .map(|stack| ItemStack { count: 1, ..*stack })
-            .collect::<Vec<_>>();
-        match self.ui_state.held_stack {
-            None => {
-                self.ui_state.held_stack = Some(out);
-            }
-            Some(h)
-                if h.can_merge(&reg, &out) && h.count + out.count <= reg.item(h.item).max_stack =>
-            {
-                self.ui_state.held_stack = Some(ItemStack {
-                    count: h.count + out.count,
-                    ..h
-                });
-            }
-            _ => return, // held stack can't take the output
-        }
-        crafting::consume(&mut self.interaction.craft_grid[..n2]);
-        // Spec 3.5: a blueprint item is consumed from the inventory, not the grid.
-        if let Some(blueprint) = recipe.blueprint {
-            self.inventory.try_consume(&[(blueprint, 1)]);
-        }
-        if self.multiplayer.remote.is_none()
-            && let Some(pos) = self.player.pos.block()
-        {
-            for stack in charged_inputs {
-                self.server.world.retire_arcane_stack_at(
-                    pos,
-                    stack,
-                    "charged crafting ingredient consumed",
-                );
-            }
-        }
-        if let Some(ledger) = &mut self.server.world.material_ledger
-            && let Err(error) = ledger.record_recipe_loss(&recipe_loss)
-        {
-            eprintln!("materials: crafting loss accounting failed: {error}");
-        }
-        for (item, count) in recipe_byproducts {
-            if crate::materials::is_secondary_item(&reg, item)
-                && let Some(ledger) = &mut self.server.world.material_ledger
-            {
-                let materials =
-                    crate::materials::stack_materials(&reg, ItemStack::new(&reg, item, count));
-                if let Err(error) = ledger.record_secondary_output(&materials) {
-                    eprintln!("materials: crafting secondary output failed: {error}");
-                }
-            }
-            let remainder = self.inventory.add(&reg, item, count);
-            if remainder != 0 {
-                let pos = self.player.pos.block();
-                if let (Some(pos), Some(ledger)) = (pos, &mut self.server.world.material_ledger)
-                    && let Err(error) = ledger.bury_stack(
-                        &reg,
-                        pos,
-                        ItemStack::new(&reg, item, remainder),
-                        "full inventory after crafting",
-                    )
-                {
-                    eprintln!("materials: crafting byproduct salvage failed: {error}");
-                }
-            }
-        }
+        let kind = effects.finish(
+            &mut self.server.world,
+            self.player.pos.block(),
+            &mut self.inventory,
+            self.multiplayer.remote.is_none(),
+            "full inventory after crafting",
+        );
         self.sfx(Sfx::Craft);
-        self.grant_xp("craft");
-        if self.content.scripts.wants("on_craft") {
-            let name = reg.item(recipe.output).name.clone();
-            self.content
-                .scripts
-                .dispatch(&self.server.world, "on_craft", (name,));
-            self.apply_script_cmds();
+        if let crate::player_ops::craft::CraftKind::Recipe(output) = kind {
+            self.grant_xp("craft");
+            if self.content.scripts.wants("on_craft") {
+                let name = reg.item(output).name.clone();
+                self.content.scripts.dispatch(&self.server.world, "on_craft", (name,));
+                self.apply_script_cmds();
+            }
         }
     }
 
@@ -613,25 +525,12 @@ impl Game {
         if i < 4 {
             self.return_loadout_components(i);
         }
-        let reg = self.content.reg.clone();
-        match (self.ui_state.held_stack, self.survival.armor[i]) {
-            (Some(h), cur) => {
-                // Matching piece in its slot; charms in the charm slot.
-                let fits = if i == 4 {
-                    reg.item(h.item).charm.is_some()
-                } else {
-                    reg.item(h.item).armor.map(|(s, _)| s as usize) == Some(i)
-                };
-                if fits {
-                    self.survival.armor[i] = Some(h);
-                    self.ui_state.held_stack = cur;
-                }
-            }
-            (None, Some(_)) => {
-                self.ui_state.held_stack = self.survival.armor[i].take();
-            }
-            (None, None) => {}
-        }
+        crate::player_ops::equipment::exchange(
+            &self.content.reg,
+            &mut self.survival.armor,
+            &mut self.ui_state.held_stack,
+            i,
+        );
     }
 
     /// Offering stone: three slots, centered.

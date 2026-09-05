@@ -1035,3 +1035,21 @@ state unchanged. Sale overflow remains the adapter's ordinary delivery path.
 This correction is separate from the preceding shared-body extraction. Identity,
 conservation, capacity, and local/network parity tests are deferred to the final
 verification stage as requested; no acceptance claim is made here.
+
+
+## Shared crafting, repair, and equipment rules (implementation, unverified)
+
+Local and network crafting now call `player_ops::craft` for repair matching,
+blueprint eligibility, cursor capacity, grid consumption, and a single owned
+sequence of charged-input retirement, recipe-loss accounting, secondary output,
+and overflow burial. The outcome is consumed when effects finish. Local tech
+unlock checks, XP, script callbacks, guest prediction policy, and network echoes
+remain adapter responsibilities. Existing local/network overflow reason strings
+are retained. Both equipment adapters use one armor/charm eligibility and cursor
+exchange operation; the local loadout still returns components first.
+
+No tests or build/lint gates run for this checkpoint. Final verification must
+exercise repair identity, recipe/blueprint rejection, cursor capacity, Current
+retirement, material loss/byproducts, full inventory, armor/charm eligibility,
+and local/network parity before acceptance. Other player-operation domains and
+world authority separation remain open.

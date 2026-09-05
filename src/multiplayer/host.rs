@@ -3844,25 +3844,9 @@ impl HostSession {
                         guest.cursor = cursor;
                     }
                     net::InventoryArea::Armor if slot < guest.armor.len() => {
-                        match (guest.cursor, guest.armor[slot]) {
-                            (Some(cursor), current) => {
-                                let fits = if slot == 4 {
-                                    reg.item(cursor.item).charm.is_some()
-                                } else {
-                                    reg.item(cursor.item).armor.map(|(kind, _)| kind as usize)
-                                        == Some(slot)
-                                };
-                                if fits {
-                                    guest.armor[slot] = Some(cursor);
-                                    guest.cursor = current;
-                                }
-                            }
-                            (None, Some(current)) => {
-                                guest.armor[slot] = None;
-                                guest.cursor = Some(current);
-                            }
-                            _ => {}
-                        }
+                        crate::player_ops::equipment::exchange(
+                            reg, &mut guest.armor, &mut guest.cursor, slot,
+                        );
                     }
                     _ => return,
                 }
@@ -3870,120 +3854,22 @@ impl HostSession {
                 self.send_player_state(id);
             }
             C2S::CraftResult { size } => {
-                let size = size as usize;
-                if !(2..=3).contains(&size) {
-                    return;
-                }
-                if let Some(repair) = crate::crafting::match_repair(
+                let Ok(effects) = crate::player_ops::craft::take_result(
                     &server.world.reg,
-                    &guest.craft_grid[..size * size],
-                ) {
-                    if guest.cursor.is_some() {
-                        return;
-                    }
-                    let consumed_part = guest.craft_grid[repair.part_slot];
-                    guest.cursor = Some(repair.output);
-                    crate::crafting::consume_repair(&mut guest.craft_grid[..size * size], &repair);
-                    if let Some(stack) = consumed_part
-                        && stack.arcane_id != 0
-                        && let Some(pos) = guest.pos.block()
-                    {
-                        server.world.retire_arcane_stack_at(
-                            pos,
-                            ItemStack { count: 1, ..stack },
-                            "charged repair part consumed",
-                        );
-                    }
-                    if let Some(ledger) = &mut server.world.material_ledger
-                        && let Err(error) = ledger.record_recipe_loss(&repair.scale_loss)
-                    {
-                        eprintln!("materials: guest repair scale accounting failed: {error}");
-                    }
-                    self.send_player_state(id);
-                    return;
-                }
-                let Some(recipe) = crate::crafting::match_recipe(
-                    &server.world.reg,
-                    &guest.craft_grid[..size * size],
-                    size,
+                    usize::from(size),
+                    &mut guest.craft_grid,
+                    &mut guest.inventory,
+                    &mut guest.cursor,
                 ) else {
                     return;
                 };
-                // Spec 3.5: the host enforces the blueprint gate (it holds the
-                // authoritative guest inventory). The tech gate is client-side
-                // only: the KV store lives on the client.
-                if let Some(blueprint) = recipe.blueprint
-                    && !guest.inventory.can_afford(&[(blueprint, 1)])
-                {
-                    return;
-                }
-                let output = ItemStack::new(&server.world.reg, recipe.output, recipe.count);
-                let recipe_loss = recipe.loss.clone();
-                let recipe_byproducts = recipe.byproducts.clone();
-                let charged_inputs = guest.craft_grid[..size * size]
-                    .iter()
-                    .flatten()
-                    .filter(|stack| stack.arcane_id != 0)
-                    .map(|stack| ItemStack { count: 1, ..*stack })
-                    .collect::<Vec<_>>();
-                match guest.cursor {
-                    None => guest.cursor = Some(output),
-                    Some(cursor)
-                        if cursor.can_merge(&server.world.reg, &output)
-                            && cursor.count + output.count
-                                <= server.world.reg.item(cursor.item).max_stack =>
-                    {
-                        guest.cursor = Some(ItemStack {
-                            count: cursor.count + output.count,
-                            ..cursor
-                        });
-                    }
-                    _ => return,
-                }
-                crate::crafting::consume(&mut guest.craft_grid[..size * size]);
-                if let Some(blueprint) = recipe.blueprint {
-                    guest.inventory.try_consume(&[(blueprint, 1)]);
-                }
-                if let Some(pos) = guest.pos.block() {
-                    for stack in charged_inputs {
-                        server.world.retire_arcane_stack_at(
-                            pos,
-                            stack,
-                            "charged crafting ingredient consumed",
-                        );
-                    }
-                }
-                if let Some(ledger) = &mut server.world.material_ledger
-                    && let Err(error) = ledger.record_recipe_loss(&recipe_loss)
-                {
-                    eprintln!("materials: guest crafting loss accounting failed: {error}");
-                }
-                for (item, count) in recipe_byproducts {
-                    if crate::materials::is_secondary_item(&server.world.reg, item)
-                        && let Some(ledger) = &mut server.world.material_ledger
-                    {
-                        let materials = crate::materials::stack_materials(
-                            &server.world.reg,
-                            ItemStack::new(&server.world.reg, item, count),
-                        );
-                        if let Err(error) = ledger.record_secondary_output(&materials) {
-                            eprintln!("materials: guest crafting secondary output failed: {error}");
-                        }
-                    }
-                    let remainder = guest.inventory.add(&server.world.reg, item, count);
-                    if remainder != 0
-                        && let (Some(pos), Some(ledger)) =
-                            (guest.pos.block(), &mut server.world.material_ledger)
-                        && let Err(error) = ledger.bury_stack(
-                            &server.world.reg,
-                            pos,
-                            ItemStack::new(&server.world.reg, item, remainder),
-                            "full guest inventory after crafting",
-                        )
-                    {
-                        eprintln!("materials: guest crafting byproduct salvage failed: {error}");
-                    }
-                }
+                effects.finish(
+                    &mut server.world,
+                    guest.pos.block(),
+                    &mut guest.inventory,
+                    true,
+                    "full guest inventory after crafting",
+                );
                 self.send_player_state(id);
             }
             C2S::EatSelected => {
