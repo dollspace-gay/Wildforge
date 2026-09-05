@@ -1,6 +1,6 @@
 <!-- wildforge:guide -->
 
-# Host streaming
+# Host session adapters
 
 streaming.rs schedules guest interest and snapshot delivery. chunk_jobs.rs owns terrain preparation, wire encoding, revisions, and cache state behind bounded methods.
 
@@ -31,3 +31,11 @@ cargo test --locked tests::multiplayer::
 
 Read [AGENTS.md](AGENTS.md) before changing this area. For a structural migration,
 run the complete applicable gates and record evidence in the migration record.
+
+`requests_*.rs` groups authenticated operations by domain. The parent on_msg
+coordinator retains readiness, moderation, pre-entry request handling, observer
+snapshot creation, and command-budget admission before its exhaustive protocol
+dispatch. A domain adapter then borrows the admitted guest and calls the same
+physical operations. Packet/variant definitions, reply order, counters, and
+observer selection are unchanged. Shared gameplay rules live in player_ops;
+these modules own protocol decoding and guest-specific responses.

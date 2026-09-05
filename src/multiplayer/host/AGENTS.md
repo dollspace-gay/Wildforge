@@ -22,3 +22,8 @@ Aim for cohesive source modules around 400 lines and review those above 500.
 Add local README/AGENTS guidance when introducing a subdirectory. Run
 `cargo test --locked tests::multiplayer::` from the repository root for focused feedback, then the applicable
 full gates before accepting a slice. Record limitations and failures honestly.
+
+Domain request adapters are entered only through on_msg admission. Keep the
+parent protocol match exhaustive so new variants require explicit routing.
+Readiness, permission, command budget, and observer snapshot order must not move
+into an optional per-domain path. Preserve all reply and inventory-echo order.

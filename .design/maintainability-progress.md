@@ -1980,3 +1980,19 @@ settle timing, physical operation calls, and feedback order are retained.
 Contextual alchemy remains an ordered selector over host-owned transactions.
 No tests/compiler/format/analyzers ran; native interaction and domain regression
 qualification remain deferred until implementation is complete.
+
+
+## Host request domain adapters (coding checkpoint; unverified)
+
+The host's large on_msg match now routes exhaustively to movement, terrain,
+animal, world-use, observation, knowledge, experiment, implement, alchemy,
+projectile, container, inventory, and chat adapters. The parent retains the
+existing readiness/moderation/pre-entry handling, observer snapshot, and command
+budget order before dispatch. Each adapter borrows the already admitted guest;
+physical operations, counters, effect publication, and wire reply order remain
+in their original branches. No protocol variant/version or authorization policy
+was added or removed. All new request modules are below 250 lines before format.
+
+No tests/compiler/format/analyzers ran. Final requests must exercise unauthenticated,
+not-ready, muted/role-limited, rate-limited, unreachable, rejected, and accepted
+paths, plus multi-observer magic effects and ordinary graphical/agent guests.
