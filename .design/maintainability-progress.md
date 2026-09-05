@@ -107,3 +107,62 @@ An initial registry filter matched zero tests; it was corrected to
 Logs are in `target/maintainability/folder-guides/`. Full post-correction Rust
 and runtime gates remain pending; the previous five stale visual evidence
 checks have not been bypassed or relabeled as passing.
+
+## Temporary size exceptions during migration
+
+These are explicit review points for existing owners, not linter exclusions.
+New terrain/content/tooling modules remain below 400 lines. The scan continues
+to report every oversized file and these entries must be revisited at the
+named phase rather than treated as permanent exemptions.
+
+| File | Current lines | Domain and reason | Next review |
+|---|---:|---|---|
+| `src/game/mod.rs` | 1112 | App composition still owns the remaining client fields | Phase 7 session/UI/presentation owners |
+| `src/game/session.rs` | 1059 | Entry adapters still coordinate the old client state | Phases 3 and 7 client session extraction |
+| `src/lib.rs` | 674 | Legacy CLI dispatch remains alongside the facade | Phase 7 app command extraction |
+| `src/net/transport.rs` | 1006 | Content inventory is extracted; QUIC lifecycle/discovery remain | Phases 3 and 8 session/transport boundaries |
+| `src/planet_atlas/climate.rs` | 2440 | Live-audit correction reuses the existing total helper; stage ownership remains debt | Phase 6 climate stage extraction |
+| `src/multiplayer/host/streaming.rs` | 462 | Within review ceiling; encoding/snapshot delivery still share the adapter | Phases 2 and 3 encoding/session ownership |
+
+The baseline check commands, counts, compatibility versions, executable hash,
+and source hashes for public entrypoint modules are retained in
+`maintainability-verification-baseline.json`. Source hashes pin the original
+implementation; they are not an assertion that future internal source bytes
+must remain unchanged. Public signatures and behavior require review per slice.
+
+## Live water audit correction
+
+The new exactly-once adoption regression exposed an existing disagreement:
+`PlanetaryWeather::water_audit` counted vapor but omitted cloud water, while
+atlas and climate-step audits used `dynamic_water_total`. Seed 42 / side 8
+reported a false deficit of 3,548,558 HU. The live audit now uses that same
+helper. This corrects reporting only: no reservoir, ledger, climate state,
+terrain output, save format, or wire behavior changes.
+
+A separate regression requires nonzero cloud water and equality between live
+and atlas audits. That test and all 17 climate scenarios pass. With the
+correction, both terrain worker policies match synchronous material/water
+accounting, remain balanced, and reject duplicate adoption without changing
+those totals. The correction is kept separate from worker lifetime changes.
+
+## Terrain lifetime correction (in verification)
+
+The terrain owner now retains worker handles. Explicit shutdown and Drop stop
+accepting requests, clear queued work, wake waiters, join every running worker,
+and discard ready results. Running preparation finishes cooperatively before
+shutdown returns. Publication checks the stopped state under the same lock.
+A retained generation identity rejects completions from an old session before
+they can release a current request's budget. Worker panic/poison failures are
+reported after joins; Drop emits an actionable error if shutdown was implicit.
+
+All 12 terrain tests pass, including real saved/generated terrain, player-edit
+protection, old-session rejection, explicit and implicit joins, panic reporting,
+and exactly-once material/water accounting against synchronous adoption. The
+25 multiplayer scenarios, 15 serial agent scenarios, and strict all-feature
+Clippy also pass. Logs are in
+`target/maintainability/terrain-lifecycle/`; further gates are recorded there.
+
+Still pending in Phase 2: typed missing/invalid/unreadable save outcomes,
+live worker/startup error propagation, owned mesh/encoding workers, caller-level
+world-switch/disconnect tests, and controlled runtime/GPU requalification.
+This lifetime checkpoint does not close the full shutdown acceptance criterion.

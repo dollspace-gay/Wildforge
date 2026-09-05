@@ -5,21 +5,26 @@
 
 mod policy;
 mod queue;
+mod result;
 #[cfg(test)]
 mod tests;
 mod workers;
 
 pub(crate) use policy::WorkerPolicy;
 pub(crate) use queue::Priority;
+pub(crate) use result::{ChunkOrigin, PreparedChunk};
 
+use std::io;
 use std::sync::mpsc::{Receiver, channel};
 use std::sync::{Arc, Condvar, Mutex};
+use std::thread::JoinHandle;
 
-use crate::chunk::{Chunk, ChunkPos};
+use crate::chunk::ChunkPos;
 use crate::planet_atlas::PlanetAtlas;
 use crate::registry::Registry;
 use crate::world::ChunkLoader;
 use queue::WorkQueue;
+use result::GenerationId;
 
 /// Immutable inputs shared by every worker in one world session.
 #[derive(Clone)]
@@ -46,38 +51,35 @@ impl TerrainContext {
     }
 }
 
-/// Whether preparation found a persisted chunk or generated new terrain.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum ChunkOrigin {
-    Saved,
-    Generated,
-}
-
-/// A pure worker result awaiting an authoritative adoption decision.
-pub(crate) struct PreparedChunk {
-    pub(crate) position: ChunkPos,
-    pub(crate) chunk: Chunk,
-    pub(crate) origin: ChunkOrigin,
-}
-
-impl PreparedChunk {
-    pub(crate) fn is_fresh(&self) -> bool {
-        self.origin == ChunkOrigin::Generated
-    }
-}
-
 /// Owns terrain requests and completions for one world session.
 pub(crate) struct TerrainJobs {
     queue: Arc<(Mutex<WorkQueue>, Condvar)>,
     ready: Receiver<PreparedChunk>,
+    generation: GenerationId,
+    workers: Vec<JoinHandle<()>>,
 }
 
 impl TerrainJobs {
     pub(crate) fn new(context: TerrainContext, policy: WorkerPolicy) -> Self {
         let queue = Arc::new((Mutex::new(WorkQueue::default()), Condvar::new()));
         let (sender, ready) = channel();
-        workers::start(&context, policy, &queue, &sender);
-        Self { queue, ready }
+        let mut jobs = Self {
+            queue,
+            ready,
+            generation: GenerationId::new(),
+            workers: Vec::new(),
+        };
+        // Construct the owner before spawning: if spawning unwinds, Drop
+        // still stops and joins every worker that was already started.
+        workers::start(
+            &context,
+            policy,
+            &jobs.queue,
+            &sender,
+            &jobs.generation,
+            &mut jobs.workers,
+        );
+        jobs
     }
 
     /// Deduplicate requests and promote entry terrain within the supplied cap.
@@ -106,21 +108,65 @@ impl TerrainJobs {
 
     /// Complete bookkeeping before returning a result to its adopting caller.
     pub(crate) fn try_ready(&mut self) -> Option<PreparedChunk> {
-        let result = self.ready.try_recv().ok()?;
-        let (lock, _) = &*self.queue;
-        if let Ok(mut queue) = lock.lock() {
-            queue.complete(result.position);
+        while let Ok(result) = self.ready.try_recv() {
+            if let Some(result) = self.finish(result) {
+                return Some(result);
+            }
         }
+        None
+    }
+
+    fn finish(&mut self, result: PreparedChunk) -> Option<PreparedChunk> {
+        if !result.generation.matches(&self.generation) {
+            return None;
+        }
+        let (lock, _) = &*self.queue;
+        let Ok(mut queue) = lock.lock() else {
+            return None;
+        };
+        if queue.is_stopped() {
+            return None;
+        }
+        queue.complete(result.position);
         Some(result)
+    }
+
+    /// Cancel queued work, wait for running preparation, and discard results.
+    ///
+    /// Returns a worker failure only after all handles have been joined. The
+    /// world and its persistence state are never mutated during shutdown.
+    pub(crate) fn shutdown(&mut self) -> io::Result<()> {
+        let (lock, wake) = &*self.queue;
+        let poisoned = {
+            let guard = lock.lock();
+            let poisoned = guard.is_err();
+            // Poisoned state is recovered only to stop and clear the queue;
+            // no further terrain execution or adoption is allowed.
+            let mut queue = guard.unwrap_or_else(std::sync::PoisonError::into_inner);
+            queue.stop();
+            wake.notify_all();
+            poisoned
+        };
+        let mut panicked = 0;
+        for worker in self.workers.drain(..) {
+            if worker.join().is_err() {
+                panicked += 1;
+            }
+        }
+        while self.ready.try_recv().is_ok() {}
+        if poisoned || panicked != 0 {
+            return Err(io::Error::other(format!(
+                "terrain shutdown: {panicked} worker panics; queue poisoned: {poisoned}"
+            )));
+        }
+        Ok(())
     }
 }
 
 impl Drop for TerrainJobs {
     fn drop(&mut self) {
-        let (lock, wake) = &*self.queue;
-        if let Ok(mut queue) = lock.lock() {
-            queue.stop();
-            wake.notify_all();
+        if let Err(error) = self.shutdown() {
+            eprintln!("{error}");
         }
     }
 }
