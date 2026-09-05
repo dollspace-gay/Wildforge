@@ -1968,3 +1968,15 @@ UI, and physical operations; they do not introduce a second simulation owner.
 No tests/compiler/format/analyzers ran. Final checks must prove simultaneous
 button/channel priority, script cancellation, stale captured target behavior,
 local/guest action paths, RNG order, and real native play before acceptance.
+
+
+## Contextual interaction adapters (coding checkpoint; unverified)
+
+Discovery catalogue/copying, settled reading/experiments, installed apparatus,
+preparation use, contextual alchemy selection, waystone sidecars, and sleep
+voting now have dedicated modules with explicit imports and guides. Existing
+entry-point names, target selection, protocol requests, signed holder identity,
+settle timing, physical operation calls, and feedback order are retained.
+Contextual alchemy remains an ordered selector over host-owned transactions.
+No tests/compiler/format/analyzers ran; native interaction and domain regression
+qualification remain deferred until implementation is complete.
