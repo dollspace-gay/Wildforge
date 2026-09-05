@@ -583,16 +583,8 @@ struct Remote {
     /// Chunks we have asked the host for and not yet received, so a gap is
     /// requested once rather than every frame until it lands.
     wants: std::collections::HashSet<ChunkPos>,
-    /// Host-declared bounded terrain that must be decoded before this
-    /// connection becomes a simulated player.
-    entry_required: std::collections::HashSet<ChunkPos>,
-    entry_manifest_received: bool,
-    entry_ready_sent: bool,
-    entry_world_name: Option<String>,
-    entry_center: Option<ChunkPos>,
-    entry_center_meshed: bool,
+    admission: crate::client_session::Admission,
     pending_entry_chunks: std::collections::VecDeque<(ChunkPos, Vec<u8>)>,
-    entry_activity: std::time::Instant,
 }
 
 struct Game {

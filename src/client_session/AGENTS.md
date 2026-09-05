@@ -9,6 +9,8 @@ and authoritative simulation. Bind mappings to the registry that resolved them;
 unknown blocks use its placeholder and unknown items remain absent. Preserve
 host-assigned instance IDs, stack quantities, and consumer-specific behavior.
 
-Use explicit session transitions as admission and snapshot ownership migrate.
+Keep admission transitions explicit. Only decoded resident chunks satisfy the
+manifest; graphics must supply its first-frame milestone before acknowledging.
+Discard queued terrain and receivers when Welcome starts a new world.
 Test malformed, partial, duplicate, out-of-order, and reconnect sequences for
 both consumers. Keep new modules near 400 lines and document new subdirectories.

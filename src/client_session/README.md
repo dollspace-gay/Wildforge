@@ -18,9 +18,15 @@ Welcome replaces all receivers together. Packet geometry is checked before a
 new generation can discard older incomplete work. A single-packet snapshot uses
 the same freshness rule as fragmented data.
 
-Admission, replica ownership, and content renegotiation are still being migrated
-from the two adapters under the maintainability plan. Guests receive authoritative
-data; this layer must not acquire generation or persistence capabilities.
+`admission.rs` owns preparation, manifest validation, terrain readiness, the
+one-time acknowledgement, host acceptance, idle timeout, and closure. The agent
+requires decoded terrain; graphics additionally supplies its first-frame
+milestone. Residency is acknowledged only after the real chunk decoder inserts
+the chunk. Welcome starts a new admission epoch, and invalid transitions close it.
+
+Replica ownership and content renegotiation are still being migrated from the
+two adapters under the maintainability plan. Guests receive authoritative data;
+this layer must not acquire generation or persistence capabilities.
 
 Run `cargo test --locked client_session::` for focused checks and all serial
 agent scenarios for protocol integration. Graphical session changes also require

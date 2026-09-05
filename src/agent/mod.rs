@@ -7,14 +7,14 @@
 //! same rate limits, same shared ire. The layers above (perception,
 //! motion, work, mcp) only ever act through what a player could do.
 
-use std::collections::{HashMap, HashSet, VecDeque};
+use std::collections::{HashMap, VecDeque};
 use std::path::PathBuf;
 use std::sync::Arc;
 
 use glam::Vec3;
 
 use crate::chunk::ChunkPos;
-use crate::client_session::ContentMap;
+use crate::client_session::{Admission, ContentMap, PresentationRequirement};
 use crate::inventory::{HOTBAR_SLOTS, Inventory, ItemStack, TOTAL_SLOTS};
 use crate::physics::{self, Player};
 use crate::registry::{self, ItemId, Registry};
@@ -95,11 +95,7 @@ pub struct Agent {
     active_working_request: Option<(String, u64, crate::workings::WorkingTargetIntent)>,
     pub behavior: Behavior,
     pending_chunks: VecDeque<(ChunkPos, Vec<u8>)>,
-    entry_required: HashSet<ChunkPos>,
-    entry_manifest_received: bool,
-    entry_ready_sent: bool,
-    entry_world_name: Option<String>,
-    entry_activity: std::time::Instant,
+    admission: Admission,
     move_timer: f32,
     /// (pos sampled, seconds since) for stuck detection.
     stuck_probe: (crate::planet::EntityPos, f32),
@@ -181,11 +177,10 @@ impl Agent {
             active_working_request: None,
             behavior: Behavior::Idle,
             pending_chunks: VecDeque::new(),
-            entry_required: HashSet::new(),
-            entry_manifest_received: false,
-            entry_ready_sent: false,
-            entry_world_name: None,
-            entry_activity: std::time::Instant::now(),
+            admission: Admission::new(
+                PresentationRequirement::TerrainOnly,
+                std::time::Instant::now(),
+            ),
             move_timer: 0.0,
             stuck_probe: (default_origin, 0.0),
             mods_dir,
@@ -203,7 +198,9 @@ impl Agent {
             {
                 return Err(refusal);
             }
-            if agent.entry_activity.elapsed().as_secs() > 15 || start.elapsed().as_secs() > 120 {
+            if agent.admission.timed_out(std::time::Instant::now())
+                || start.elapsed().as_secs() > 120
+            {
                 return Err("timed out waiting for safe world entry".into());
             }
             std::thread::sleep(std::time::Duration::from_millis(10));
@@ -248,14 +245,22 @@ impl Agent {
     /// One tick: apply the host's stream, advance the standing
     /// behavior, step physics, send our movement upstream.
     pub fn pump(&mut self, dt: f32) {
-        if !self.client.is_connected() && self.in_world {
-            self.in_world = false;
-            self.event("disconnected from host".into());
+        if !self.client.is_connected() {
+            if !self.admission.is_closed() {
+                self.admission.close();
+                let message = if self.in_world {
+                    "disconnected from host"
+                } else {
+                    "refused: disconnected during world preparation"
+                };
+                self.in_world = false;
+                self.event(message.into());
+            }
             return;
         }
         let messages = self.client.poll();
         if !messages.is_empty() {
-            self.entry_activity = std::time::Instant::now();
+            self.admission.note_activity(std::time::Instant::now());
         }
         let mut block_updates = Vec::new();
         for msg in messages {
@@ -310,13 +315,13 @@ impl Agent {
                 self.content.blocks(),
             );
             for (pos, _) in chunks {
-                self.entry_required.remove(&pos);
+                if self.world.has_chunk(pos) {
+                    self.admission.resident(pos);
+                }
             }
         }
-        if self.entry_manifest_received && self.entry_required.is_empty() && !self.entry_ready_sent
-        {
+        if self.admission.take_ready() {
             self.client.send(&net::C2S::EntryReady);
-            self.entry_ready_sent = true;
         }
     }
 
@@ -378,35 +383,35 @@ impl Agent {
                 self.time_of_day = time;
                 self.apply_player_state(player_state, true);
                 self.in_world = false;
-                self.entry_required.clear();
-                self.entry_manifest_received = false;
-                self.entry_ready_sent = false;
-                self.entry_world_name = Some(world_name);
+                self.admission
+                    .begin(world_name, self.player.pos, std::time::Instant::now());
+                self.pending_chunks.clear();
             }
             net::S2C::EntryProgress { resident, total } => {
                 self.event(format!("preparing entry terrain: {resident}/{total}"));
             }
             net::S2C::EntryManifest { spawn, required } => {
-                if spawn != self.player.pos {
-                    self.event("refused: host entry manifest did not match Welcome spawn".into());
-                    return;
+                let world = &self.world;
+                if let Err(error) = self
+                    .admission
+                    .manifest(spawn, required, |pos| world.has_chunk(pos))
+                {
+                    self.in_world = false;
+                    self.event(format!("refused: {error}"));
                 }
-                self.entry_required = required.into_iter().collect();
-                self.entry_manifest_received = true;
             }
-            net::S2C::EntryAccepted => {
-                if !self.entry_ready_sent || !self.entry_required.is_empty() {
-                    self.event("refused: host accepted entry before terrain was decoded".into());
-                    return;
+            net::S2C::EntryAccepted => match self.admission.accepted() {
+                Ok(world) => {
+                    self.in_world = true;
+                    self.event(format!("joined {world}"));
                 }
-                self.in_world = true;
-                let world = self
-                    .entry_world_name
-                    .take()
-                    .unwrap_or_else(|| "world".into());
-                self.event(format!("joined {world}"));
-            }
+                Err(error) => {
+                    self.in_world = false;
+                    self.event(format!("refused: {error}"));
+                }
+            },
             net::S2C::Refused(why) => {
+                self.admission.close();
                 self.event(format!("refused: {}", why.detail));
                 self.in_world = false;
             }

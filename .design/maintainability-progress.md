@@ -33,7 +33,7 @@ runtime comparisons. Cold/warm runtime measurements remain outstanding.
 | AC-1 compatibility | Existing repairs and planning separated into commits | Baseline gates; per-slice save/codec/genesis/API checks |
 | AC-2 authority/replica | Existing `World::remote` guard | Distinct owners and bounded read APIs |
 | AC-3 terrain jobs | Shared owned `TerrainJobs`, observable errors, saved revision checks, and owned homeland trials | Content/palette context invalidation; caller and runtime qualification |
-| AC-4 common client | Duplicate admission/remapping inspected | Shared session and protocol/runtime proofs |
+| AC-4 common client | Shared content mapping, snapshot reconstruction, and admission state; focused and real QUIC entry regressions pass | Complete session/replica lifetime ownership, content transfer failures, and native guest proofs |
 | AC-5 player operations | Stall-sale clone inspected | Shared domain operations and adapter parity |
 | AC-6 world domains | Domain fields/methods inventoried | Encapsulation, explicit transaction coordination |
 | AC-7 generation stages | Existing pure `Generator` boundary | Stage extraction and deterministic order tests |
@@ -44,7 +44,7 @@ runtime comparisons. Cold/warm runtime measurements remain outstanding.
 | AC-12 tests/performance | Baseline suite passed; extraction focused gates passed | Full slice gates and reproducible measurements for affected paths |
 | AC-13 shutdown | Terrain, mesh, encoding, creation, entry, and homeland work have joined owners and failure tests | Dedicated shutdown; graphical close/capture and save-failure runtime proof |
 | AC-14 migration record | This file and separate baseline commits | Add implementation/result entries after each slice |
-| Folder guidance | 53 maintained directories documented; coverage CI and hash regressions pass | Recheck when adding directories |
+| Folder guidance | 62 maintained directories documented; coverage and content identity regressions pass | Recheck when adding directories |
 
 ## Compatibility observations requiring explicit treatment
 
@@ -789,3 +789,37 @@ focused and existing serialization/reassembly tests. `net` no longer depends on
 or exports the client receiver. Full session admission and replica extraction,
 content transfer failure handling, broad Rust gates, and new native runtime/GPU
 qualification remain open; the full migration is not accepted at this checkpoint.
+
+## Shared admission and decoded terrain readiness
+
+Both guest adapters now use `client_session::Admission` for Welcome, manifest
+validation, decoded terrain readiness, the one-time EntryReady acknowledgement,
+host acceptance, idle timeout, and closure. The graphical policy still requires
+its entry mesh upload; the agent requires terrain only. Existing decode budgets
+(eight graphical chunks and two agent chunks per pump), wire messages, and the
+15-second idle threshold are preserved. Repeated matching manifests are
+deduplicated and recheck residency; conflicting, empty, wrong-spawn, and
+out-of-phase manifests close admission.
+
+Category A (root cause): readiness now depends on actual replica residency after
+decoding, not receipt of a chunk message. Both adapters previously removed a
+required chunk even when its decoder rejected the payload. New Welcome clears
+the agent's queued terrain, and disconnection during preparation becomes an
+immediate refusal instead of waiting for the connection timeout. `thiserror`
+2.0.19 is now a direct dependency for typed admission errors; this exact version
+was already in Cargo.lock, and no resolved package version changed.
+
+All 21 focused session tests pass. Three new real QUIC regressions verify that
+malformed entry terrain sends no acknowledgement, a new Welcome cannot reuse
+the previous world's readiness, and preparation disconnect is reported once.
+They reuse the owned stage fixture in a documented `src/tests/agent/` folder and
+use ordered message barriers to establish delivery. Strict all-target/all-feature
+Clippy, Rust 1.95 checking, format, 25 multiplayer tests, all 18 serial agent
+tests, advisory analysis, and folder guidance checks pass. New admission and
+wire-test modules remain below 400 lines. Logs are under
+`target/maintainability/client-session-admission-*`.
+
+This is a local checkpoint. Full session/replica ownership, shared content
+transfer failure handling, full subsystem/release gates, and new native guest
+and GPU evidence remain outstanding. The campaign recorded above still
+qualifies only its own source revision.

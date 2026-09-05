@@ -1,7 +1,7 @@
 //! Guest connection setup and remote snapshot application.
 
 use super::*;
-use crate::client_session::ContentMap;
+use crate::client_session::{Admission, ContentMap, PresentationRequirement};
 
 impl Game {
     /// The name this client will present to a multiplayer host, plus whether
@@ -128,14 +128,11 @@ impl Game {
                     granted_view_dist: 5,
                     asked_view_dist: 0,
                     wants: Default::default(),
-                    entry_required: Default::default(),
-                    entry_manifest_received: false,
-                    entry_ready_sent: false,
-                    entry_world_name: None,
-                    entry_center: None,
-                    entry_center_meshed: false,
+                    admission: Admission::new(
+                        PresentationRequirement::FirstFrame,
+                        std::time::Instant::now(),
+                    ),
                     pending_entry_chunks: Default::default(),
-                    entry_activity: std::time::Instant::now(),
                 });
                 self.multiplayer.join_status = format!("{policy} - {admission} - SYNCING...");
             }
@@ -192,6 +189,7 @@ impl Game {
             return;
         };
         if !r.client.is_connected() {
+            r.admission.close();
             if self.in_world {
                 self.toast("Disconnected from host.".to_string());
                 self.quit_to_title();
@@ -203,8 +201,8 @@ impl Game {
         }
         let msgs = r.client.poll();
         if !msgs.is_empty() {
-            r.entry_activity = std::time::Instant::now();
-        } else if !self.in_world && r.entry_activity.elapsed().as_secs() > 15 {
+            r.admission.note_activity(std::time::Instant::now());
+        } else if !self.in_world && r.admission.timed_out(std::time::Instant::now()) {
             self.multiplayer.join_status = "WORLD PREPARATION TIMED OUT".into();
             self.multiplayer.remote = None;
             return;
@@ -307,50 +305,43 @@ impl Game {
                     self.apply_remote_player_state(&r, player_state, true);
                     self.creative = mode == "creative";
                     self.in_world = false;
-                    r.entry_required.clear();
-                    r.entry_manifest_received = false;
-                    r.entry_ready_sent = false;
-                    r.entry_world_name = Some(world_name);
-                    r.entry_center = None;
-                    r.entry_center_meshed = false;
+                    r.admission
+                        .begin(world_name, self.player.pos, std::time::Instant::now());
                     r.pending_entry_chunks.clear();
                     self.multiplayer.join_status = "PREPARING SAFE WORLD ENTRY...".into();
                 }
                 net::S2C::EntryManifest { spawn, required } => {
-                    if spawn != self.player.pos {
-                        self.multiplayer.join_status =
-                            "FAILED: ENTRY MANIFEST DID NOT MATCH WELCOME SPAWN".into();
+                    let world = &self.server.world;
+                    if let Err(error) = r
+                        .admission
+                        .manifest(spawn, required, |pos| world.has_chunk(pos))
+                    {
+                        self.multiplayer.join_status = format!("FAILED: {error}").to_uppercase();
                         self.multiplayer.remote = None;
                         return;
                     }
-                    r.entry_required = required.into_iter().collect();
-                    r.entry_manifest_received = true;
-                    r.entry_center = spawn.chunk();
                 }
                 net::S2C::EntryProgress { resident, total } => {
                     self.multiplayer.join_status =
                         format!("PREPARING SAFE WORLD ENTRY... {resident}/{total}");
                 }
                 net::S2C::EntryAccepted => {
-                    if !r.entry_ready_sent || !r.entry_required.is_empty() {
-                        self.multiplayer.join_status =
-                            "FAILED: HOST ACCEPTED ENTRY BEFORE TERRAIN WAS READY".into();
-                        self.multiplayer.remote = None;
-                        return;
-                    }
-                    if !r.entry_center_meshed {
-                        self.multiplayer.join_status =
-                            "FAILED: HOST ACCEPTED ENTRY BEFORE THE FIRST FRAME WAS READY".into();
-                        self.multiplayer.remote = None;
-                        return;
-                    }
+                    let world_name = match r.admission.accepted() {
+                        Ok(name) => name,
+                        Err(error) => {
+                            self.multiplayer.join_status =
+                                format!("FAILED: {error}").to_uppercase();
+                            self.multiplayer.remote = None;
+                            return;
+                        }
+                    };
                     self.in_world = true;
                     self.set_screen(Screen::Playing);
                     self.multiplayer.join_status.clear();
-                    let world_name = r.entry_world_name.take().unwrap_or_else(|| "world".into());
                     self.toast(format!("Joined {}.", world_name.to_uppercase()));
                 }
                 net::S2C::Refused(why) => {
+                    r.admission.close();
                     if self.in_world {
                         // Kicked mid-game: a clean exit, not a broken
                         // half-local world.
@@ -960,7 +951,6 @@ impl Game {
                 break;
             };
             r.wants.remove(&position);
-            r.entry_required.remove(&position);
             terrain_batch.push((position, rle));
         }
         if !terrain_batch.is_empty() {
@@ -970,14 +960,16 @@ impl Game {
                     .map(|(position, rle)| (*position, rle.as_slice())),
                 r.content.blocks(),
             );
+            for (position, _) in &terrain_batch {
+                if self.server.world.has_chunk(*position) {
+                    r.admission.resident(*position);
+                }
+            }
         }
         if !block_updates.is_empty() {
             self.server.world.apply_remote_block_states(block_updates);
         }
-        if r.entry_manifest_received
-            && r.entry_required.is_empty()
-            && !r.entry_ready_sent
-            && let Some(center) = r.entry_center
+        if let Some(center) = r.admission.frame_needed()
             && [(-1, 0), (1, 0), (0, -1), (0, 1)]
                 .iter()
                 .all(|(du, dv)| self.server.world.has_chunk(center.offset(*du, *dv)))
@@ -986,9 +978,13 @@ impl Game {
             self.renderer.upload_chunk(center, &mesh);
             self.presentation.lights.chunk_meshed(center, mesh.emitters);
             self.server.world.mark_chunk_meshed(center);
-            r.entry_center_meshed = true;
+            if let Err(error) = r.admission.frame_ready() {
+                self.multiplayer.join_status = format!("FAILED: {error}").to_uppercase();
+                return;
+            }
+        }
+        if r.admission.take_ready() {
             r.client.send(&net::C2S::EntryReady);
-            r.entry_ready_sent = true;
         }
         // Snapshot smoothing: glide players and mobs along their spans,
         // dead-reckon bolts, advance walk cycles from apparent speed.

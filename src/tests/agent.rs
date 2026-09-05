@@ -6,6 +6,8 @@ use crate::agent::{Agent, Behavior};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
+mod admission;
+
 /// A host running on a thread, shared so tests can reach into the
 /// authoritative world between pumps.
 struct TestHost {

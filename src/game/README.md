@@ -28,10 +28,11 @@ build prerequisites and complete checks. Commands below run from the repository 
 
 Keep simulation order explicit. Guests apply host state, while UI and rendering consume it. Preserve real interaction paths when extracting helpers.
 
-Guest content mapping and snapshot receiver lifetimes are shared with the agent
-through `client_session/`. Keep interpolation, visible mesh readiness, and UI
-responses here. Content reload rebinds the retained host palette to the new local
-registry before subsequent network state is interpreted.
+Guest admission, content mapping, and snapshot receiver lifetimes are shared
+with the agent through `client_session/`. Supply the first-frame milestone after
+the entry mesh is uploaded; keep interpolation and UI responses here. Content
+reload rebinds the retained host palette to the new local registry before
+subsequent network state is interpreted.
 
 ## Focused checks
 
