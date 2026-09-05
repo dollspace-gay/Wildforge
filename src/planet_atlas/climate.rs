@@ -889,11 +889,8 @@ impl PlanetaryWeather {
     }
 
     pub fn water_audit(&self) -> crate::planet_atlas::WaterAudit {
-        let atmospheric = self.cells.cells.values().iter().fold(0u64, |sum, cell| {
-            sum.saturating_add(u64::from(cell.atmospheric_vapor))
-        });
         self.water
-            .audit(crate::planet_atlas::ReservoirMass::fresh(atmospheric))
+            .audit(ReservoirMass::fresh(dynamic_water_total(&self.cells) as u64))
     }
 
     /// Soil water visible to an ecology update even while a sliced climate
