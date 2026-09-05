@@ -1887,3 +1887,14 @@ ordering. Existing ledger types remain the sole owners of conserved quantities.
 No checks ran. Final tests must cover absent fixture owners, exact pressure
 bounds/order, missing accounts, linked-write failure restoration, reload after
 commit before voxel removal, and all Current/ecology conservation suites.
+
+
+## Guest feeding prediction routing (corrective checkpoint; unverified)
+
+Source review found that graphical feeding sent FeedMob and then borrowed local
+authority to update visible tame/fed/calm state. With the independent guest owner,
+that branch would panic. The update now uses a named runtime prediction operation
+on the matching resident mob; host requests and inventory/accounting order are
+unchanged. Local feeding takes the same operation on its authoritative member.
+Final native guest feeding/host echo and tame/breed regressions remain required.
+No test, compiler, or analyzer ran for this source-identified correction.

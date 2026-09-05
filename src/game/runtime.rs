@@ -94,6 +94,18 @@ impl PlayRuntime {
         }
     }
 
+    pub(super) fn present_mob_feeding(&mut self, id: u32, tame: bool, breed: bool) -> bool {
+        let mob = match self {
+            Self::Local(server) => server.world.mob_by_id_mut(id),
+            Self::Guest { world, .. } => world.mob_by_id_mut(id),
+        };
+        let Some(mob) = mob else { return false; };
+        let now_tamed = tame && mob.feed_tame();
+        if breed { mob.fed = true; }
+        mob.calm = 30.0;
+        now_tamed
+    }
+
     pub(super) fn present_ridden_mob(&mut self, id: u32, position: crate::planet::EntityPos, yaw: f32) {
         let mob = match self {
             Self::Local(server) => server.world.mob_by_id_mut(id),

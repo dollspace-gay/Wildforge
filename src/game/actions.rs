@@ -1490,16 +1490,7 @@ impl Game {
                         {
                             eprintln!("materials: animal feed accounting failed: {error}");
                         }
-                        let mut now_tamed = false;
-                        if let Some(mob) = self.runtime.local_mut().world.mob_mut(mi) {
-                            if can_tame {
-                                now_tamed = mob.feed_tame();
-                            }
-                            if can_breed {
-                                mob.fed = true;
-                            }
-                            mob.calm = 30.0;
-                        }
+                        let now_tamed = self.runtime.present_mob_feeding(mob_id, can_tame, can_breed);
                         if now_tamed {
                             self.toast(format!("The {def_label} trusts you now."));
                         }
