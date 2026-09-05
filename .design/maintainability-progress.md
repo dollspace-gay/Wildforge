@@ -1397,3 +1397,18 @@ cross-domain effects, and the platform bridge uses explicit imports.
 No new tests or validation commands ran. Final cases must cover each text field,
 repeated text versus game keys, submit/cancel paths, focus changes, and native
 input/session evidence. The full refactor remains in progress.
+
+
+## Shared inventory presentation (coding checkpoint; unverified)
+
+Buttons, item slots, and cursor-held stacks now use read-only widget functions.
+One inventory layout value supplies hotbar/storage, card/avatar/tabs, and craft
+geometry to drawing, clicks, tooltips, and portrait placement. Ordinary inventory
+and station restocking use one borrowed storage-grid renderer. The existing
+loadout grid keeps its distinct geometry/selection policy; browser placement
+and station controls remain explicit at each screen. Paint order, coordinates,
+colors, stack counts, and durability bars are preserved by the extraction.
+
+No checks ran. Final vertex/layout characterization, click/hover scenarios,
+full Rust gates, and fresh native GPU captures/timings remain required. Larger
+screen/action dispatchers and remaining ownership boundaries are still open.

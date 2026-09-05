@@ -302,7 +302,7 @@ impl Game {
         }
         let inv = || {
             (0..TOTAL_SLOTS)
-                .find(|&i| self.hit(self.inv_slot_rect(i)))
+                .find(|&i| self.hit(self.inventory_layout().slot_rect(i)))
                 .and_then(|i| self.inventory.slots[i])
         };
         match self.ui_state.screen {
@@ -320,11 +320,11 @@ impl Game {
                 }
                 let n = self.interaction.craft_size * self.interaction.craft_size;
                 for i in 0..n {
-                    if self.hit(self.craft_slot_rect(i)) {
+                    if self.hit(self.inventory_layout().craft_slot_rect(i)) {
                         return self.interaction.craft_grid[i];
                     }
                 }
-                if self.hit(self.result_slot_rect()) {
+                if self.hit(self.inventory_layout().result_slot_rect()) {
                     return crafting::match_repair(
                         &self.content.reg,
                         &self.interaction.craft_grid[..n],

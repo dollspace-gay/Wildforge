@@ -4,6 +4,7 @@
 //! then storage. Detailed survival readouts and recipe discovery are secondary
 //! views, opened deliberately instead of competing with the core task.
 
+use super::widgets;
 use super::ui::wrap_ui_status;
 use super::*;
 
@@ -11,7 +12,7 @@ impl Game {
     pub(super) const DISCOVERY_ROWS: usize = 7;
 
     pub(super) fn discovery_record_rect(&self, row: usize) -> (f32, f32, f32, f32) {
-        let panel = self.inventory_panel_rect();
+        let panel = self.inventory_layout().panel_rect();
         (
             panel.0 + 16.0,
             panel.1 + 82.0 + row as f32 * 42.0,
@@ -21,12 +22,12 @@ impl Game {
     }
 
     pub(super) fn discovery_label_rect(&self) -> (f32, f32, f32, f32) {
-        let panel = self.inventory_panel_rect();
+        let panel = self.inventory_layout().panel_rect();
         (panel.0 + 16.0, panel.1 + 47.0, 292.0, 28.0)
     }
 
     pub(super) fn discovery_button_rect(&self, button: usize) -> (f32, f32, f32, f32) {
-        let panel = self.inventory_panel_rect();
+        let panel = self.inventory_layout().panel_rect();
         let widths = [126.0, 58.0, 58.0, 84.0, 126.0, 126.0];
         let mut x = panel.0 + 16.0;
         for width in widths.iter().take(button) {
@@ -150,7 +151,7 @@ impl Game {
     }
 
     fn draw_discovery_catalogue(&self, ui: &mut UiBatch) {
-        let panel = self.inventory_panel_rect();
+        let panel = self.inventory_layout().panel_rect();
         let label_rect = self.discovery_label_rect();
         ui.rect(
             label_rect.0,
@@ -291,7 +292,7 @@ impl Game {
         ];
         for (button, label) in labels.iter().enumerate() {
             let rect = self.discovery_button_rect(button);
-            Self::draw_button(ui, rect, label, self.hit(rect));
+            widgets::button(ui, rect, label, self.hit(rect));
         }
         ui.text_shadow(
             panel.0 + panel.2 - 126.0,
@@ -466,9 +467,9 @@ impl Game {
     }
 
     fn draw_inventory_gear(&self, ui: &mut UiBatch) {
-        let panel = self.inventory_panel_rect();
-        let avatar = self.inventory_avatar_rect();
-        let first = self.craft_slot_rect(0);
+        let panel = self.inventory_layout().panel_rect();
+        let avatar = self.inventory_layout().avatar_rect();
+        let first = self.inventory_layout().craft_slot_rect(0);
         ui.rect(
             panel.0 + 8.0,
             panel.1 + 42.0,
@@ -558,7 +559,7 @@ impl Game {
                     [0.72, 0.75, 0.78, 1.0],
                 );
             }
-            Self::draw_slot(
+            widgets::slot(
                 &self.content.reg,
                 ui,
                 slot,
@@ -586,8 +587,8 @@ impl Game {
             [0.72, 0.75, 0.78, 1.0],
         );
         for i in 0..count {
-            let slot = self.craft_slot_rect(i);
-            Self::draw_slot(
+            let slot = self.inventory_layout().craft_slot_rect(i);
+            widgets::slot(
                 &self.content.reg,
                 ui,
                 slot,
@@ -596,7 +597,7 @@ impl Game {
                 self.hit(slot),
             );
         }
-        let result_slot = self.result_slot_rect();
+        let result_slot = self.inventory_layout().result_slot_rect();
         ui.text_shadow(
             result_slot.0 - 34.0,
             result_slot.1 + 16.0,
@@ -622,7 +623,7 @@ impl Game {
                     )
                     .map(|recipe| ItemStack::new(&self.content.reg, recipe.output, recipe.count))
                 });
-        Self::draw_slot(
+        widgets::slot(
             &self.content.reg,
             ui,
             result_slot,
@@ -660,7 +661,7 @@ impl Game {
         let height = self.renderer.config.height as f32;
         ui.rect(0.0, 0.0, width, height, [0.0, 0.0, 0.0, 0.48]);
 
-        let panel = self.inventory_panel_rect();
+        let panel = self.inventory_layout().panel_rect();
         ui.rect(
             panel.0,
             panel.1,
@@ -679,10 +680,10 @@ impl Game {
         );
         ui.text_shadow(panel.0 + 14.0, panel.1 + 13.0, 1.8, "INVENTORY", [1.0; 4]);
 
-        let gear_tab = self.inventory_tab_rect(0);
-        let status_tab = self.inventory_tab_rect(1);
-        let recipe_tab = self.inventory_tab_rect(2);
-        let discovery_tab = self.inventory_tab_rect(3);
+        let gear_tab = self.inventory_layout().tab_rect(0);
+        let status_tab = self.inventory_layout().tab_rect(1);
+        let recipe_tab = self.inventory_layout().tab_rect(2);
+        let discovery_tab = self.inventory_layout().tab_rect(3);
         self.draw_inventory_tab(
             ui,
             gear_tab,
@@ -721,7 +722,7 @@ impl Game {
             self.draw_inventory_gear(ui);
         }
 
-        let (_, grid_y, _, _) = self.inv_slot_rect(HOTBAR_SLOTS);
+        let (_, grid_y, _, _) = self.inventory_layout().slot_rect(HOTBAR_SLOTS);
         ui.rect(
             panel.0 + 8.0,
             grid_y - 8.0,
@@ -729,35 +730,12 @@ impl Game {
             panel.1 + panel.3 - grid_y,
             [0.02, 0.025, 0.03, 0.94],
         );
-        for i in 0..TOTAL_SLOTS {
-            let slot = self.inv_slot_rect(i);
-            Self::draw_slot(
-                &self.content.reg,
-                ui,
-                slot,
-                self.inventory.slots[i],
-                i == self.input.hotbar_sel,
-                self.hit(slot),
-            );
-        }
+        self.draw_player_inventory(ui);
 
         if self.ui_state.inventory_browser_open {
             self.draw_browser(ui);
         }
 
-        if let Some(stack) = self.ui_state.held_stack {
-            let (cursor_x, cursor_y) = self.input.ui_cursor;
-            let icon = self.content.reg.item(stack.item).icon;
-            ui.tile(cursor_x - 16.0, cursor_y - 16.0, 32.0, 32.0, icon, [1.0; 4]);
-            if stack.count > 1 {
-                ui.text_shadow(
-                    cursor_x + 6.0,
-                    cursor_y + 4.0,
-                    2.0,
-                    &format!("{}", stack.count),
-                    [1.0; 4],
-                );
-            }
-        }
+        widgets::held_stack(&self.content.reg, ui, self.input.ui_cursor, self.ui_state.held_stack);
     }
 }

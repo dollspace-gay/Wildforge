@@ -65,3 +65,9 @@ particle emission, and gait; these operations do not receive simulation state.
 `text_input.rs` edits bounded UI fields and returns explicit create/sign actions.
 `keyboard_events.rs` preserves startup, join, chat, in-world text, then key-repeat
 filtering order. `app.rs` is the platform bridge; text edits have no world access.
+
+`widgets.rs` paints buttons, item slots, and cursor-held stacks from explicit
+read-only inputs. `inventory_panel.rs` owns shared inventory/crafting geometry
+and the borrowed storage-grid view. Drawing and hit testing use the same layout;
+station controls, alternate loadout geometry, and browser placement retain
+their separate screen policies.

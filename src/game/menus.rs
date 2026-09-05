@@ -9,7 +9,7 @@ impl Game {
         }
         match self.ui_state.screen {
             Screen::Inventory => {
-                if self.hit(self.inventory_tab_rect(0)) {
+                if self.hit(self.inventory_layout().tab_rect(0)) {
                     self.sfx(Sfx::Click);
                     self.ui_state.inventory_status_open = false;
                     self.ui_state.inventory_browser_open = false;
@@ -19,7 +19,7 @@ impl Game {
                     self.ui_state.browse_view = None;
                     return;
                 }
-                if self.hit(self.inventory_tab_rect(1)) {
+                if self.hit(self.inventory_layout().tab_rect(1)) {
                     self.sfx(Sfx::Click);
                     self.ui_state.inventory_status_open = true;
                     self.ui_state.inventory_browser_open = false;
@@ -29,7 +29,7 @@ impl Game {
                     self.ui_state.browse_view = None;
                     return;
                 }
-                if self.hit(self.inventory_tab_rect(2)) {
+                if self.hit(self.inventory_layout().tab_rect(2)) {
                     self.sfx(Sfx::Click);
                     self.ui_state.inventory_browser_open = !self.ui_state.inventory_browser_open;
                     self.ui_state.inventory_status_open = false;
@@ -41,7 +41,7 @@ impl Game {
                     }
                     return;
                 }
-                if self.hit(self.inventory_tab_rect(3)) {
+                if self.hit(self.inventory_layout().tab_rect(3)) {
                     self.sfx(Sfx::Click);
                     self.ui_state.inventory_discovery_open = true;
                     self.ui_state.inventory_status_open = false;
@@ -138,19 +138,19 @@ impl Game {
                     }
                 }
                 for i in 0..TOTAL_SLOTS {
-                    if self.hit(self.inv_slot_rect(i)) {
+                    if self.hit(self.inventory_layout().slot_rect(i)) {
                         self.inventory_click(false, i, right);
                         return;
                     }
                 }
                 if !self.ui_state.inventory_status_open {
                     for i in 0..self.interaction.craft_size * self.interaction.craft_size {
-                        if self.hit(self.craft_slot_rect(i)) {
+                        if self.hit(self.inventory_layout().craft_slot_rect(i)) {
                             self.inventory_click(true, i, right);
                             return;
                         }
                     }
-                    if self.hit(self.result_slot_rect()) {
+                    if self.hit(self.inventory_layout().result_slot_rect()) {
                         self.result_click();
                     }
                 }
@@ -508,7 +508,7 @@ impl Game {
                     }
                 }
                 for i in 0..TOTAL_SLOTS {
-                    if self.hit(self.inv_slot_rect(i)) {
+                    if self.hit(self.inventory_layout().slot_rect(i)) {
                         self.inventory_click(false, i, right);
                         return;
                     }
@@ -530,7 +530,7 @@ impl Game {
                     }
                 }
                 for i in 0..TOTAL_SLOTS {
-                    if self.hit(self.inv_slot_rect(i)) {
+                    if self.hit(self.inventory_layout().slot_rect(i)) {
                         self.inventory_click(false, i, right);
                         return;
                     }
@@ -552,7 +552,7 @@ impl Game {
                     }
                 }
                 for i in 0..TOTAL_SLOTS {
-                    if self.hit(self.inv_slot_rect(i)) {
+                    if self.hit(self.inventory_layout().slot_rect(i)) {
                         self.inventory_click(false, i, right);
                         return;
                     }
@@ -569,7 +569,7 @@ impl Game {
                     }
                 }
                 for i in 0..TOTAL_SLOTS {
-                    if self.hit(self.inv_slot_rect(i)) {
+                    if self.hit(self.inventory_layout().slot_rect(i)) {
                         self.inventory_click(false, i, right);
                         return;
                     }
@@ -601,7 +601,7 @@ impl Game {
                     }
                 }
                 for i in 0..TOTAL_SLOTS {
-                    if self.hit(self.inv_slot_rect(i)) {
+                    if self.hit(self.inventory_layout().slot_rect(i)) {
                         self.inventory_click(false, i, right);
                         return;
                     }
@@ -615,7 +615,7 @@ impl Game {
                     }
                 }
                 for i in 0..TOTAL_SLOTS {
-                    if self.hit(self.inv_slot_rect(i)) {
+                    if self.hit(self.inventory_layout().slot_rect(i)) {
                         self.inventory_click(false, i, right);
                         return;
                     }
@@ -632,7 +632,7 @@ impl Game {
                     }
                 }
                 for i in 0..TOTAL_SLOTS {
-                    if self.hit(self.inv_slot_rect(i)) {
+                    if self.hit(self.inventory_layout().slot_rect(i)) {
                         self.inventory_click(false, i, right);
                         return;
                     }
@@ -649,7 +649,7 @@ impl Game {
                     }
                 }
                 for i in 0..TOTAL_SLOTS {
-                    if self.hit(self.inv_slot_rect(i)) {
+                    if self.hit(self.inventory_layout().slot_rect(i)) {
                         self.inventory_click(false, i, right);
                         return;
                     }

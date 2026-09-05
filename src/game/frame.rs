@@ -2151,7 +2151,7 @@ impl Game {
             // Solve for the depth that makes the body the height we want.
             let w = self.renderer.config.width as f32;
             let h = self.renderer.config.height as f32;
-            let (ax, ay, aw, ah) = self.inventory_avatar_rect();
+            let (ax, ay, aw, ah) = self.inventory_layout().avatar_rect();
             // The name plate owns the top of the frame; keep clear of it
             // and leave the feet a margin off the bottom edge.
             const PLATE: f32 = 42.0;
@@ -2697,7 +2697,7 @@ impl Game {
 
     // ---------- UI layout ----------
 
-    pub(super) const SLOT: f32 = 46.0;
+    pub(super) const SLOT: f32 = super::inventory_panel::SLOT;
 }
 
 #[cfg(test)]

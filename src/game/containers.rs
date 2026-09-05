@@ -494,9 +494,9 @@ impl Game {
 
     /// Armor column beside the paper doll — head, chest, legs, feet, then charm.
     pub(super) fn armor_slot_rect(&self, i: usize) -> (f32, f32, f32, f32) {
-        let (panel_x, panel_y, _, _) = self.inventory_panel_rect();
+        let (panel_x, panel_y, _, _) = self.inventory_layout().panel_rect();
         if i == 4 {
-            let (avatar_x, avatar_y, avatar_w, avatar_h) = self.inventory_avatar_rect();
+            let (avatar_x, avatar_y, avatar_w, avatar_h) = self.inventory_layout().avatar_rect();
             (
                 avatar_x + avatar_w + 8.0,
                 avatar_y + avatar_h - Self::SLOT,
@@ -735,7 +735,7 @@ impl Game {
             return;
         }
         for i in 0..TOTAL_SLOTS {
-            if self.hit(self.inv_slot_rect(i)) {
+            if self.hit(self.inventory_layout().slot_rect(i)) {
                 self.inventory_click(false, i, false);
                 return;
             }

@@ -24,6 +24,8 @@ mod presentation;
 mod startup;
 mod interaction;
 mod inventory_ui;
+mod inventory_panel;
+mod widgets;
 mod keymap;
 mod keyboard_events;
 mod text_input;

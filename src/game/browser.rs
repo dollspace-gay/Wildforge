@@ -1,5 +1,6 @@
 //! Item browser layout, drawing, search, and navigation.
 
+use super::widgets;
 use super::*;
 
 impl Game {
@@ -8,7 +9,7 @@ impl Game {
         let browser_width = Self::BCOLS as f32 * Self::BSLOT;
         let right_aligned = width - browser_width - 20.0;
         let x = if self.ui_state.screen == Screen::Inventory {
-            let (panel_x, _, panel_width, _) = self.inventory_panel_rect();
+            let (panel_x, _, panel_width, _) = self.inventory_layout().panel_rect();
             (panel_x + panel_width + 16.0).min(right_aligned)
         } else {
             right_aligned
@@ -100,7 +101,7 @@ impl Game {
         }
         for (next, lbl) in [(false, "<"), (true, ">")] {
             let r = self.browser_nav_rect(next);
-            Self::draw_button(ui, r, lbl, self.hit(r));
+            widgets::button(ui, r, lbl, self.hit(r));
         }
         let (x0, _) = self.browser_origin();
         let y = self.browser_nav_rect(false).1 + 5.0;
@@ -126,7 +127,7 @@ impl Game {
             );
             for (ti, lbl) in ["RECIPES", "USES"].iter().enumerate() {
                 let r = (px + 150.0 + ti as f32 * 90.0, py - 34.0, 84.0, 24.0);
-                Self::draw_button(ui, r, lbl, (ti == 1) == uses);
+                widgets::button(ui, r, lbl, (ti == 1) == uses);
             }
             let cycle = (self.time_abs / 0.8) as usize;
             let mut y = py + 8.0;
@@ -226,7 +227,7 @@ impl Game {
             }
             if !self.ui_state.browse_back.is_empty() {
                 let r = (px, py + 370.0, 84.0, 24.0);
-                Self::draw_button(ui, r, "BACK", self.hit(r));
+                widgets::button(ui, r, "BACK", self.hit(r));
             }
         }
     }

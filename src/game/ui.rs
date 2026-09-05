@@ -1,5 +1,6 @@
 //! UI layout, drawing, and screen composition.
 
+use super::widgets;
 use super::*;
 use glam::Mat4;
 
@@ -51,74 +52,6 @@ pub(super) fn wrap_ui_status(
 }
 
 impl Game {
-    pub(super) fn hotbar_origin(&self) -> (f32, f32) {
-        let w = self.renderer.config.width as f32;
-        let h = self.renderer.config.height as f32;
-        ((w - 9.0 * Self::SLOT) / 2.0, h - Self::SLOT - 8.0)
-    }
-
-    pub(super) fn hotbar_rect(&self, i: usize) -> (f32, f32, f32, f32) {
-        let (x0, y0) = self.hotbar_origin();
-        (x0 + i as f32 * Self::SLOT, y0, Self::SLOT, Self::SLOT)
-    }
-
-    /// Slot rects for the inventory screen: 0..9 hotbar row, 9..36 storage grid.
-    pub(super) fn inv_slot_rect(&self, i: usize) -> (f32, f32, f32, f32) {
-        let w = self.renderer.config.width as f32;
-        let h = self.renderer.config.height as f32;
-        let panel_w = 9.0 * Self::SLOT;
-        let x0 = (w - panel_w) / 2.0;
-        // The complete inventory card (equipment above, storage below) is
-        // vertically centered. The old offset centered only the storage rows,
-        // leaving the paper doll stranded near the corner of the screen.
-        let grid_y = h / 2.0 + 16.0;
-        if i < HOTBAR_SLOTS {
-            (
-                x0 + i as f32 * Self::SLOT,
-                grid_y + 3.0 * Self::SLOT + 14.0,
-                Self::SLOT,
-                Self::SLOT,
-            )
-        } else {
-            let j = i - HOTBAR_SLOTS;
-            (
-                x0 + (j % 9) as f32 * Self::SLOT,
-                grid_y + (j / 9) as f32 * Self::SLOT,
-                Self::SLOT,
-                Self::SLOT,
-            )
-        }
-    }
-
-    /// Unified inventory card containing identity, gear, crafting and storage.
-    pub(super) fn inventory_panel_rect(&self) -> (f32, f32, f32, f32) {
-        let (grid_x, grid_y, _, _) = self.inv_slot_rect(HOTBAR_SLOTS);
-        (
-            grid_x - 134.0,
-            grid_y - 248.0,
-            9.0 * Self::SLOT + 268.0,
-            464.0,
-        )
-    }
-
-    pub(super) fn inventory_avatar_rect(&self) -> (f32, f32, f32, f32) {
-        let (panel_x, panel_y, _, _) = self.inventory_panel_rect();
-        (panel_x + 70.0, panel_y + 48.0, 170.0, 184.0)
-    }
-
-    /// Header controls use one source of geometry for drawing and hit-testing.
-    pub(super) fn inventory_tab_rect(&self, tab: usize) -> (f32, f32, f32, f32) {
-        let (x, y, width, _) = self.inventory_panel_rect();
-        let button_width = 94.0;
-        let right_pad = 8.0 + (3usize.saturating_sub(tab)) as f32 * 98.0;
-        (
-            x + width - right_pad - button_width,
-            y + 9.0,
-            button_width,
-            28.0,
-        )
-    }
-
     pub(super) fn menu_button_rect(&self, i: usize) -> (f32, f32, f32, f32) {
         let w = self.renderer.config.width as f32;
         let h = self.renderer.config.height as f32;
@@ -482,114 +415,8 @@ impl Game {
         self.apply_config();
     }
 
-    pub(super) fn draw_button(ui: &mut UiBatch, r: (f32, f32, f32, f32), label: &str, hover: bool) {
-        // Hover grows the plate 4% and brightens; a press dips it 2% —
-        // the down-up is what makes a click feel mechanical.
-        let mut r = r;
-        if hover {
-            let sc = if ui.press_dip { 0.98 } else { 1.04 };
-            let (cx, cy) = (r.0 + r.2 / 2.0, r.1 + r.3 / 2.0);
-            r = (cx - r.2 / 2.0 * sc, cy - r.3 / 2.0 * sc, r.2 * sc, r.3 * sc);
-        }
-        let bg = if hover {
-            [0.55, 0.55, 0.55, 0.95]
-        } else {
-            [0.25, 0.25, 0.25, 0.95]
-        };
-        ui.rect(r.0, r.1, r.2, r.3, [0.1, 0.1, 0.1, 0.95]);
-        ui.rect(r.0 + 2.0, r.1 + 2.0, r.2 - 4.0, r.3 - 4.0, bg);
-        let lw = UiBatch::text_width(2.0, label);
-        ui.text_shadow(
-            r.0 + (r.2 - lw) / 2.0,
-            r.1 + (r.3 - 14.0) / 2.0,
-            2.0,
-            label,
-            [1.0; 4],
-        );
-    }
-
     pub(super) fn hit(&self, r: (f32, f32, f32, f32)) -> bool {
-        let (x, y) = self.input.ui_cursor;
-        x >= r.0 && x < r.0 + r.2 && y >= r.1 && y < r.1 + r.3
-    }
-
-    pub(super) fn draw_slot(
-        reg: &Registry,
-        ui: &mut UiBatch,
-        r: (f32, f32, f32, f32),
-        stack: Option<ItemStack>,
-        selected: bool,
-        hover: bool,
-    ) {
-        let (x, y, w, h) = r;
-        let border = if selected {
-            [1.0, 1.0, 1.0, 0.9]
-        } else {
-            [0.35, 0.35, 0.35, 0.9]
-        };
-        ui.rect(x + 1.0, y + 1.0, w - 2.0, h - 2.0, border);
-        let bg = if hover {
-            [0.45, 0.45, 0.45, 0.92]
-        } else {
-            [0.18, 0.18, 0.18, 0.92]
-        };
-        ui.rect(x + 3.0, y + 3.0, w - 6.0, h - 6.0, bg);
-        if let Some(s) = stack {
-            let pad = 8.0;
-            let icon = reg.item(s.item).icon;
-            let tile = icon;
-            ui.tile(
-                x + pad,
-                y + pad,
-                w - 2.0 * pad,
-                h - 2.0 * pad,
-                tile,
-                [1.0; 4],
-            );
-            if s.count > 1 {
-                let txt = format!("{}", s.count);
-                let tw = UiBatch::text_width(2.0, &txt);
-                ui.text_shadow(x + w - tw - 4.0, y + h - 18.0, 2.0, &txt, [1.0; 4]);
-            }
-            // Durability bar for worn tools.
-            let max = reg.item(s.item).durability;
-            if max > 0 && s.durability < max {
-                let frac = s.durability as f32 / max as f32;
-                ui.rect(x + 6.0, y + h - 9.0, w - 12.0, 4.0, [0.05, 0.05, 0.05, 0.9]);
-                ui.rect(
-                    x + 6.0,
-                    y + h - 9.0,
-                    (w - 12.0) * frac,
-                    4.0,
-                    [1.0 - frac, frac, 0.1, 1.0],
-                );
-            }
-        }
-    }
-
-    /// Craft grid layout: grid slots then the result slot to their right.
-    pub(super) fn craft_slot_rect(&self, i: usize) -> (f32, f32, f32, f32) {
-        let n = self.interaction.craft_size;
-        let (sx, sy, _, _) = self.inv_slot_rect(HOTBAR_SLOTS); // storage top-left
-        let y0 = sy - (n as f32) * Self::SLOT - 26.0;
-        let x0 = sx + 4.25 * Self::SLOT;
-        (
-            x0 + (i % n) as f32 * Self::SLOT,
-            y0 + (i / n) as f32 * Self::SLOT,
-            Self::SLOT,
-            Self::SLOT,
-        )
-    }
-
-    pub(super) fn result_slot_rect(&self) -> (f32, f32, f32, f32) {
-        let n = self.interaction.craft_size;
-        let (gx, gy, _, _) = self.craft_slot_rect(0);
-        (
-            gx + n as f32 * Self::SLOT + Self::SLOT,
-            gy + ((n as f32) - 1.0) * Self::SLOT / 2.0,
-            Self::SLOT,
-            Self::SLOT,
-        )
+        widgets::hit(self.input.ui_cursor, r)
     }
 
     pub(super) fn build_ui(&mut self) {
@@ -666,9 +493,9 @@ impl Game {
                         );
                     }
                     let pr = self.title_play_rect(i);
-                    Self::draw_button(&mut ui, pr, "PLAY", self.hit(pr));
+                    widgets::button(&mut ui, pr, "PLAY", self.hit(pr));
                     let dr = self.title_delete_rect(i);
-                    Self::draw_button(&mut ui, dr, "X", self.hit(dr));
+                    widgets::button(&mut ui, dr, "X", self.hit(dr));
                 }
                 if let Some((name, problem)) = self.world_problems.first() {
                     let warning = format!("{}: {}", name.to_uppercase(), problem);
@@ -695,7 +522,7 @@ impl Game {
                 .enumerate()
                 {
                     let r = self.title_action_rect(j);
-                    Self::draw_button(&mut ui, r, label, self.hit(r));
+                    widgets::button(&mut ui, r, label, self.hit(r));
                 }
                 self.ui = ui;
                 return;
@@ -794,7 +621,7 @@ impl Game {
 
                 for (index, label) in ["CREATE PLANET", "ROLL SEED", "BACK"].iter().enumerate() {
                     let rect = self.new_world_button_rect(index);
-                    Self::draw_button(&mut ui, rect, label, self.hit(rect));
+                    widgets::button(&mut ui, rect, label, self.hit(rect));
                 }
                 self.ui = ui;
                 return;
@@ -835,7 +662,7 @@ impl Game {
                     [0.25, 0.72, 0.45, 1.0],
                 );
                 let cancel = self.world_creation_cancel_rect();
-                Self::draw_button(&mut ui, cancel, "CANCEL", self.hit(cancel));
+                widgets::button(&mut ui, cancel, "CANCEL", self.hit(cancel));
                 self.ui = ui;
                 return;
             }
@@ -925,7 +752,7 @@ impl Game {
                 ];
                 for (i, label) in labels.iter().enumerate() {
                     let r = self.account_button_rect(i);
-                    Self::draw_button(&mut ui, r, label, self.hit(r));
+                    widgets::button(&mut ui, r, label, self.hit(r));
                 }
                 if let Some(account) = linked {
                     let (active_name, social_name) = self.selected_multiplayer_name();
@@ -1035,7 +862,7 @@ impl Game {
                     } else {
                         (*label).to_string()
                     };
-                    Self::draw_button(&mut ui, r, &label, self.hit(r));
+                    widgets::button(&mut ui, r, &label, self.hit(r));
                 }
                 self.ui = ui;
                 return;
@@ -1070,7 +897,7 @@ impl Game {
                 let hint = "EDIT MODS/ WHILE PLAYING - CHANGES HOT RELOAD. F5 FORCES.";
                 ui.text_shadow(w / 2.0 - 300.0, y + 16.0, 1.5, hint, [0.7, 0.7, 0.7, 1.0]);
                 let br = self.menu_button_rect(4);
-                Self::draw_button(&mut ui, br, "BACK", self.hit(br));
+                widgets::button(&mut ui, br, "BACK", self.hit(br));
                 self.ui = ui;
                 return;
             }
@@ -1085,7 +912,7 @@ impl Game {
                     } else {
                         self.content.packs[i - 1].name.to_uppercase()
                     };
-                    Self::draw_button(&mut ui, r, &label, self.hit(r));
+                    widgets::button(&mut ui, r, &label, self.hit(r));
                     let cur = self.active_pack_id();
                     let active = if i == 0 {
                         cur.is_empty() || atlas::pack_source_of(&cur).is_none()
@@ -1131,7 +958,7 @@ impl Game {
                 let hint = "DROP PACKS IN PACKS/ - PNG EDITS HOT RELOAD LIVE.";
                 ui.text_shadow(w / 2.0 - 300.0, y + 4.0, 1.5, hint, [0.7, 0.7, 0.7, 1.0]);
                 let br = self.pack_back_rect();
-                Self::draw_button(&mut ui, br, "BACK", self.hit(br));
+                widgets::button(&mut ui, br, "BACK", self.hit(br));
                 self.ui = ui;
                 return;
             }
@@ -1159,7 +986,7 @@ impl Game {
                 }
                 for (i, found) in found.iter().take(5).enumerate() {
                     let r = (w / 2.0 - 220.0, h * 0.20 + i as f32 * 56.0, 440.0, 42.0);
-                    Self::draw_button(
+                    widgets::button(
                         &mut ui,
                         r,
                         &format!("{} - {}", found.name.to_uppercase(), found.addr),
@@ -1189,7 +1016,7 @@ impl Game {
                 };
                 ui.text_shadow(w / 2.0 - 72.0, y, 2.0, &shown.to_uppercase(), col);
                 let cr = (w / 2.0 + 240.0, y - 6.0, 160.0, 34.0);
-                Self::draw_button(&mut ui, cr, "CONNECT", self.hit(cr));
+                widgets::button(&mut ui, cr, "CONNECT", self.hit(cr));
                 if !self.multiplayer.join_status.is_empty() {
                     ui.text_shadow(
                         w / 2.0 - 220.0,
@@ -1200,7 +1027,7 @@ impl Game {
                     );
                 }
                 let br = self.pack_back_rect();
-                Self::draw_button(&mut ui, br, "BACK", self.hit(br));
+                widgets::button(&mut ui, br, "BACK", self.hit(br));
                 self.ui = ui;
                 return;
             }
@@ -1256,10 +1083,10 @@ impl Game {
                 {
                     let r = self.settings_toggle_rect(i);
                     ui.text_shadow(w / 2.0 - 300.0, r.1 + 12.0, 2.0, name, [1.0; 4]);
-                    Self::draw_button(&mut ui, r, value, self.hit(r));
+                    widgets::button(&mut ui, r, value, self.hit(r));
                 }
                 let br = self.settings_back_rect();
-                Self::draw_button(&mut ui, br, "BACK", self.hit(br));
+                widgets::button(&mut ui, br, "BACK", self.hit(br));
                 self.ui = ui;
                 return;
             }
@@ -1324,7 +1151,7 @@ impl Game {
                             [c[0].min(1.0), c[1].min(1.0), c[2].min(1.0), 1.0],
                         );
                     }
-                    Self::draw_button(&mut ui, r, name, self.hit(r));
+                    widgets::button(&mut ui, r, name, self.hit(r));
                 }
                 let hint = "CLICK CYCLES - RIGHT-CLICK GOES BACK";
                 let hw = UiBatch::text_width(1.5, hint);
@@ -1336,7 +1163,7 @@ impl Game {
                     hint,
                     [0.7, 0.7, 0.7, 1.0],
                 );
-                Self::draw_button(&mut ui, hr, "BACK", self.hit(hr));
+                widgets::button(&mut ui, hr, "BACK", self.hit(hr));
                 self.ui = ui;
                 return;
             }
@@ -1362,7 +1189,7 @@ impl Game {
                 );
                 for (j, label) in ["DELETE", "CANCEL"].iter().enumerate() {
                     let r = self.menu_button_rect(j);
-                    Self::draw_button(&mut ui, r, label, self.hit(r));
+                    widgets::button(&mut ui, r, label, self.hit(r));
                 }
                 self.ui = ui;
                 return;
@@ -1427,7 +1254,7 @@ impl Game {
         if self.ui_state.screen == Screen::Playing {
             // Hotbar.
             for i in 0..HOTBAR_SLOTS {
-                let mut r = self.hotbar_rect(i);
+                let mut r = self.inventory_layout().hotbar_rect(i);
                 // Selection bounce: 1.0 -> 1.12 -> 1.0 over ~120ms.
                 if i == self.input.hotbar_sel && self.presentation.sel_bounce < 1.0 {
                     let t = self.presentation.sel_bounce;
@@ -1435,7 +1262,7 @@ impl Game {
                     let (cx, cy) = (r.0 + r.2 / 2.0, r.1 + r.3 / 2.0);
                     r = (cx - r.2 / 2.0 * sc, cy - r.3 / 2.0 * sc, r.2 * sc, r.3 * sc);
                 }
-                Self::draw_slot(
+                widgets::slot(
                     &self.content.reg,
                     &mut ui,
                     r,
@@ -1460,7 +1287,7 @@ impl Game {
             for &(icon, (fx, fy), slot, age) in &self.presentation.ui_flies {
                 let t = (age / 0.22).min(1.0);
                 let t = t * t; // ease-in quad
-                let r = self.hotbar_rect(slot);
+                let r = self.inventory_layout().hotbar_rect(slot);
                 let (tx, ty) = (r.0 + r.2 / 2.0, r.1 + r.3 / 2.0);
                 let x = fx + (tx - fx) * t;
                 let y = fy + (ty - fy) * t;
@@ -1478,7 +1305,7 @@ impl Game {
             if let Some(s) = self.inventory.slots[self.input.hotbar_sel] {
                 let name = &self.content.reg.item(s.item).label.to_uppercase();
                 let tw = UiBatch::text_width(2.0, name);
-                let (hx0, hy0) = self.hotbar_origin();
+                let (hx0, hy0) = self.inventory_layout().hotbar_origin();
                 ui.text_shadow(
                     hx0 + (9.0 * Self::SLOT - tw) / 2.0,
                     hy0 - 56.0,
@@ -1489,7 +1316,7 @@ impl Game {
             }
 
             // Hearts above the hotbar (count follows max health).
-            let (hx, hy) = self.hotbar_origin();
+            let (hx, hy) = self.inventory_layout().hotbar_origin();
             let hs = 2.6;
             let hearts = if self.creative {
                 0
@@ -1797,9 +1624,9 @@ impl Game {
                 let ir = self.furnace_slot_rect(0);
                 let fr = self.furnace_slot_rect(1);
                 let orr = self.furnace_slot_rect(2);
-                Self::draw_slot(&self.content.reg, &mut ui, ir, inp, false, self.hit(ir));
-                Self::draw_slot(&self.content.reg, &mut ui, fr, fuel, false, self.hit(fr));
-                Self::draw_slot(&self.content.reg, &mut ui, orr, out, false, self.hit(orr));
+                widgets::slot(&self.content.reg, &mut ui, ir, inp, false, self.hit(ir));
+                widgets::slot(&self.content.reg, &mut ui, fr, fuel, false, self.hit(fr));
+                widgets::slot(&self.content.reg, &mut ui, orr, out, false, self.hit(orr));
                 // Flame between input and fuel, arrow toward the output.
                 let flame_h = 24.0 * burn;
                 ui.rect(
@@ -1813,26 +1640,9 @@ impl Game {
                 ui.rect(ir.0 + 64.0, ay, 100.0, 8.0, [0.15, 0.15, 0.15, 0.9]);
                 ui.rect(ir.0 + 64.0, ay, 100.0 * prog, 8.0, [1.0, 1.0, 1.0, 0.95]);
                 // Player inventory below for restocking.
-                for i in 0..TOTAL_SLOTS {
-                    let r = self.inv_slot_rect(i);
-                    Self::draw_slot(
-                        &self.content.reg,
-                        &mut ui,
-                        r,
-                        self.inventory.slots[i],
-                        i == self.input.hotbar_sel,
-                        self.hit(r),
-                    );
-                }
+                self.draw_player_inventory(&mut ui);
                 self.draw_browser(&mut ui);
-                if let Some(s) = self.ui_state.held_stack {
-                    let (cx, cy) = self.input.ui_cursor;
-                    let icon = self.content.reg.item(s.item).icon;
-                    ui.tile(cx - 16.0, cy - 16.0, 32.0, 32.0, icon, [1.0; 4]);
-                    if s.count > 1 {
-                        ui.text_shadow(cx + 6.0, cy + 4.0, 2.0, &format!("{}", s.count), [1.0; 4]);
-                    }
-                }
+                widgets::held_stack(&self.content.reg, &mut ui, self.input.ui_cursor, self.ui_state.held_stack);
                 self.ui = ui;
                 return;
             }
@@ -1875,7 +1685,7 @@ impl Game {
                 ui.text_shadow(w / 2.0 - 150.0, h / 2.0 - 186.0, 1.5, fuel_label, [1.0; 4]);
                 for (i, s) in slots.iter().enumerate() {
                     let r = self.bloomery_slot_rect(i);
-                    Self::draw_slot(&self.content.reg, &mut ui, r, *s, false, self.hit(r));
+                    widgets::slot(&self.content.reg, &mut ui, r, *s, false, self.hit(r));
                 }
                 let lr = self.bloomery_light_rect();
                 if lit {
@@ -1906,30 +1716,13 @@ impl Game {
                         },
                         [1.0, 0.5, 0.4, 1.0],
                     );
-                    Self::draw_button(&mut ui, lr, "LIGHT", false);
+                    widgets::button(&mut ui, lr, "LIGHT", false);
                 } else {
-                    Self::draw_button(&mut ui, lr, "LIGHT", self.hit(lr));
+                    widgets::button(&mut ui, lr, "LIGHT", self.hit(lr));
                 }
-                for i in 0..TOTAL_SLOTS {
-                    let r = self.inv_slot_rect(i);
-                    Self::draw_slot(
-                        &self.content.reg,
-                        &mut ui,
-                        r,
-                        self.inventory.slots[i],
-                        i == self.input.hotbar_sel,
-                        self.hit(r),
-                    );
-                }
+                self.draw_player_inventory(&mut ui);
                 self.draw_browser(&mut ui);
-                if let Some(s) = self.ui_state.held_stack {
-                    let (cx, cy) = self.input.ui_cursor;
-                    let icon = self.content.reg.item(s.item).icon;
-                    ui.tile(cx - 16.0, cy - 16.0, 32.0, 32.0, icon, [1.0; 4]);
-                    if s.count > 1 {
-                        ui.text_shadow(cx + 6.0, cy + 4.0, 2.0, &format!("{}", s.count), [1.0; 4]);
-                    }
-                }
+                widgets::held_stack(&self.content.reg, &mut ui, self.input.ui_cursor, self.ui_state.held_stack);
                 self.ui = ui;
                 return;
             }
@@ -1960,7 +1753,7 @@ impl Game {
                 ui.text_shadow(w / 2.0 - 150.0, h / 2.0 - 132.0, 1.5, "CHARCOAL", [1.0; 4]);
                 for (i, sl) in slots.iter().enumerate() {
                     let r = self.kiln_slot_rect(i);
-                    Self::draw_slot(&self.content.reg, &mut ui, r, *sl, false, self.hit(r));
+                    widgets::slot(&self.content.reg, &mut ui, r, *sl, false, self.hit(r));
                 }
                 let lr = self.bloomery_light_rect();
                 if lit {
@@ -1987,30 +1780,13 @@ impl Game {
                         "THE STACK IS BREACHED",
                         [1.0, 0.5, 0.4, 1.0],
                     );
-                    Self::draw_button(&mut ui, lr, "LIGHT", false);
+                    widgets::button(&mut ui, lr, "LIGHT", false);
                 } else {
-                    Self::draw_button(&mut ui, lr, "LIGHT", self.hit(lr));
+                    widgets::button(&mut ui, lr, "LIGHT", self.hit(lr));
                 }
-                for i in 0..TOTAL_SLOTS {
-                    let r = self.inv_slot_rect(i);
-                    Self::draw_slot(
-                        &self.content.reg,
-                        &mut ui,
-                        r,
-                        self.inventory.slots[i],
-                        i == self.input.hotbar_sel,
-                        self.hit(r),
-                    );
-                }
+                self.draw_player_inventory(&mut ui);
                 self.draw_browser(&mut ui);
-                if let Some(s) = self.ui_state.held_stack {
-                    let (cx, cy) = self.input.ui_cursor;
-                    let icon = self.content.reg.item(s.item).icon;
-                    ui.tile(cx - 16.0, cy - 16.0, 32.0, 32.0, icon, [1.0; 4]);
-                    if s.count > 1 {
-                        ui.text_shadow(cx + 6.0, cy + 4.0, 2.0, &format!("{}", s.count), [1.0; 4]);
-                    }
-                }
+                widgets::held_stack(&self.content.reg, &mut ui, self.input.ui_cursor, self.ui_state.held_stack);
                 self.ui = ui;
                 return;
             }
@@ -2132,26 +1908,9 @@ impl Game {
                         );
                     }
                 }
-                for i in 0..TOTAL_SLOTS {
-                    let r = self.inv_slot_rect(i);
-                    Self::draw_slot(
-                        reg,
-                        &mut ui,
-                        r,
-                        self.inventory.slots[i],
-                        i == self.input.hotbar_sel,
-                        self.hit(r),
-                    );
-                }
+                self.draw_player_inventory(&mut ui);
                 self.draw_browser(&mut ui);
-                if let Some(s) = self.ui_state.held_stack {
-                    let (cx, cy) = self.input.ui_cursor;
-                    let icon = self.content.reg.item(s.item).icon;
-                    ui.tile(cx - 16.0, cy - 16.0, 32.0, 32.0, icon, [1.0; 4]);
-                    if s.count > 1 {
-                        ui.text_shadow(cx + 6.0, cy + 4.0, 2.0, &format!("{}", s.count), [1.0; 4]);
-                    }
-                }
+                widgets::held_stack(&self.content.reg, &mut ui, self.input.ui_cursor, self.ui_state.held_stack);
                 self.ui = ui;
                 return;
             }
@@ -2252,26 +2011,9 @@ impl Game {
                         }
                     }
                 }
-                for i in 0..TOTAL_SLOTS {
-                    let r = self.inv_slot_rect(i);
-                    Self::draw_slot(
-                        reg,
-                        &mut ui,
-                        r,
-                        self.inventory.slots[i],
-                        i == self.input.hotbar_sel,
-                        self.hit(r),
-                    );
-                }
+                self.draw_player_inventory(&mut ui);
                 self.draw_browser(&mut ui);
-                if let Some(s) = self.ui_state.held_stack {
-                    let (cx, cy) = self.input.ui_cursor;
-                    let icon = self.content.reg.item(s.item).icon;
-                    ui.tile(cx - 16.0, cy - 16.0, 32.0, 32.0, icon, [1.0; 4]);
-                    if s.count > 1 {
-                        ui.text_shadow(cx + 6.0, cy + 4.0, 2.0, &format!("{}", s.count), [1.0; 4]);
-                    }
-                }
+                widgets::held_stack(&self.content.reg, &mut ui, self.input.ui_cursor, self.ui_state.held_stack);
                 self.ui = ui;
                 return;
             }
@@ -2349,31 +2091,14 @@ impl Game {
                         break; // the till is the owner's business
                     }
                     let r = self.stall_slot_rect(i);
-                    Self::draw_slot(&self.content.reg, &mut ui, r, *s, false, self.hit(r));
+                    widgets::slot(&self.content.reg, &mut ui, r, *s, false, self.hit(r));
                 }
                 if !mine {
                     let br = self.stall_buy_rect();
-                    Self::draw_button(&mut ui, br, "BUY", self.hit(br));
+                    widgets::button(&mut ui, br, "BUY", self.hit(br));
                 }
-                for i in 0..TOTAL_SLOTS {
-                    let r = self.inv_slot_rect(i);
-                    Self::draw_slot(
-                        &self.content.reg,
-                        &mut ui,
-                        r,
-                        self.inventory.slots[i],
-                        i == self.input.hotbar_sel,
-                        self.hit(r),
-                    );
-                }
-                if let Some(s) = self.ui_state.held_stack {
-                    let (cx, cy) = self.input.ui_cursor;
-                    let icon = self.content.reg.item(s.item).icon;
-                    ui.tile(cx - 16.0, cy - 16.0, 32.0, 32.0, icon, [1.0; 4]);
-                    if s.count > 1 {
-                        ui.text_shadow(cx + 6.0, cy + 4.0, 2.0, &format!("{}", s.count), [1.0; 4]);
-                    }
-                }
+                self.draw_player_inventory(&mut ui);
+                widgets::held_stack(&self.content.reg, &mut ui, self.input.ui_cursor, self.ui_state.held_stack);
                 self.ui = ui;
                 return;
             }
@@ -2390,27 +2115,10 @@ impl Game {
                     .unwrap_or_default();
                 for (i, s) in slots.iter().enumerate() {
                     let r = self.mob_cargo_slot_rect(i);
-                    Self::draw_slot(&self.content.reg, &mut ui, r, *s, false, self.hit(r));
+                    widgets::slot(&self.content.reg, &mut ui, r, *s, false, self.hit(r));
                 }
-                for i in 0..TOTAL_SLOTS {
-                    let r = self.inv_slot_rect(i);
-                    Self::draw_slot(
-                        &self.content.reg,
-                        &mut ui,
-                        r,
-                        self.inventory.slots[i],
-                        i == self.input.hotbar_sel,
-                        self.hit(r),
-                    );
-                }
-                if let Some(s) = self.ui_state.held_stack {
-                    let (cx, cy) = self.input.ui_cursor;
-                    let icon = self.content.reg.item(s.item).icon;
-                    ui.tile(cx - 16.0, cy - 16.0, 32.0, 32.0, icon, [1.0; 4]);
-                    if s.count > 1 {
-                        ui.text_shadow(cx + 6.0, cy + 4.0, 2.0, &format!("{}", s.count), [1.0; 4]);
-                    }
-                }
+                self.draw_player_inventory(&mut ui);
+                widgets::held_stack(&self.content.reg, &mut ui, self.input.ui_cursor, self.ui_state.held_stack);
                 self.ui = ui;
                 return;
             }
@@ -2425,28 +2133,11 @@ impl Game {
                 };
                 for (i, st) in slots.iter().enumerate() {
                     let r = self.chest_slot_rect(i);
-                    Self::draw_slot(&self.content.reg, &mut ui, r, *st, false, self.hit(r));
+                    widgets::slot(&self.content.reg, &mut ui, r, *st, false, self.hit(r));
                 }
-                for i in 0..TOTAL_SLOTS {
-                    let r = self.inv_slot_rect(i);
-                    Self::draw_slot(
-                        &self.content.reg,
-                        &mut ui,
-                        r,
-                        self.inventory.slots[i],
-                        i == self.input.hotbar_sel,
-                        self.hit(r),
-                    );
-                }
+                self.draw_player_inventory(&mut ui);
                 self.draw_browser(&mut ui);
-                if let Some(s) = self.ui_state.held_stack {
-                    let (cx, cy) = self.input.ui_cursor;
-                    let icon = self.content.reg.item(s.item).icon;
-                    ui.tile(cx - 16.0, cy - 16.0, 32.0, 32.0, icon, [1.0; 4]);
-                    if s.count > 1 {
-                        ui.text_shadow(cx + 6.0, cy + 4.0, 2.0, &format!("{}", s.count), [1.0; 4]);
-                    }
-                }
+                widgets::held_stack(&self.content.reg, &mut ui, self.input.ui_cursor, self.ui_state.held_stack);
                 self.ui = ui;
                 return;
             }
@@ -2484,28 +2175,11 @@ impl Game {
                 };
                 for (i, st) in slots.iter().enumerate() {
                     let r = self.offering_slot_rect(i);
-                    Self::draw_slot(&self.content.reg, &mut ui, r, *st, false, self.hit(r));
+                    widgets::slot(&self.content.reg, &mut ui, r, *st, false, self.hit(r));
                 }
-                for i in 0..TOTAL_SLOTS {
-                    let r = self.inv_slot_rect(i);
-                    Self::draw_slot(
-                        &self.content.reg,
-                        &mut ui,
-                        r,
-                        self.inventory.slots[i],
-                        i == self.input.hotbar_sel,
-                        self.hit(r),
-                    );
-                }
+                self.draw_player_inventory(&mut ui);
                 self.draw_browser(&mut ui);
-                if let Some(s) = self.ui_state.held_stack {
-                    let (cx, cy) = self.input.ui_cursor;
-                    let icon = self.content.reg.item(s.item).icon;
-                    ui.tile(cx - 16.0, cy - 16.0, 32.0, 32.0, icon, [1.0; 4]);
-                    if s.count > 1 {
-                        ui.text_shadow(cx + 6.0, cy + 4.0, 2.0, &format!("{}", s.count), [1.0; 4]);
-                    }
-                }
+                widgets::held_stack(&self.content.reg, &mut ui, self.input.ui_cursor, self.ui_state.held_stack);
                 self.ui = ui;
                 return;
             }
@@ -2543,7 +2217,7 @@ impl Game {
                 .enumerate()
                 {
                     let r = self.menu_button_rect(i);
-                    Self::draw_button(&mut ui, r, label, self.hit(r));
+                    widgets::button(&mut ui, r, label, self.hit(r));
                 }
                 // Hosting: each guest gets a name row and a KICK button.
                 for (row, (_, name)) in self.guest_rows().iter().enumerate() {
@@ -2555,7 +2229,7 @@ impl Game {
                         &name.to_uppercase(),
                         [0.9, 0.9, 0.9, 1.0],
                     );
-                    Self::draw_button(&mut ui, r, "MANAGE", self.hit(r));
+                    widgets::button(&mut ui, r, "MANAGE", self.hit(r));
                 }
             }
             Screen::Dialog { npc, node_id, .. } => {
@@ -2729,7 +2403,7 @@ impl Game {
                                         .get(sub)
                                         .map(|c| c.stack);
                                     let label = stack.map(|s| reg.item(s.item).label.clone());
-                                    Self::draw_slot(reg, &mut ui, sr, stack, false, self.hit(sr));
+                                    widgets::slot(reg, &mut ui, sr, stack, false, self.hit(sr));
                                     if let Some(label) = &label {
                                         let lw = UiBatch::text_width(0.8, label);
                                         ui.text_shadow(
@@ -2792,7 +2466,7 @@ impl Game {
                     // Inventory grid for components.
                     for i in 0..TOTAL_SLOTS {
                         let r = self.loadout_inv_rect(i);
-                        Self::draw_slot(
+                        widgets::slot(
                             reg,
                             &mut ui,
                             r,
