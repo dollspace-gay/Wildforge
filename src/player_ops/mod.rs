@@ -8,3 +8,4 @@ pub(crate) mod trade;
 pub(crate) mod combat;
 pub(crate) mod nutrition;
 pub(crate) mod feeding;
+pub(crate) mod terrain;

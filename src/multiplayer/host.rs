@@ -2142,20 +2142,10 @@ impl HostSession {
                 guest.edits += 1;
                 let creative = server.world.mode == "creative";
                 let held = guest.inventory.slots[guest.hotbar].map(|stack| stack.item);
-                let sheared = held.is_some_and(|item| server.world.reg.item(item).shears)
-                    && server
-                        .world
-                        .reg
-                        .block(server.world.get_block_at(pos))
-                        .name
-                        .contains("leaves");
-                let Some(result) =
-                    server
-                        .world
-                        .break_block_at(pos, held, !creative && !sheared, !creative)
-                else {
+                let Some(mined) = crate::player_ops::terrain::mine(&mut server.world, pos, held, creative) else {
                     return;
                 };
+                let result = mined.result;
                 if !creative {
                     guest.hunger = (guest.hunger - 0.008).max(0.0);
                     guest.inventory.wear_tool(&server.world.reg, guest.hotbar);
@@ -2230,23 +2220,7 @@ impl HostSession {
                 }
                 let selected = guest.inventory.slots[guest.hotbar];
                 let creative = server.world.mode == "creative";
-                let block = selected
-                    .and_then(|stack| server.world.reg.item(stack.item).places)
-                    .or_else(|| {
-                        let item = selected.map(|stack| stack.item)?;
-                        let reg = &server.world.reg;
-                        if Some(item) == reg.item_id("base:bucket_water")
-                            || Some(item) == reg.item_id("base:bucket_brackish")
-                            || Some(item) == reg.item_id("base:bucket_salt")
-                        {
-                            Some(reg.water_block(0))
-                        } else if Some(item) == reg.item_id("base:bucket_lava") {
-                            Some(reg.lava_for_volume(8))
-                        } else {
-                            None
-                        }
-                    });
-                let Some(block) = block else { return };
+                let Some(placement) = crate::player_ops::terrain::Placement::from_stack(&server.world.reg, selected) else { return; };
                 let overlaps = {
                     let player = crate::physics::Player::new_at(guest.pos);
                     player.overlaps_block_at(pos)
@@ -2254,35 +2228,13 @@ impl HostSession {
                 if overlaps {
                     return;
                 }
-                let held_item = selected.map(|stack| stack.item);
-                let water_class = if held_item == server.world.reg.item_id("base:bucket_water") {
-                    Some(crate::planet_atlas::WaterClass::Fresh)
-                } else if held_item == server.world.reg.item_id("base:bucket_brackish") {
-                    Some(crate::planet_atlas::WaterClass::Brackish)
-                } else if held_item == server.world.reg.item_id("base:bucket_salt") {
-                    Some(crate::planet_atlas::WaterClass::Salt)
-                } else {
-                    None
-                };
-                let placed = if let Some(class) = water_class {
-                    server.world.place_portable_water_at(pos, class)
-                } else if held_item == server.world.reg.item_id("base:bucket_lava") {
-                    server.world.place_block_at(pos, block)
-                } else if !creative {
-                    selected.is_some_and(|stack| server.world.place_item_block_at(pos, stack))
-                } else {
-                    server.world.place_block_at(pos, block)
-                };
+                let placed = placement.apply(&mut server.world, pos, selected, creative);
                 if !placed {
                     return;
                 }
                 guest.edits += 1;
                 if !creative {
-                    let full_bucket = held_item == server.world.reg.item_id("base:bucket_water")
-                        || held_item == server.world.reg.item_id("base:bucket_brackish")
-                        || held_item == server.world.reg.item_id("base:bucket_salt")
-                        || held_item == server.world.reg.item_id("base:bucket_lava");
-                    if full_bucket {
+                    if placement.is_bucket() {
                         if let Some(empty) = server.world.reg.item_id("base:bucket") {
                             guest.inventory.slots[guest.hotbar] =
                                 Some(ItemStack::new(&server.world.reg, empty, 1));

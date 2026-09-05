@@ -35,3 +35,11 @@ Adapters supply admitted base damage and flags. Existing local/host differences
 (host damage cap, creative backstab eligibility, extra local heavy impulse,
 stamina and hunger/ire policies) remain explicit adapter behavior in this
 structural move. The host no longer imports graphical combat code.
+
+`terrain.rs` shares sheared-leaf mining admission and held placement dispatch to
+physical block, item-custody, and portable-water operations. World remains the
+owner of the ordered cross-domain effects. Reach, overlap, scripts, cursor/input,
+local soil/cairn checks, creative bucket inventory policy, and visual delivery
+retain their existing adapters. Station crafting currently has only a local
+physical operation; unsupported guest workbench requests are refused before
+spending, rather than introducing a new protocol during this refactor.

@@ -656,7 +656,10 @@ impl Game {
                     if let Some(r) = &self.multiplayer.remote {
                         r.session.send(&net::C2S::Place { pos });
                     } else {
-                        self.runtime.local_mut().world.place_portable_water_at(pos, water_class);
+                        crate::player_ops::terrain::Placement::Water(water_class).apply(
+                            &mut self.runtime.local_mut().world, pos,
+                            self.inventory.slots[self.input.hotbar_sel], self.creative,
+                        );
                     }
                     if let Some(empty) = reg.item_id("base:bucket") {
                         self.inventory.slots[self.input.hotbar_sel] =
@@ -679,8 +682,10 @@ impl Game {
                     if let Some(r) = &self.multiplayer.remote {
                         r.session.send(&net::C2S::Place { pos });
                     } else {
-                        let lava = reg.lava_for_volume(8);
-                        self.runtime.local_mut().world.place_block_at(pos, lava);
+                        crate::player_ops::terrain::Placement::Lava(reg.lava_for_volume(8)).apply(
+                            &mut self.runtime.local_mut().world, pos,
+                            self.inventory.slots[self.input.hotbar_sel], self.creative,
+                        );
                     }
                     if let Some(empty) = reg.item_id("base:bucket") {
                         self.inventory.slots[self.input.hotbar_sel] =
@@ -1293,15 +1298,10 @@ impl Game {
                         }
                         if allow {
                             self.survival.hunger = (self.survival.hunger - 0.008).max(0.0);
-                            let sheared = held.is_some_and(|item| reg.item(item).shears)
-                                && reg.block(b).name.contains("leaves");
-                            let result = self.runtime.local_mut().world.break_block_at(
-                                    target,
-                                    held,
-                                    !self.creative && !sheared,
-                                    !self.creative,
-                                )
-                                .expect("mining target was validated before completion");
+                            let mined = crate::player_ops::terrain::mine(
+                                &mut self.runtime.local_mut().world, target, held, self.creative,
+                            ).expect("mining target was validated before completion");
+                            let (result, sheared) = (mined.result, mined.sheared);
                             let b = result.block;
                             self.sfx(Sfx::Break(self.break_mat(b)));
                             self.presentation.burst(
@@ -2715,12 +2715,10 @@ impl Game {
                     if self.inventory.slots[self.input.hotbar_sel].is_none() && !self.creative {
                         return;
                     }
-                    let placed = if self.creative {
-                        self.runtime.local_mut().world.place_block_at(pos, block)
-                    } else {
-                        self.inventory.slots[self.input.hotbar_sel]
-                            .is_some_and(|stack| self.runtime.local_mut().world.place_item_block_at(pos, stack))
-                    };
+                    let placed = crate::player_ops::terrain::Placement::Block(block).apply(
+                        &mut self.runtime.local_mut().world, pos,
+                        self.inventory.slots[self.input.hotbar_sel], self.creative,
+                    );
                     if placed {
                         if !self.creative {
                             self.inventory.take_one(self.input.hotbar_sel);

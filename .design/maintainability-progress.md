@@ -1920,3 +1920,19 @@ and separately record these retained adapter policies.
 No tests/compiler/format/analyzers ran. Final scenarios include full hunger with
 missing nutrients, meal refusal, juvenile/hostile/already-fed animals, taming
 completion, prediction/host echo, tangent-frame seams, and combined modifiers.
+
+
+## Shared physical terrain action dispatch (coding checkpoint; unverified)
+
+Player terrain operations now share sheared-leaf mining admission and typed
+held-placement dispatch (ordinary blocks, charged item placement, water class,
+and lava). Both adapters call the same physical World operations; World retains
+material/Current/water custody and edit fan-out. Host reach/rate/overlap checks,
+local scripts/soil/cairn requirements, inventory timing, visual/drop delivery,
+and mode-specific bucket behavior remain in their existing order. Modded lava
+bucket place-block selection preserves the host's existing registry precedence.
+
+Source review also identified existing local/host mining delivery differences:
+local basic drops reconstruct only item/count, and local mining assumes the
+world cannot refuse after input admission. These need a separate correctness
+checkpoint; no success or full adapter parity is claimed here. No tests ran.
