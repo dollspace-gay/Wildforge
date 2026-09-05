@@ -54,7 +54,8 @@ mod storage;
 pub use hearts::ROOT_READY_FRAC;
 #[cfg(test)]
 pub use hearts::{HEART_CUTTING_DAYS, HEART_DEATH_STRAIN, HEART_SICKEN_STRAIN, ROOT_DAYS};
-pub use hearts::{Heart, heart_block_name, heart_form, heart_height, seed_nature, seed_of_form};
+pub use hearts::{Heart, heart_block_name, seed_nature, seed_of_form};
+pub use crate::worldgen::{heart_form, heart_height};
 pub use machines::{station_powered, worked_table_for};
 pub mod soil;
 mod spawn;

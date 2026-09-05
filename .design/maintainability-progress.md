@@ -1053,3 +1053,25 @@ exercise repair identity, recipe/blueprint rejection, cursor capacity, Current
 retirement, material loss/byproducts, full inventory, armor/charm eligibility,
 and local/network parity before acceptance. Other player-operation domains and
 world authority separation remain open.
+
+
+## Deterministic generation stages (implementation, unverified)
+
+The 3,186-line `worldgen.rs` is now an explicit stage coordinator and generation
+context/value declarations. Stage modules own shape/strata preparation, caves,
+surface rules, mineral deposition, vegetation, province structures, and finite
+water/salt finalization. Named ShapeColumns and SurfaceColumns carry the same
+intermediate arrays between stages. Deep generation still returns an empty
+chunk, and the original stage, iteration, seed-salt, and final bedrock order is
+retained. Supporting climate/province/relief/hydrology/density/strata/prospecting
+queries moved behind explicit imports and generation-scoped helper visibility.
+Pure heart form/height lookup moved out of authoritative world code; its old
+world facade remains a re-export. Generation no longer calls world simulation.
+
+New authored stage/query modules are below 400 lines before final formatting;
+the parent is around 415 lines, retaining cohesive context and public value
+types within the soft 500-line review limit. Every new directory has guides.
+No checks run under the coding-first schedule. Pinned chunk/atlas byte and hash
+comparisons, worker-order scenarios, full Rust gates, and actual GPU/runtime
+qualification remain required. Atlas internals and registry decomposition are
+still outstanding; Phase 6 is not accepted by this implementation checkpoint.
