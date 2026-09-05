@@ -1120,3 +1120,21 @@ raw schemas, retain the existing qualified-name rules and validation errors,
 and return runtime definitions without game-state mutation. The new linking
 directory has guides. Remaining registration passes still live in the parent;
 no checks run and final schema/registry/runtime qualification remains pending.
+
+
+## Registry registration owner (implementation, unverified)
+
+Per-provider registration now has one owner for texture allocation and deferred
+references. It registers blocks (including their held forms), then authored
+items, then remaining references/appearance inputs in the original provider
+order. Texture paths and names accumulate privately and join the registry before
+later name resolution. Named pending animal/NPC records replace long internal
+tuples; the pending-content output carries the unresolved references explicitly.
+The original built-in air registration and unknown-block insertion stay on either
+side of this pass, preserving runtime ID assignment order.
+
+The new registration modules remain below 400 lines before final formatting.
+No tests or other gates run. Final verification must compare complete block/item
+and texture ID order, provider errors, embedded texture behavior, hot reload, and
+content hashes. Remaining name-resolution passes, publication, and full phase
+acceptance are still open.
