@@ -212,7 +212,10 @@ impl PlanetAtlas {
                 continue;
             }
             out.push(pos);
-            if out.len() >= max_cells || distance >= radius {
+            if out.len() >= max_cells {
+                break;
+            }
+            if distance >= radius {
                 continue;
             }
             for neighbor in pos.neighbors4(self.side()) {

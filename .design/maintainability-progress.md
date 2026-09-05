@@ -1271,3 +1271,14 @@ and recovery behavior is retained here, not claimed to provide stronger crash
 atomicity than before. Known bounded-stencil traversal needs a separate bounds
 correction: queued cells can exceed the requested output limit. Validation and
 new regression scenarios remain deferred until the coding phase is complete.
+
+
+## Bounded stencil output correction (coding checkpoint; unverified)
+
+`bounded_stencil` now stops consuming queued neighbors when its output reaches
+`max_cells`. Previously the limit stopped expansion but allowed the remaining
+queue to append extra cells. Breadth-first neighbor order and radius semantics
+are retained; capped queries return the intended prefix. This is separate from
+the atlas move. Final regressions must cover zero/one limits, queued overflow,
+face seams, and unchanged output when the cap does not bind. Pinned generation
+and runtime checks remain part of the deferred final validation phase.
