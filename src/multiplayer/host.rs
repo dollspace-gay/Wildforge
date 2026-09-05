@@ -4203,7 +4203,7 @@ impl HostSession {
                                 f.output = None;
                             }
                             Some(h)
-                                if h.item == out.item
+                                if h.can_merge(&reg, &out)
                                     && h.count + out.count <= reg.item(h.item).max_stack =>
                             {
                                 held = Some(ItemStack {

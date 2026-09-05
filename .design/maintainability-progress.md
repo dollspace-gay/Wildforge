@@ -1643,3 +1643,15 @@ This behavior correction is committed separately from graphical ownership moves.
 No validation ran. The final regression must evict guest chunks with a falling
 snapshot and prove no local landing/block edit occurs, while authoritative
 save/unload still settles physical falling blocks before persistence.
+
+## Furnace cursor identity parity (corrective checkpoint; unverified)
+
+The network furnace-output path merged by item definition alone, while the local
+path required ItemStack::can_merge. That could merge stacks with different
+instance/wear identity into the retained cursor identity. The host now uses the
+same identity-aware eligibility check as local play. This correction precedes
+extraction of the shared container transaction and is committed separately.
+
+No validation ran. Final parity cases must cover charged/instance-bearing and
+worn output rejection, ordinary compatible merges, full cursors, and unchanged
+output/cursor state on rejection.
