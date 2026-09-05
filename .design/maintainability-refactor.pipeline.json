@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "design_doc": ".design/maintainability-refactor.md",
-  "doc_hash": "sha256:8a659489a60bf8274b0f6e4945bebe124212ca02c2c8eb9518ef067aa11114d2",
+  "doc_hash": "sha256:7fd25baebff175db26e74c357182b75c16e7e0dd920ff6cd8606d237467cc1e3",
   "stage": "implementing",
   "plans": [],
   "runs": []

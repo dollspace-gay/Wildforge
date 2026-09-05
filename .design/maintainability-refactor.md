@@ -7,7 +7,7 @@ authoritative player operations, and world domains. Keep ordinary source files
 around 400 lines, use 500 lines as a soft review limit, and continuously report
 copy/paste candidates. Deliver small, tested slices that preserve the game.
 
-Status: implementation in progress on `refactor/maintainability-migration`.
+Status: implementation in progress on `refactor/engine-maintainability`.
 The user subsequently authorized the full migration and directory guidance.
 Track completed slices and remaining criteria in [the progress record](maintainability-progress.md).
 Originally prepared on 2026-09-05 from the working tree based on `8c1ec40`,
