@@ -50,6 +50,7 @@ mod power;
 mod query;
 mod standing;
 mod country_view;
+mod population;
 mod view;
 pub(crate) use view::WorldView;
 mod replica;
@@ -1013,6 +1014,7 @@ pub struct RevealKey {
 }
 
 pub struct World {
+    population: population::Population,
     chunks: terrain::TerrainStore,
     pub generator: Generator,
     planet_atlas: Option<Arc<crate::planet_atlas::PlanetAtlas>>,
@@ -1160,9 +1162,6 @@ pub struct World {
     next_local_structure_id: u64,
     /// Items spilled by removed block entities, for the game loop to spawn.
     pending_drops: Vec<(crate::planet::BlockPos, ItemStack)>,
-    mobs: Vec<crate::mobs::Mob>,
-    projectiles: Vec<Projectile>,
-    next_projectile_id: u64,
     /// The entry-piece anchor of the most recent `place_assembly` that
     /// placed anything (capability E10): a dungeon run reads it to know
     /// where to stand its participants. Transient, single-threaded.
@@ -1172,11 +1171,6 @@ pub struct World {
     pub dungeon_runs: Vec<crate::world::dungeon::DungeonRun>,
     /// Per-run generation seed drift so two visits to one dungeon differ.
     run_seed: u32,
-    /// Ordinary dropped items are host-owned entities, not renderer-local
-    /// decorations. This makes pickup, collision, persistence, replication,
-    /// and Nudge share one authority.
-    loose_items: Vec<ItemEntity>,
-    next_loose_item_id: u64,
     hostile_spawn_timer: f32,
     /// Chunks whose wildlife roll already happened (persisted).
     mob_seeded: HashSet<ChunkPos>,
@@ -1202,11 +1196,6 @@ pub struct World {
     /// (guest id, stack) owed over the wire: mining drops, kill loot,
     /// recovered arrows, brush finds — full stacks so durability rides.
     pending_gives: Vec<(u32, ItemStack)>,
-    /// Live NPCs (spec Part 3.1). Each links a companion Mob (by stable id)
-    /// to its authoring def + patrol walker. Persisted via the mob save path.
-    npcs: Vec<crate::npc::NpcInstance>,
-    /// Next stable mob id (host side; ids exist for the wire).
-    next_mob_id: u32,
     #[cfg(test)]
     save_fail_chunks: HashSet<ChunkPos>,
     #[cfg(test)]
@@ -1507,6 +1496,7 @@ impl World {
                 .ok()
         });
         World {
+            population: population::Population::default(),
             chunks: terrain::TerrainStore::default(),
             generator,
             planet_atlas,
@@ -1562,14 +1552,9 @@ impl World {
             hearts: HashMap::new(),
             bloom_spent: HashMap::new(),
             long_winter: false,
-            mobs: Vec::new(),
-            projectiles: Vec::new(),
-            next_projectile_id: 1,
             last_entry_anchor: None,
             dungeon_runs: Vec::new(),
             run_seed: 0x5EED_0000,
-            loose_items: Vec::new(),
-            next_loose_item_id: LOOSE_ITEM_ID_BASE,
             hostile_spawn_timer: 0.0,
             mob_seeded: HashSet::new(),
             repop_timer: 0.0,
@@ -1583,8 +1568,6 @@ impl World {
             edit_log: Vec::new(),
             falling: Vec::new(),
             pending_gives: Vec::new(),
-            npcs: Vec::new(),
-            next_mob_id: 1,
             #[cfg(test)]
             multiblock_revalidations: 0,
             #[cfg(test)]
@@ -1609,7 +1592,7 @@ impl World {
     }
 
     pub(crate) fn remap_loose_items(&mut self, old: &Registry, registry: &Registry) {
-        crate::entity::remap_items(&mut self.loose_items, old, registry);
+        self.population.remap_loose_items(old, registry);
     }
 
     /// Publish validated runtime definitions and rebuild immutable generation

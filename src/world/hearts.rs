@@ -509,7 +509,7 @@ impl World {
             if done {
                 self.set_heart_stage(key, 2);
                 // The country wakes: its wardens answer to it again.
-                for m in &mut self.mobs {
+                for m in self.population.mobs_mut() {
                     m.masterless = false;
                 }
                 if let Some(e) = self.hearts.get_mut(&key) {
@@ -667,7 +667,7 @@ impl World {
         let key = self.generator.province_at(pos).key;
         let reg = self.reg.clone();
         let g = &self.generator;
-        for m in &mut self.mobs {
+        for m in self.population.mobs_mut() {
             if reg.animals.get(m.species).is_some_and(|d| d.hostile)
                 && g.province_at(m.pos.block().map_or(pos, BlockPos::surface))
                     .key

@@ -1743,3 +1743,28 @@ test phase, as does the native guest proof's old field access. Those old fixture
 will not compile until migrated; no test success is claimed. Final checks must
 prove receiver parity, no replica save/generation APIs, host edit side-effect
 order, and corrected guest eviction without physical landing or persistence.
+
+
+## Authoritative population ownership (coding checkpoint; unverified)
+
+Population now owns private live mob/NPC, projectile, and loose-item collections
+plus their allocation cursors. Stable insertion/restoration, lazy mob identity,
+paired NPC creation/loading, removals, and member lookup/edit operations moved
+with their state. Mutable collection views are member slices; insertion and
+removal pass through explicit operations. World still coordinates arcane custody
+before mob publication, physical AI/collision events, loss/harvest settlement,
+and save adapters in their existing order. Collection restore during a tick does
+not rewind previously allocated IDs; explicit snapshot replacement retains its
+previous cursor behavior. Allocation/exhaustion policy was not changed.
+
+The former ecology monolith is now focused habitat, wildlife placement, ordered
+mob stepping, hostile/nest admission, death/harvest, projectile, and loose-item
+coordinators with explicit imports and local guidance. The ordered mob step
+remains a large cross-domain transaction and needs final function/size review;
+this extraction does not claim to eliminate all coordinator complexity.
+
+No tests/compiler/analyzers ran. Final tests must adapt the legacy Vec-mutating
+fixtures to named collection operations and cover IDs, NPC links, restoration,
+cargo/Current/material effects, drops, projectile vessels, unloaded residency,
+deterministic seeding, and predator food eligibility. All accepted results remain
+pending the end-of-implementation verification phase.

@@ -65,3 +65,10 @@ adapter, or ReplicaObservations storage. GuestSession applies incoming state onl
 to ReplicaWorld; world saving, generation, physical support, and machine
 revalidation are unconditional authority operations. Tests that formerly switched
 World into guest mode must exercise the independent replica instead.
+
+`population.rs` owns live mobs/NPC links, projectiles, loose items, and identity
+cursors. Mutation views expose member slices; insertion, extraction, restoration,
+and NPC association use named operations. `ecology/` contains the explicit
+cross-domain physics/admission/death coordinators with focused habitat, wildlife,
+hostile, projectile, and loose-item responsibilities. Save adapters still encode
+the same entity fields and establish loaded NPC companion identity immediately.

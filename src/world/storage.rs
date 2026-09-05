@@ -35,8 +35,7 @@ impl World {
             version: u32,
             drop: Vec<StoredDrop>,
         }
-        let drop = self
-            .loose_items
+        let drop = self.population.loose_items()
             .iter()
             .filter(|item| item.stable_id != 0 && item.count != 0)
             .map(|item| StoredDrop {
@@ -142,7 +141,7 @@ impl World {
         use std::fmt::Write as _;
         let mut report = SaveReport::default();
         let mut out = String::from("version = 2\n");
-        for m in &self.mobs {
+        for m in self.population.mobs() {
             let Some(def) = self.reg.animals.get(m.species) else {
                 continue;
             };
@@ -460,7 +459,7 @@ impl World {
                     }
                     m.cargo = Some(cargo);
                 }
-                self.mobs.push(m);
+                self.population.push_mob(m);
                 // NPC companion species keep a runtime NpcInstance so their
                 // patrol/dialogue survive a reload (spec 3.1 persistence).
                 if let Some(species_idx) = self.reg.animal_id(&t.species)
@@ -474,12 +473,7 @@ impl World {
                     // The instance's mob_id must equal the companion Mob's
                     // stable id. Stamp it now instead of waiting for the lazy
                     // id pass in tick_mobs, so the two match immediately.
-                    let mob = self.mobs.last_mut().expect("mob just pushed");
-                    mob.id = self.next_mob_id;
-                    self.next_mob_id = self.next_mob_id.saturating_add(1);
-                    self.npcs.push(
-                        crate::npc::NpcInstance::new(&npc.clone(), pos, mob.id).with_def(def_idx),
-                    );
+                    self.population.attach_loaded_npc(&npc.clone(), def_idx, pos);
                 }
             }
         }

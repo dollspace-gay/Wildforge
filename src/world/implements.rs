@@ -435,9 +435,9 @@ impl World {
 
     pub(super) fn migrate_loaded_mob_charms(&mut self) {
         let mut changed = false;
-        for index in 0..self.mobs.len() {
-            let pos = self.mobs[index].pos.block();
-            let Some(mut cargo) = self.mobs[index].cargo.take() else {
+        for index in 0..self.population.mobs().len() {
+            let pos = self.population.mobs()[index].pos.block();
+            let Some(mut cargo) = self.population.mobs_mut()[index].cargo.take() else {
                 continue;
             };
             if let Some(pos) = pos {
@@ -464,7 +464,7 @@ impl World {
                     }
                 }
             }
-            self.mobs[index].cargo = Some(cargo);
+            self.population.mobs_mut()[index].cargo = Some(cargo);
         }
         if changed {
             for failure in self.save_mobs() {
