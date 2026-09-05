@@ -1,6 +1,7 @@
 //! Parse mod files, order providers, and build a fresh registry without publishing it.
 
-use super::{ModInfo, Registry, RetrogenPolicy, WORLD_API_VERSION, build};
+use super::{ModInfo, Registry, RetrogenPolicy, WORLD_API_VERSION};
+use super::linking::build;
 use super::schema::{AliasesFile, AnimalsFile, ArcaneFile, BlocksFile, DialogueFile, FeaturesFile, ItemsFile, ModToml, ModesFile, NestFileToml, NpcsFile, PiecesFile, QuestsFile, RawMod, RecipesFile, StructuresFile, TagsFile};
 use std::path::{Path, PathBuf};
 

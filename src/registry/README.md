@@ -4,7 +4,7 @@
 
 Domain definition modules cover blocks, items, material/magic contracts, fauna,
 narrative content, recipes, and structures. The parent re-exports their existing
-names and owns raw loading/linking during the remaining migration.
+names and holds the runtime content graph.
 
 `material_graph.rs` owns fixed-point material inference and balance validation;
 `salvage.rs` derives physical recovery chains; arcane/ecology validators enforce
@@ -14,8 +14,10 @@ their conserved content contracts. Their call order remains explicit.
 `schema/` owns raw documents, their defaults, and the parsed provider bundle.
 `loading.rs` reads base/mod files and preserves provider ordering before calling
 the linker. Embedded base paths still refer to the same authored files.
-`linking/` contains material, observation/discovery, and magic/ecology
-interpretation. Registration passes and atomic publication remain in progress.
+`linking/` owns the ordered registration and resolution coordinator. Domain
+passes consume their deferred declarations; graph validation follows linking.
+Existing schema scenarios live in adjacent test modules with their original
+test paths. Atomic startup/hot-reload publication remains in progress.
 
 Start with `runtime.rs`. See the [repository overview](../../README.md) for
 build prerequisites and complete checks. Commands below run from the repository root.

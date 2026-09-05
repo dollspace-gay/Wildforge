@@ -1138,3 +1138,21 @@ No tests or other gates run. Final verification must compare complete block/item
 and texture ID order, provider errors, embedded texture behavior, hot reload, and
 content hashes. Remaining name-resolution passes, publication, and full phase
 acceptance are still open.
+
+
+## Ordered registry linker (implementation, unverified)
+
+The remaining registry build body now has an explicit coordinator in
+`registry/linking/mod.rs`. Each domain consumes its own deferred declarations;
+qualified lookup rules, engine sentinels, structure/settlement wiring, station
+and shaped recipes, species/NPCs, narrative rewards, features, modes, and optional
+capabilities have separate modules. Registration IDs, resolver sequence, and
+diagnostic append order are retained. The facade contains runtime definitions
+and re-exports. Existing inline schema/NPC tests moved unchanged into adjacent
+files while retaining their original test module paths.
+
+No validation gates run under the requested coding-first schedule. This
+structural checkpoint intentionally retains existing duplicate-species prey
+linking and skill-error lifetime behavior for a separately reviewable correction.
+Final checks must cover those regressions as well as complete registry IDs,
+diagnostics, hash/remap behavior, and startup/hot-reload publication.

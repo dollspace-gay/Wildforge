@@ -7,7 +7,7 @@ Read [README.md](README.md) and [the root instructions](../../AGENTS.md).
 Keep domain definitions independent of raw deserialization and linking. Use
 explicit imports across definition, material graph, salvage, validation,
 runtime policy, and saved-placeholder modules. The parent preserves existing
-re-exported names; raw loading/linking is still being migrated. Preserve the
+re-exported names; loading and linking have their own modules. Preserve the
 order of material fixed-point inference, derived salvage, and validation.
 
 Preserve stable names and deterministic ID/remap behavior. Reject invalid linked content before publishing a new runtime registry.
