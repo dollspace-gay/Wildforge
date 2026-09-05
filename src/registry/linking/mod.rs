@@ -67,7 +67,7 @@ pub(super) fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
     resources::creative_items(&mut reg);
     shells::preparations(&mut reg, &raws);
     let mode_errors = modes::resolve(&mut reg, &raws);
-    extensions::skills(&mut reg, &raws);
+    let skill_errors = extensions::skills(&mut reg, &raws);
     let machine_errors = extensions::machines(&mut reg, &raws);
     let nest_errors = extensions::nests(&mut reg, &raws);
 
@@ -78,6 +78,7 @@ pub(super) fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
     reg.material_errors.extend(settlement_errors);
     reg.material_errors.extend(recipe_errors);
     reg.material_errors.extend(mode_errors);
+    reg.material_errors.extend(skill_errors);
     reg.material_errors.extend(machine_errors);
     reg.material_errors.extend(nest_errors);
     extensions::screens(&mut reg, &raws);

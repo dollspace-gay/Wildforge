@@ -3,14 +3,17 @@
 use crate::registry::{Registry, NestDef, qualify};
 use crate::registry::schema::RawMod;
 
-pub(super) fn skills(reg: &mut Registry, raws: &[RawMod]) {
+pub(super) fn skills(reg: &mut Registry, raws: &[RawMod]) -> Vec<String> {
     // Capability E5: merge every mod's skill tree into the registry.
     // Failures surface as pack errors on the mods screen.
     let raw_skills: Vec<crate::skills::RawSkillToml> =
         raws.iter().filter_map(|raw| raw.skills.clone()).collect();
     match crate::skills::resolve(&raw_skills) {
-        Ok(tree) => reg.skills = tree,
-        Err(errors) => reg.material_errors.extend(errors),
+        Ok(tree) => {
+            reg.skills = tree;
+            Vec::new()
+        }
+        Err(errors) => errors,
     }
 }
 

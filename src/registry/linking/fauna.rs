@@ -15,12 +15,12 @@ pub(super) struct PendingPrey {
 pub(super) fn resolve(reg: &mut Registry, pending_animals: Vec<PendingAnimal>) -> Vec<PendingPrey> {
     let mut pending_prey: Vec<PendingPrey> = Vec::new();
     for PendingAnimal { modid, definition: a, tile, head_tile, box_tiles, proj_tile, attack_proj_tiles } in pending_animals {
-        if !a.prey.is_empty() {
-            pending_prey.push(PendingPrey { hunter: reg.animals.len(), modid: modid.clone(), names: a.prey.clone() });
-        }
         let full = qualify(&modid, &a.id);
         if reg.animals.iter().any(|x| x.name == full) {
             continue; // duplicate id — first wins, like blocks/items
+        }
+        if !a.prey.is_empty() {
+            pending_prey.push(PendingPrey { hunter: reg.animals.len(), modid: modid.clone(), names: a.prey.clone() });
         }
         let drops = a
             .drops

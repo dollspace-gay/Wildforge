@@ -1156,3 +1156,18 @@ structural checkpoint intentionally retains existing duplicate-species prey
 linking and skill-error lifetime behavior for a separately reviewable correction.
 Final checks must cover those regressions as well as complete registry IDs,
 diagnostics, hash/remap behavior, and startup/hot-reload publication.
+
+
+## Rejected content keeps correct ownership and diagnostics (unverified)
+
+Duplicate wildlife declarations now skip before queuing prey links. Previously
+the discarded definition retained the next species index, so its prey could
+attach to a later species or index beyond the final roster. Accepted species
+still receive their original IDs and prey-resolution order. Skill resolution
+errors now survive material-graph reconciliation through a deferred error
+vector, so malformed skills remain actionable pack failures.
+
+These corrections are separate from the preceding structural extraction. Tests
+are deferred: final cases must include duplicate hunters at the end/middle of a
+roster, later NPC companions, first-definition retention, and skill failures
+through both content inspection and validated startup/reload.
