@@ -291,7 +291,7 @@ impl Game {
                     let reg = self.content.reg.clone();
                     let n = if right { 1 } else { reg.item(*item).max_stack };
                     let created = ItemStack::new(&reg, *item, n);
-                    if let Some(ledger) = &mut self.server.world.material_ledger {
+                    if let Some(ledger) = &mut self.runtime.local_mut().world.material_ledger {
                         if let Some(replaced) = self.ui_state.held_stack {
                             let materials = crate::materials::stack_materials(&reg, replaced);
                             if let Err(error) = ledger.record_admin_deletion(&materials) {

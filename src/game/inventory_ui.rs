@@ -395,7 +395,7 @@ impl Game {
             [0.9, 0.92, 0.95, 1.0],
         );
 
-        let tier = self.server.world.ire_tier();
+        let tier = self.runtime.view().ire_tier();
         let tier_color = [
             [0.45, 0.75, 0.4, 1.0],
             [0.8, 0.75, 0.35, 1.0],
@@ -419,7 +419,7 @@ impl Game {
         ui.rect(
             info_x + 96.0,
             rect.1 + 80.0,
-            self.server.world.ire * 1.12,
+            self.runtime.view().ire() * 1.12,
             9.0,
             tier_color,
         );
@@ -447,14 +447,14 @@ impl Game {
             [0.78, 0.86, 0.92, 1.0],
         );
 
-        let world = &self.server.world;
+        let world = self.runtime.view();
         let season = world.season_at_surface(self.player.pos.surface());
         let third = ["EARLY", "MID", "LATE"][((world.season_progress() * 3.0) as usize).min(2)];
         ui.text_shadow(
             info_x,
             rect.1 + 146.0,
             1.4,
-            &format!("DAY {} - {third} {}", world.day + 1, world::SEASONS[season]),
+            &format!("DAY {} - {third} {}", world.day() + 1, world::SEASONS[season]),
             [0.78, 0.86, 1.0, 1.0],
         );
         let weather = world.weather_at_surface(self.player.pos.surface());

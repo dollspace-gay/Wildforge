@@ -36,7 +36,7 @@ impl Game {
         self.survival.armor[4].as_ref().is_some_and(|s| {
             self.content.reg.item(s.item).charm.as_deref() == Some(kind)
                 && s.arcane_id != 0
-                && self.server.world.charm_can_pay(*s, kind)
+                && self.runtime.view().charm_can_pay(*s, kind)
         })
     }
 
@@ -67,9 +67,10 @@ impl Game {
             self.sfx(Sfx::Block);
         }
         let mut pts = self.armor_points();
-        if let Some(mut charm) = self.survival.armor[4]
+        if !self.runtime.is_guest()
+            && let Some(mut charm) = self.survival.armor[4]
             && let Some(pos) = self.player.pos.block()
-            && self.server.world.debit_charm_at(
+            && self.runtime.local_mut().world.debit_charm_at(
                 pos,
                 &mut charm,
                 "bark",
@@ -161,13 +162,10 @@ impl Game {
                         intent: crate::workings::WorkingIntent::Cancel,
                     });
                 } else if channel.stable_id != 0 {
-                    let prior = self
-                        .server
-                        .world
-                        .working_cues()
+                    let prior = self.runtime.local().world.working_cues()
                         .into_iter()
                         .find(|cue| cue.stable_id == channel.stable_id);
-                    if let Ok(result) = self.server.world.interrupt_working(channel.stable_id)
+                    if let Ok(result) = self.runtime.local_mut().world.interrupt_working(channel.stable_id)
                         && let Some(mut cue) = prior
                     {
                         cue.kind = result.cue;
@@ -181,14 +179,11 @@ impl Game {
                 && let Some(actor_pos) = self.player.pos.block()
             {
                 let actor = crate::identity::local_player_id(
-                    &self.server.world.save_dir_for_saving(),
+                    &self.runtime.local().world.save_dir_for_saving(),
                     self.identity.device_id(),
                 )
                 .unwrap_or(crate::identity::PlayerId([0; 16]));
-                if let Err(error) = self
-                    .server
-                    .world
-                    .settle_preparations_on_death(actor.0, actor_pos)
+                if let Err(error) = self.runtime.local_mut().world.settle_preparations_on_death(actor.0, actor_pos)
                 {
                     eprintln!("alchemy: local death settlement failed: {error}");
                 }
@@ -251,7 +246,7 @@ impl Game {
         let mut entity = ItemEntity::new(pos, v, stack.item, stack.count);
         entity.durability = stack.durability;
         entity.arcane_id = stack.arcane_id;
-        self.server.world.spawn_loose_item(entity);
+        self.runtime.present_loose_item(entity);
     }
 
     pub(super) fn respawn(&mut self) {
@@ -261,7 +256,7 @@ impl Game {
         // A dungeon death (capability E10) wakes at the party's checkpoint
         // with belongings intact. The host owns run state; a guest falls
         // through to the ordinary spawn and is corrected by the host snap.
-        if let Some(cp) = self.server.world.dungeon_checkpoint_for(self.player.pos) {
+        if let Some(cp) = self.runtime.view().dungeon_checkpoint_for(self.player.pos) {
             self.player = Player::new_at(cp);
             self.survival.health = self.max_health();
             self.survival.hunger = 20.0;
@@ -277,7 +272,7 @@ impl Game {
         // The stored spawn can be stale in both directions — built
         // over (you'd wake inside a hill) or dug out (you'd wake in
         // free fall). Settle it into a real standing spot first.
-        let spawn = self.server.world.settle_spawn_at(self.survival.spawn_point);
+        let spawn = self.runtime.settle_spawn_at(self.survival.spawn_point);
         self.player = Player::new_at(spawn);
         self.survival.health = self.max_health();
         self.survival.hunger = 20.0;
@@ -291,7 +286,7 @@ impl Game {
         if self.content.scripts.wants("on_player_respawn") {
             self.content
                 .scripts
-                .dispatch(&self.server.world, "on_player_respawn", ());
+                .dispatch_view(&self.runtime.view(), "on_player_respawn", ());
             self.apply_script_cmds();
         }
     }

@@ -1,5 +1,7 @@
 //! Winit application lifecycle and platform event bridge.
 
+use crate::world::TerrainRead;
+
 use std::sync::Arc;
 use winit::application::ApplicationHandler;
 use winit::dpi::{LogicalSize, PhysicalSize};
@@ -149,12 +151,12 @@ impl ApplicationHandler for App {
                     }
                     MouseButton::Middle if pressed => {
                         if let Some(h) = raycast::raycast_at(
-                            &game.server.world,
+                            &game.runtime.view(),
                             game.player.eye(),
                             game.camera.local_forward(),
                             game.reach(),
                         ) {
-                            let b = game.server.world.get_block_at(h.block);
+                            let b = game.runtime.view().get_block_at(h.block);
                             let reg = game.content.reg.clone();
                             let found = game.inventory.slots[..HOTBAR_SLOTS]
                                 .iter()

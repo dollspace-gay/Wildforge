@@ -18,7 +18,7 @@ impl Game {
         if tree.is_empty() {
             return false;
         }
-        self.server.world.ruleset().skills
+        self.runtime.view().ruleset().skills
     }
 
     /// Grant XP from one canonical source. No-op when skills are disabled

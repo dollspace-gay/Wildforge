@@ -1655,3 +1655,29 @@ extraction of the shared container transaction and is committed separately.
 No validation ran. Final parity cases must cover charged/instance-bearing and
 worn output rejection, ordinary compatible merges, full cursors, and unchanged
 output/cursor state on rejection.
+
+
+## Graphical scene and shared container ownership (coding checkpoint; unverified)
+
+The graphical runtime now selects a local authoritative Server or an independent
+ReplicaWorld after Welcome. Guest entry no longer constructs a remote World with
+a generator/save path. Snapshot application, chunk eviction, registry remapping,
+mesh bookkeeping, clock observations, and cosmetic mob state route to the replica.
+WorldView exposes explicit terrain, scene, calendar, geography, machine, item,
+and limited laboratory observations; no mutable authority accessor is exposed.
+Physics, camera, selection, bounce lighting, rendering, UI, and script reads use
+these contracts. Immutable geography now shares geological prospecting queries.
+
+Container transactions share chest/offering/stall, furnace, bloomery/forge, and
+kiln rules across the local/host adapters. The earlier furnace identity correction
+remains a separate commit. Crafting shares byproduct prediction without a guest
+ledger. Standing-position rescue keeps search order and permits missing-column
+preparation only for authority. Player knowledge/KV retain the existing local
+sidecar location through the graphical runtime, outside ReplicaWorld.
+
+This is an implementation checkpoint. The remaining guest action routes still
+need source-level migration, including legacy actions without a network request,
+station state prediction, script command authority, and read-only soil/heart
+queries. The temporary World replication adapter remains until its final fixture
+migration. No format, compiler, tests, analyzer, native proof, or GPU campaign ran;
+all current-source validation remains at the end of the implementation phase.

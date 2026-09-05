@@ -1,20 +1,16 @@
 //! Seeded immutable noise, content bindings, and coordinate sampling.
 
-use super::{Biome, Generator, Spline, hash2};
+use super::{Biome, Generator, Spline};
 use std::sync::Arc;
-use noise::{NoiseFn, Perlin};
+use noise::Perlin;
 use crate::chunk::{CHUNK_X, CHUNK_Z, ChunkPos};
-use crate::planet::{PLANET_RADIUS, SurfacePos, surface_to_unit};
+use crate::planet::SurfacePos;
 use crate::registry::{AIR, BlockId, Registry};
 
 impl Generator {
     #[inline]
     pub(super) fn chunk_hash(&self, salt: u32, pos: ChunkPos) -> u32 {
-        hash2(
-            self.seed ^ salt ^ (pos.face() as u32).wrapping_mul(0x9e37_79b9),
-            i32::from(pos.u()),
-            i32::from(pos.v()),
-        )
+        self.geography.chunk_hash(salt, pos)
     }
 
     #[inline]
@@ -40,8 +36,7 @@ impl Generator {
         scale: f64,
         offset: [f64; 3],
     ) -> f32 {
-        let p = surface_to_unit(pos.center()) * ((PLANET_RADIUS + y) / scale);
-        noise.get([p.x + offset[0], p.y + offset[1], p.z + offset[2]]) as f32
+        crate::climate::radial_noise(noise, pos, y, scale, offset)
     }
 
     pub(super) fn hash_surface(&self, salt: u32, pos: SurfacePos) -> u32 {
@@ -142,7 +137,6 @@ impl Generator {
             lava: b("base:lava"),
             quartz_block: b("base:quartz_block"),
             amethyst_block: b("base:amethyst_block"),
-            granite3d: p(42),
             rivernoise: p(50),
             lakenoise: p(51),
         }

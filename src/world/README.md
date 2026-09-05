@@ -47,3 +47,10 @@ support classification with authority, without spawning drops or simulation.
 mutation. `block_store.rs` separates read-only machine recognition (`BlockRead`)
 from physical mutation (`BlockStore`). Shape/stat/capability queries and machine
 validation use the read contract; firing and accounting require the extension.
+
+`view/` exposes bounded scene queries over authority or a streamed replica.
+`item_presentation.rs`, `calendar_view.rs`, and terrain queries retain shared
+read rules. `standing.rs` preserves position rescue order with explicit column
+preparation: authority can load a column, while replica prediction reads only
+resident terrain. `terrain/remap.rs` remaps resident block identities by name;
+authority separately reconciles its gates, ledgers, and generator bindings.

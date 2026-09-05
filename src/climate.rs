@@ -57,3 +57,9 @@ pub(crate) fn surface_hash(seed: u32, salt: u32, pos: SurfacePos) -> u32 {
         h = h.wrapping_mul(0x85eb_ca6b);
         h ^ (h >> 13)
 }
+
+/// Seam-safe radial sampling shared by deposit observations and density stages.
+pub(crate) fn radial_noise(noise: &Perlin, pos: SurfacePos, y: f64, scale: f64, offset: [f64; 3]) -> f32 {
+        let p = surface_to_unit(pos.center()) * ((PLANET_RADIUS + y) / scale);
+        noise.get([p.x + offset[0], p.y + offset[1], p.z + offset[2]]) as f32
+}

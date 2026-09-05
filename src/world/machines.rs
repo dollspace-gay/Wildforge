@@ -312,21 +312,7 @@ impl World {
     /// has `pos` as a module-slot cell. The O(1) `edit_region` test gates
     /// every candidate before its (more expensive) shape re-match.
     fn slot_of_instance_at(&self, pos: BlockPos) -> Option<(BlockPos, &'static str)> {
-        for (anchor, entity) in &self.block_entities {
-            let BlockEntity::Multiblock(m) = entity else {
-                continue;
-            };
-            let extent = m.kind.edit_region(self, *anchor);
-            if !pos_within_extent(self, pos, *anchor, extent) {
-                continue;
-            }
-            if let Some(matched) = m.kind.validate(self, *anchor)
-                && let Some(category) = matched.slots.get(&pos)
-            {
-                return Some((*anchor, *category));
-            }
-        }
-        None
+        slot_of_instance_at(self, pos)
     }
 
     /// The module category installed at `pos`, if `pos` is a slot cell of
@@ -574,11 +560,7 @@ impl World {
     /// place an item despawned; the finite ledger intentionally remembers
     /// only a bounded 256-block recovery region.
     pub fn can_sift_salvage_at(&self, pos: BlockPos) -> bool {
-        let block = self.reg.block(self.get_block_at(pos));
-        block.brush.is_none()
-            && block.interaction.is_none()
-            && block.hardness.is_some()
-            && block.material_class == crate::registry::MaterialClass::TransformativeFinite
+        super::TerrainRead::can_sift_salvage_at(self, pos)
     }
 
     /// Recover one usable item at the primitive 75% yield.
@@ -665,6 +647,25 @@ impl World {
     }
 
     // ---------------- wildlife ----------------
+}
+
+/// Locate a registered machine slot without exposing any mutation operation.
+pub(super) fn slot_of_instance_at<B: BlockRead>(store: &B, pos: B::Pos) -> Option<(B::Pos, &'static str)> {
+        for (anchor, entity) in store.block_entities() {
+            let BlockEntity::Multiblock(m) = entity else {
+                continue;
+            };
+            let extent = m.kind.edit_region(store, *anchor);
+            if !pos_within_extent(store, pos, *anchor, extent) {
+                continue;
+            }
+            if let Some(matched) = m.kind.validate(store, *anchor)
+                && let Some(category) = matched.slots.get(&pos)
+            {
+                return Some((*anchor, *category));
+            }
+        }
+        None
 }
 
 /// Shared machine-recognition queries for authority and read-only scenes.
@@ -1004,14 +1005,7 @@ impl BlockRead for World {
     }
 
     fn cell_delta(&self, from: BlockPos, to: BlockPos) -> Option<(i32, i32, i32)> {
-        if from.face() != to.face() {
-            return None;
-        }
-        Some((
-            i32::from(to.u()) - i32::from(from.u()),
-            i32::from(to.y()) - i32::from(from.y()),
-            i32::from(to.v()) - i32::from(from.v()),
-        ))
+        super::block_store::planetary_delta(from, to)
     }
 
     fn block_entities(&self) -> &HashMap<BlockPos, BlockEntity> {

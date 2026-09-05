@@ -1,5 +1,7 @@
 //! UI layout, drawing, and screen composition.
 
+use crate::world::TerrainRead;
+
 use super::widgets;
 use crate::atlas;
 use crate::identity;
@@ -133,7 +135,7 @@ impl Game {
         let distance = local_sight.length();
         if !(1.0..=64.0).contains(&distance)
             || raycast::raycast_at(
-                &self.server.world,
+                &self.runtime.view(),
                 self.player.eye(),
                 local_sight,
                 (distance - 0.3).max(0.0),
@@ -209,7 +211,7 @@ impl Game {
             ui.text_shadow(sx - tw * 0.5, sy - t * 14.0, scale, &text, color);
         }
         let reg = &self.content.reg;
-        for m in self.server.world.mobs() {
+        for m in self.runtime.view().mobs() {
             let Some(def) = reg.animals.get(m.species) else {
                 continue;
             };
@@ -226,7 +228,7 @@ impl Game {
             let distance = local_sight.length();
             if !(1.0..=24.0).contains(&distance)
                 || raycast::raycast_at(
-                    &self.server.world,
+                    &self.runtime.view(),
                     self.player.eye(),
                     local_sight,
                     (distance - 0.3).max(0.0),
@@ -1475,7 +1477,7 @@ impl Game {
                     let at = crate::planet::EntityPos::new(
                         surface.face(),
                         translated.u(),
-                        self.server.world.surface_height_at(surface) as f32 + 1.0,
+                        self.runtime.view().surface_height_at(surface) as f32 + 1.0,
                         translated.v(),
                     )
                     .expect("demo player position is canonical");
@@ -1484,10 +1486,7 @@ impl Game {
             }
             // Signs and waystones wear their words in the world,
             // nameplate-style (occluded, distance-gated).
-            let sign_texts: Vec<(crate::planet::EntityPos, [String; 3])> = self
-                .server
-                .world
-                .sign_texts()
+            let sign_texts: Vec<(crate::planet::EntityPos, [String; 3])> = self.runtime.view().sign_texts()
                 .map(|(pos, st)| (pos.entity_center(), st.lines.clone()))
                 .collect();
             for (at, lines) in sign_texts {
@@ -1664,7 +1663,7 @@ impl Game {
                 // The forge rides the bloomery screen: same slots,
                 // its own shell check and firing clock.
                 let forge = matches!(
-                    self.server.world.block_entity_at(&pos),
+                    self.runtime.view().block_entity_at(&pos),
                     Some(world::BlockEntity::Multiblock(b))
                         if b.kind.handler(&self.content.reg)
                             == Some(crate::machines::MachineHandler::Forge)
@@ -1674,11 +1673,11 @@ impl Game {
                 ui.text_shadow((w - tw) / 2.0, h / 2.0 - 300.0, 3.0, title, [1.0; 4]);
                 let (slots, lit, progress, breached) = {
                     let breached = if forge {
-                        self.server.world.check_forge_at(pos).is_none()
+                        self.runtime.view().check_forge_at(pos).is_none()
                     } else {
-                        self.server.world.check_bloomery_at(pos).is_none()
+                        self.runtime.view().check_bloomery_at(pos).is_none()
                     };
-                    match self.server.world.block_entity_at(&pos) {
+                    match self.runtime.view().block_entity_at(&pos) {
                         Some(world::BlockEntity::Multiblock(b)) => {
                             let mut v = [None; 8];
                             v[..4].copy_from_slice(&b.charge);
@@ -1741,7 +1740,7 @@ impl Game {
             }
             Screen::Kiln(pos) => {
                 ui.rect(0.0, 0.0, w, h, [0.0, 0.0, 0.0, 0.55]);
-                let title = if self.server.world.check_glassworks_at(pos).is_some() {
+                let title = if self.runtime.view().check_glassworks_at(pos).is_some() {
                     "GLASSWORKS"
                 } else {
                     "GLASS KILN"
@@ -1749,8 +1748,8 @@ impl Game {
                 let tw = UiBatch::text_width(3.0, title);
                 ui.text_shadow((w - tw) / 2.0, h / 2.0 - 310.0, 3.0, title, [1.0; 4]);
                 let (slots, lit, progress, breached) = {
-                    let breached = self.server.world.check_kiln_at(pos).is_none();
-                    match self.server.world.block_entity_at(&pos) {
+                    let breached = self.runtime.view().check_kiln_at(pos).is_none();
+                    match self.runtime.view().block_entity_at(&pos) {
                         Some(world::BlockEntity::Multiblock(k)) => {
                             let mut v = [None; 9];
                             v[..4].copy_from_slice(&k.charge);
@@ -1806,10 +1805,7 @@ impl Game {
             Screen::Workbench(pos) => {
                 ui.rect(0.0, 0.0, w, h, [0.0, 0.0, 0.0, 0.55]);
                 let reg = &self.content.reg;
-                let machine = self
-                    .server
-                    .world
-                    .block_entity_at(&pos)
+                let machine = self.runtime.view().block_entity_at(&pos)
                     .and_then(|e| match e {
                         world::BlockEntity::Multiblock(m) => {
                             reg.machine(m.kind).map(|def| def.label.clone())
@@ -1821,10 +1817,7 @@ impl Game {
                     .to_uppercase();
                 let tw = UiBatch::text_width(3.0, &title);
                 ui.text_shadow((w - tw) / 2.0, h / 2.0 - 310.0, 3.0, &title, [1.0; 4]);
-                let recipes = self
-                    .server
-                    .world
-                    .block_entity_at(&pos)
+                let recipes = self.runtime.view().block_entity_at(&pos)
                     .and_then(|e| match e {
                         world::BlockEntity::Multiblock(m) => Some(reg.machine_recipes_for(m.kind)),
                         _ => None,
@@ -2070,7 +2063,7 @@ impl Game {
                 ui.rect(0.0, 0.0, w, h, [0.0, 0.0, 0.0, 0.55]);
                 let mine = self.multiplayer.remote.is_none() && self.stall_is_mine(pos);
                 let (slots, owner_name, remote_mine) = {
-                    match self.server.world.block_entity_at(&pos) {
+                    match self.runtime.view().block_entity_at(&pos) {
                         Some(world::BlockEntity::Stall(st)) => {
                             let mut v: Vec<Option<ItemStack>> = st.goods.to_vec();
                             v.push(st.price);
@@ -2120,10 +2113,7 @@ impl Game {
                 let title = "SADDLEBAGS";
                 let tw = UiBatch::text_width(3.0, title);
                 ui.text_shadow((w - tw) / 2.0, h / 2.0 - 300.0, 3.0, title, [1.0; 4]);
-                let slots: [Option<ItemStack>; 12] = self
-                    .server
-                    .world
-                    .mob_by_id(id)
+                let slots: [Option<ItemStack>; 12] = self.runtime.view().mob_by_id(id)
                     .and_then(|m| m.cargo.as_deref().copied())
                     .unwrap_or_default();
                 for (i, s) in slots.iter().enumerate() {
@@ -2140,7 +2130,7 @@ impl Game {
                 let title = "CHEST";
                 let tw = UiBatch::text_width(3.0, title);
                 ui.text_shadow((w - tw) / 2.0, h / 2.0 - 340.0, 3.0, title, [1.0; 4]);
-                let slots = match self.server.world.block_entity_at(&pos) {
+                let slots = match self.runtime.view().block_entity_at(&pos) {
                     Some(world::BlockEntity::Chest(c)) => c.slots,
                     _ => [None; world::CHEST_SLOTS],
                 };
@@ -2169,10 +2159,7 @@ impl Game {
                     [0.7, 0.85, 0.65, 1.0],
                 );
                 // The stone states the season's appetite plainly.
-                let (_, want_line) = self
-                    .server
-                    .world
-                    .season_want_at_surface(self.player.pos.surface());
+                let (_, want_line) = self.runtime.view().season_want_at_surface(self.player.pos.surface());
                 let want_line = want_line.to_uppercase();
                 let ww = UiBatch::text_width(1.5, &want_line);
                 ui.text_shadow(
@@ -2182,7 +2169,7 @@ impl Game {
                     &want_line,
                     [0.85, 0.8, 0.55, 1.0],
                 );
-                let slots = match self.server.world.block_entity_at(&pos) {
+                let slots = match self.runtime.view().block_entity_at(&pos) {
                     Some(world::BlockEntity::Offering(o)) => o.slots,
                     _ => [None; 3],
                 };
@@ -2248,10 +2235,7 @@ impl Game {
             Screen::Dialog { npc, node_id, .. } => {
                 ui.rect(0.0, 0.0, w, h, [0.0, 0.0, 0.0, 0.55]);
                 let mob_id = npc;
-                let name = self
-                    .server
-                    .world
-                    .npc_by_mob(mob_id)
+                let name = self.runtime.view().npc_by_mob(mob_id)
                     .and_then(|n| self.content.reg.npcs.get(n.def))
                     .map(|d| d.label.clone())
                     .unwrap_or_else(|| "…".to_string());

@@ -118,7 +118,7 @@ impl Generator {
                 // the threshold climbs out of reach — granite country
                 // is a REGION you travel to (economy plan, leg 1),
                 // not a backyard given.
-                let prov = Self::radial_noise_at(&self.granite3d, surface, 77.7, 1_400.0, [0.0; 3]);
+                let prov = Self::radial_noise_at(&self.geography.granite3d, surface, 77.7, 1_400.0, [0.0; 3]);
                 let prov_pen = (0.44 - prov).max(0.0) * 1.8;
                 for iy in 0..NY {
                     let y = (iy * 8) as f64;
@@ -127,7 +127,7 @@ impl Generator {
                     if let Some(atlas) = &self.atlas {
                         lat_g[i] = atlas.intrusion_margin(surface.center(), y as f32);
                     } else {
-                        let g = Self::radial_noise_at(&self.granite3d, surface, y, 230.0, [0.0; 3]);
+                        let g = Self::radial_noise_at(&self.geography.granite3d, surface, y, 230.0, [0.0; 3]);
                         // Legacy fixture path; production intrusions come
                         // exclusively from the persisted geological manifest.
                         let thr = 0.55 + prov_pen + y as f32 * 0.0012;

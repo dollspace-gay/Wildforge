@@ -42,9 +42,7 @@ impl Game {
             &self.content.reg.tex_names,
         );
         let season = if self.in_world {
-            self.server
-                .world
-                .season_at_surface(self.player.pos.surface())
+            self.runtime.view().season_at_surface(self.player.pos.surface())
         } else {
             1
         };
@@ -71,7 +69,7 @@ impl Game {
             ));
         }
         if changed && self.in_world {
-            self.server.world.mark_all_chunks_dirty();
+            self.runtime.mark_all_chunks_dirty();
         }
         self.config.save();
     }
@@ -117,9 +115,7 @@ impl Game {
             &new_reg.tex_names,
         );
         let season = if self.in_world {
-            self.server
-                .world
-                .season_at_surface(self.player.pos.surface())
+            self.runtime.view().season_at_surface(self.player.pos.surface())
         } else {
             1
         };
@@ -151,16 +147,7 @@ impl Game {
             *slot = fix_stack(&new_reg, *slot);
         }
         self.ui_state.held_stack = fix_stack(&new_reg, self.ui_state.held_stack);
-        self.server
-            .world
-            .loose_items_mut()
-            .retain_mut(|e| match remap_item(&new_reg, e.item) {
-                Some(item) => {
-                    e.item = item;
-                    true
-                }
-                None => false,
-            });
+        self.runtime.remap_loose_items(&old, &new_reg);
         self.interaction.breaking = None;
 
         self.content.reg = new_reg.clone();
@@ -173,21 +160,7 @@ impl Game {
                 &self.content.tile_variants,
             ));
         }
-        self.server.world.reg = new_reg.clone();
-        self.server.world.remap_from(&old);
-        self.server.world.generator = self.server.world.planet_atlas().map_or_else(
-            || worldgen::Generator::new(self.server.world.seed, &new_reg),
-            |atlas| worldgen::Generator::with_atlas(self.server.world.seed, &new_reg, atlas),
-        );
-        if let (Some(atlas), Some(ledger)) = (
-            self.server.world.planet_atlas(),
-            &mut self.server.world.material_ledger,
-        ) && (ledger.reconcile_mod_manifests(&atlas, &new_reg)
-            | ledger.reconcile_saved_definitions(&new_reg))
-            && let Err(error) = ledger.save()
-        {
-            eprintln!("materials: could not persist hot-reload manifest: {error}");
-        }
+        self.runtime.replace_registry(Arc::clone(&new_reg));
         self.content.scripts.install_prepared(prepared_scripts);
 
         eprintln!(

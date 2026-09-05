@@ -17,6 +17,24 @@ pub trait TerrainRead {
     fn is_hidden(&self, position: BlockPos) -> bool;
     fn hidden_in_chunk(&self, position: ChunkPos) -> Vec<BlockPos>;
 
+    /// Dry head/feet cells with visible solid ground below.
+    fn standable_at(&self, surface: crate::planet::SurfacePos, y: i32) -> bool {
+
+        // Fluid is not solid, so a seabed column used to read as
+        // "standable" and players were dropped on the ocean floor.
+        // Somewhere to stand means dry air for the body, too.
+        let clear = |b: BlockId| !self.registry().is_solid(b) && !self.registry().is_fluid(b);
+        let at = |height: i32| {
+            crate::planet::BlockPos::new(surface.face(), surface.u(), height as u8, surface.v())
+                .expect("standable height is inside the vertical shell")
+        };
+        let stands = |height: i32| {
+            let pos = at(height);
+            self.registry().is_solid(self.get_block_at(pos)) && !self.is_hidden(pos)
+        };
+        stands(y - 1) && clear(self.get_block_at(at(y))) && clear(self.get_block_at(at(y + 1)))
+    }
+
     fn has_chunk(&self, position: ChunkPos) -> bool {
         self.chunk(position).is_some()
     }
@@ -36,9 +54,25 @@ pub trait TerrainRead {
         self.chunk(position.chunk()).map_or(0, |chunk| chunk.water_salt(x, y, z))
     }
 
+    fn water_mass_at(&self, position: BlockPos) -> Option<crate::planet_atlas::ReservoirMass> {
+        let volume = self.registry().water_volume(self.get_block_at(position))?;
+        Some(crate::planet_atlas::ReservoirMass {
+            water_hu: u64::from(volume) * crate::planet_atlas::HYDRO_UNITS_PER_VISIBLE_LEVEL,
+            salt_mass: u64::from(self.get_water_salt_at(position)),
+        })
+    }
+
     fn get_soil_salinity_at(&self, position: BlockPos) -> u8 {
         let (x, y, z) = position.local();
         self.chunk(position.chunk()).map_or(0, |chunk| chunk.soil_salinity(x, y, z))
+    }
+
+    fn can_sift_salvage_at(&self, position: BlockPos) -> bool {
+        let block = self.registry().block(self.get_block_at(position));
+        block.brush.is_none()
+            && block.interaction.is_none()
+            && block.hardness.is_some()
+            && block.material_class == crate::registry::MaterialClass::TransformativeFinite
     }
 
     fn fertility_at_pos(&self, position: BlockPos) -> u8 {

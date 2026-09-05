@@ -348,21 +348,21 @@ impl Game {
             }
             Screen::Chest(pos) => (0..27)
                 .find(|&i| self.hit(self.chest_slot_rect(i)))
-                .and_then(|i| match self.server.world.block_entity_at(&pos) {
+                .and_then(|i| match self.runtime.view().block_entity_at(&pos) {
                     Some(world::BlockEntity::Chest(c)) => c.slots[i],
                     _ => None,
                 })
                 .or_else(inv),
             Screen::Furnace(pos) => (0..3)
                 .find(|&i| self.hit(self.furnace_slot_rect(i)))
-                .and_then(|i| match self.server.world.block_entity_at(&pos) {
+                .and_then(|i| match self.runtime.view().block_entity_at(&pos) {
                     Some(world::BlockEntity::Furnace(f)) => [f.input, f.fuel, f.output][i],
                     _ => None,
                 })
                 .or_else(inv),
             Screen::Offering(pos) => (0..3)
                 .find(|&i| self.hit(self.offering_slot_rect(i)))
-                .and_then(|i| match self.server.world.block_entity_at(&pos) {
+                .and_then(|i| match self.runtime.view().block_entity_at(&pos) {
                     Some(world::BlockEntity::Offering(o)) => o.slots[i],
                     _ => None,
                 })
@@ -370,9 +370,7 @@ impl Game {
             Screen::MobCargo(id) => (0..9)
                 .find(|&i| self.hit(self.mob_cargo_slot_rect(i)))
                 .and_then(|i| {
-                    self.server
-                        .world
-                        .mob_by_id(id)
+                    self.runtime.view().mob_by_id(id)
                         .and_then(|m| m.cargo.as_ref().and_then(|c| c[i]))
                 })
                 .or_else(inv),
@@ -392,7 +390,7 @@ impl Game {
         let Some(stack) = self.hovered_item() else {
             return;
         };
-        let current = self.server.world.inspectable_item_current(stack.arcane_id);
+        let current = self.runtime.view().inspectable_item_current(stack.arcane_id);
         let mut lines = item_tooltip_lines_with_current(&self.content.reg, stack, current);
         let has_lens = self
             .inventory
@@ -409,13 +407,11 @@ impl Game {
                     .is_some_and(|definition| definition.kind == "tuning_lens")
             });
         lines.extend(
-            self.server
-                .world
-                .preparation_tooltip(stack, has_lens)
+            self.runtime.view().preparation_tooltip(stack, has_lens)
                 .into_iter()
                 .map(|line| (line, EFFECT)),
         );
-        let implement = self.server.world.implement_tooltip(stack, has_lens);
+        let implement = self.runtime.view().implement_tooltip(stack, has_lens);
         if !implement.is_empty() {
             // The implement resolver knows its actual component-derived
             // capacity; remove the generic content-manifest reading so the

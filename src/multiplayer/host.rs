@@ -4050,174 +4050,19 @@ impl HostSession {
         right: bool,
     ) {
         let reg = server.world.reg.clone();
-        let bloomery_chain = reg.bloomery.first().cloned();
-        let kiln_base = reg.kiln_base;
-        let kiln_powders: Vec<crate::registry::ItemId> =
-            reg.kiln.iter().map(|recipe| recipe.powder).collect();
-        if self
-            .guests
-            .get(&id)
-            .is_none_or(|g| g.container != Some(pos))
-        {
-            return;
-        }
-        let Some(entity) = server.world.block_entity_mut_at(&pos) else {
+        let Some(guest) = self.guests.get(&id).filter(|guest| guest.container == Some(pos)) else {
             return;
         };
-        let mut held = self.guests.get(&id).and_then(|guest| guest.cursor);
-        match entity {
-            // Depots are deposit-only through the interaction path.
-            BlockEntity::Depot(_) => return,
-            BlockEntity::Multiblock(bl)
-                if bl.kind.handler(&reg) == Some(MachineHandler::Bloomery) =>
-            {
-                // Sealed while firing; charge takes ore-chain items,
-                // the bank takes its fuel. Taking out is always fine.
-                if !bl.lit && slot < 8 {
-                    let want = bloomery_chain
-                        .map(|chain| if slot < 4 { chain.charge } else { chain.fuel });
-                    let s = if slot < 4 {
-                        &mut bl.charge[slot]
-                    } else {
-                        &mut bl.fuel[slot - 4]
-                    };
-                    if held.is_none() || held.map(|h| Some(h.item)) == Some(want) {
-                        let (ns, nh) = click_stack(&reg, *s, held, right);
-                        *s = ns;
-                        held = nh;
-                    }
-                }
-            }
-            BlockEntity::Multiblock(kl) if kl.kind.handler(&reg) == Some(MachineHandler::Kiln) => {
-                // Sealed while firing. Sand slots 0-3, powder 4, fuel
-                // 5-8; puts validate against the kiln tables.
-                if !kl.lit && slot < 9 {
-                    let ok_put = |it: crate::registry::ItemId| match slot {
-                        0..=3 => kiln_base.map(|(sand, _, _)| sand) == Some(it),
-                        4 => kiln_powders.contains(&it),
-                        _ => kiln_base.map(|(_, fuel, _)| fuel) == Some(it),
-                    };
-                    let s = match slot {
-                        0..=3 => &mut kl.charge[slot],
-                        4 => &mut kl.reagent,
-                        _ => &mut kl.fuel[slot - 5],
-                    };
-                    if held.is_none() || held.map(|h| ok_put(h.item)) == Some(true) {
-                        let (ns, nh) = click_stack(&reg, *s, held, right);
-                        *s = ns;
-                        held = nh;
-                    }
-                }
-            }
-            BlockEntity::Multiblock(fo) if fo.kind.handler(&reg) == Some(MachineHandler::Forge) => {
-                // Sealed while firing; charge takes anything with a
-                // smelt, the bank takes anything that burns.
-                if !fo.lit && slot < 8 {
-                    let ok_put = |it: crate::registry::ItemId| {
-                        if slot < 4 {
-                            reg.smelts.iter().any(|sm| sm.input.matches(it))
-                                || reg.forge_salvage.iter().any(|salvage| salvage.input == it)
-                                || crate::materials::is_reclaimable_stock(&reg, it)
-                        } else {
-                            reg.fuel_value(it).is_some()
-                        }
-                    };
-                    let s = if slot < 4 {
-                        &mut fo.charge[slot]
-                    } else {
-                        &mut fo.fuel[slot - 4]
-                    };
-                    if held.is_none() || held.map(|h| ok_put(h.item)) == Some(true) {
-                        let (ns, nh) = click_stack(&reg, *s, held, right);
-                        *s = ns;
-                        held = nh;
-                    }
-                }
-            }
-            BlockEntity::Stall(st) => {
-                // Only the owner rearranges a stall (goods 0-5,
-                // price 6, till 7-12 take-only-ish is fine: owner).
-                let owner = self
-                    .guests
-                    .get(&id)
-                    .is_some_and(|g| g.player_id.0 == st.owner);
-                if owner {
-                    let sref = match slot {
-                        0..=5 => Some(&mut st.goods[slot]),
-                        6 => Some(&mut st.price),
-                        7..=12 => Some(&mut st.till[slot - 7]),
-                        _ => None,
-                    };
-                    if let Some(sref) = sref {
-                        let (ns, nh) = click_stack(&reg, *sref, held, right);
-                        *sref = ns;
-                        held = nh;
-                    }
-                }
-            }
-            BlockEntity::Clamp(_)
-            | BlockEntity::Anvil(_)
-            | BlockEntity::Sign(_)
-            | BlockEntity::Smoker(_)
-            | BlockEntity::Steam(_)
-            | BlockEntity::Multiblock(_)
-            | BlockEntity::SurveyFolio(_)
-            | BlockEntity::DiscoveryApparatus(_)
-            | BlockEntity::BindingFrame(_)
-            | BlockEntity::ChargeVessel(_)
-            | BlockEntity::Switch(_) => {}
-            BlockEntity::Chest(c) => {
-                if slot < c.slots.len() {
-                    let (ns, nh) = click_stack(&reg, c.slots[slot], held, right);
-                    c.slots[slot] = ns;
-                    held = nh;
-                }
-            }
-            BlockEntity::Offering(o) => {
-                if slot < o.slots.len() {
-                    let (ns, nh) = click_stack(&reg, o.slots[slot], held, right);
-                    o.slots[slot] = ns;
-                    held = nh;
-                }
-            }
-            BlockEntity::Furnace(f) => match slot {
-                0 | 1 => {
-                    let cur = if slot == 0 { f.input } else { f.fuel };
-                    let (ns, nh) = click_stack(&reg, cur, held, right);
-                    if slot == 0 {
-                        if f.input.map(|s| s.item) != ns.map(|s| s.item) {
-                            f.progress = 0.0;
-                        }
-                        f.input = ns;
-                    } else {
-                        f.fuel = ns;
-                    }
-                    held = nh;
-                }
-                _ => {
-                    // Output: take-only, merging into the cursor.
-                    if let Some(out) = f.output {
-                        match held {
-                            None => {
-                                held = Some(out);
-                                f.output = None;
-                            }
-                            Some(h)
-                                if h.can_merge(&reg, &out)
-                                    && h.count + out.count <= reg.item(h.item).max_stack =>
-                            {
-                                held = Some(ItemStack {
-                                    count: h.count + out.count,
-                                    ..h
-                                });
-                                f.output = None;
-                            }
-                            _ => {}
-                        }
-                    }
-                }
-            },
-        }
+        let actor = guest.player_id.0;
+        let mut held = guest.cursor;
+        let Some(entity) = server.world.block_entity_mut_at(&pos) else { return; };
+        let result = crate::player_ops::container::click(
+            &reg, entity, &mut held,
+            crate::player_ops::container::Click { slot, right, actor: Some(actor) },
+        );
+        // Depots retain their deposit-only request path. Other rejected clicks
+        // still receive the unchanged cursor/container echo, as before.
+        if result == Err(crate::player_ops::container::Rejected::DepositOnly) { return; }
         let snap = held.map(|s| StackSnap {
             item: s.item.0,
             count: s.count,

@@ -1,5 +1,7 @@
 //! Player interaction, combat, stations, and script-driven actions.
 
+use crate::world::TerrainRead;
+
 use crate::audio::Sfx;
 use crate::identity;
 use crate::net;
@@ -68,14 +70,12 @@ impl Game {
                     .pos
                     .block()
                     .ok_or_else(|| "Your position is outside the world.".to_string())?;
-                self.server
-                    .world
-                    .bind_discovery_stack_at(at, &mut stack)
+                self.runtime.local_mut().world.bind_discovery_stack_at(at, &mut stack)
                     .map_err(|error| error.to_string())?;
                 self.inventory.slots[index] = Some(stack);
                 Ok(stack.arcane_id)
             }
-            net::RecordHolderSnap::Folio { pos } => match self.server.world.block_entity_at(&pos) {
+            net::RecordHolderSnap::Folio { pos } => match self.runtime.view().block_entity_at(&pos) {
                 Some(world::BlockEntity::SurveyFolio(folio)) if folio.object_id != 0 => {
                     Ok(folio.object_id)
                 }
@@ -118,7 +118,7 @@ impl Game {
         let writing_valid = self
             .content
             .reg
-            .block(self.server.world.get_block_at(writing_pos))
+            .block(self.runtime.view().get_block_at(writing_pos))
             .discovery_fixture
             .as_ref()
             .is_some_and(|fixture| fixture.kind == "writing_surface");
@@ -140,7 +140,7 @@ impl Game {
                 return;
             }
         };
-        match self.server.world.copy_discovery_record(
+        match self.runtime.local_mut().world.copy_discovery_record(
             source_id,
             record_id,
             destination_id,
@@ -152,7 +152,7 @@ impl Game {
                 } else {
                     "Copied the signed observation with its location withheld.".into()
                 });
-                if let Err(error) = self.server.world.save_discovery() {
+                if let Err(error) = self.runtime.local_mut().world.save_discovery() {
                     self.toast(format!("The copied record could not be saved: {error}"));
                 }
             }
@@ -185,7 +185,7 @@ impl Game {
                 return;
             }
         };
-        match self.server.world.discovery_summaries(object_id, true) {
+        match self.runtime.local().world.discovery_summaries(object_id, true) {
             Ok(records) => {
                 self.ui_state.discovery_records = records;
                 self.ui_state.discovery_capacity = match destination {
@@ -218,21 +218,18 @@ impl Game {
         let Some(at) = self.player.pos.block() else {
             return;
         };
-        if let Some(text) = self.server.world.discovery_artifact_text(&mut stack, at) {
+        if let Some(text) = self.runtime.local_mut().world.discovery_artifact_text(&mut stack, at) {
             self.inventory.slots[slot] = Some(stack);
             self.toast(text);
             self.sfx(Sfx::Click);
             return;
         }
-        if self
-            .server
-            .world
-            .bind_discovery_stack_at(at, &mut stack)
+        if self.runtime.local_mut().world.bind_discovery_stack_at(at, &mut stack)
             .is_ok()
             && stack.arcane_id != 0
         {
             self.inventory.slots[slot] = Some(stack);
-            match self.server.world.discovery_summaries(stack.arcane_id, true) {
+            match self.runtime.local().world.discovery_summaries(stack.arcane_id, true) {
                 Ok(records) if records.is_empty() => {
                     self.open_discovery_catalogue(
                         net::RecordHolderSnap::Inventory { slot: slot as u8 },
@@ -373,17 +370,17 @@ impl Game {
             return;
         }
         let mut ledger = self.inventory.slots[ledger_slot].expect("located ledger");
-        if let Err(error) = self.server.world.bind_discovery_stack_at(at, &mut ledger) {
+        if let Err(error) = self.runtime.local_mut().world.bind_discovery_stack_at(at, &mut ledger) {
             self.toast(error.to_string());
             return;
         }
         self.inventory.slots[ledger_slot] = Some(ledger);
         let calibration = calibration_slot
             .and_then(|slot| self.inventory.slots[slot])
-            .and_then(|stack| self.server.world.calibration_grade_for(stack))
+            .and_then(|stack| self.runtime.local().world.calibration_grade_for(stack))
             .unwrap_or(crate::discovery::CalibrationGrade::Field);
         let player_id = identity::local_player_id(
-            &self.server.world.save_dir_for_saving(),
+            &self.runtime.local().world.save_dir_for_saving(),
             self.identity.device_id(),
         )
         .unwrap_or(identity::PlayerId([0; 16]));
@@ -391,7 +388,7 @@ impl Game {
             DiscoveryAim::Region(pos) => world::ObservationTarget::Region(pos),
             DiscoveryAim::Block(pos) => world::ObservationTarget::Block(pos),
         };
-        match self.server.world.record_observation(
+        match self.runtime.local_mut().world.record_observation(
             ledger.arcane_id,
             (player_id, &self.config.display_name),
             target,
@@ -400,7 +397,7 @@ impl Game {
             None,
         ) {
             Ok(record) => {
-                let spent = self.server.world.wear_tuning_lens_at(
+                let spent = self.runtime.local_mut().world.wear_tuning_lens_at(
                     at,
                     &mut self.inventory,
                     self.input.hotbar_sel,
@@ -409,7 +406,7 @@ impl Game {
                 if spent {
                     self.toast("The Wellglass clouds; the fitted frame and plate remain.".into());
                 }
-                if let Err(error) = self.server.world.save_discovery() {
+                if let Err(error) = self.runtime.local_mut().world.save_discovery() {
                     self.toast(format!("The ledger could not be saved: {error}"));
                 }
             }
@@ -460,12 +457,12 @@ impl Game {
             return;
         };
         let mut ledger = self.inventory.slots[ledger_slot].expect("located ledger");
-        if let Err(error) = self.server.world.bind_discovery_stack_at(at, &mut ledger) {
+        if let Err(error) = self.runtime.local_mut().world.bind_discovery_stack_at(at, &mut ledger) {
             self.toast(error.to_string());
             return;
         }
         self.inventory.slots[ledger_slot] = Some(ledger);
-        let sample = match self.server.world.experiment_sample_at(pos, kind) {
+        let sample = match self.runtime.local().world.experiment_sample_at(pos, kind) {
             Ok(sample) => sample,
             Err(error) => {
                 self.toast(error);
@@ -474,14 +471,14 @@ impl Game {
         };
         let calibration = calibration_slot
             .and_then(|slot| self.inventory.slots[slot])
-            .and_then(|stack| self.server.world.calibration_grade_for(stack))
+            .and_then(|stack| self.runtime.local().world.calibration_grade_for(stack))
             .unwrap_or(crate::discovery::CalibrationGrade::Field);
         let player_id = identity::local_player_id(
-            &self.server.world.save_dir_for_saving(),
+            &self.runtime.local().world.save_dir_for_saving(),
             self.identity.device_id(),
         )
         .unwrap_or(identity::PlayerId([0; 16]));
-        match self.server.world.record_observation(
+        match self.runtime.local_mut().world.record_observation(
             ledger.arcane_id,
             (player_id, &self.config.display_name),
             world::ObservationTarget::Item(sample, pos),
@@ -490,7 +487,7 @@ impl Game {
             Some(kind),
         ) {
             Ok(record) => {
-                let spent = self.server.world.wear_tuning_lens_at(
+                let spent = self.runtime.local_mut().world.wear_tuning_lens_at(
                     at,
                     &mut self.inventory,
                     self.input.hotbar_sel,
@@ -499,7 +496,7 @@ impl Game {
                 if spent {
                     self.toast("The Wellglass clouds; the fitted frame and plate remain.".into());
                 }
-                if let Err(error) = self.server.world.save_discovery() {
+                if let Err(error) = self.runtime.local_mut().world.save_discovery() {
                     self.toast(format!("The experiment record could not be saved: {error}"));
                 }
             }
@@ -517,14 +514,14 @@ impl Game {
             });
             return;
         }
-        let object_id = match self.server.world.block_entity_at(&pos) {
+        let object_id = match self.runtime.view().block_entity_at(&pos) {
             Some(world::BlockEntity::SurveyFolio(folio)) if folio.object_id != 0 => folio.object_id,
             _ => {
                 self.toast("This folio has no recoverable record identity.".into());
                 return;
             }
         };
-        match self.server.world.discovery_library_index(object_id, true) {
+        match self.runtime.local().world.discovery_library_index(object_id, true) {
             Ok(index) => {
                 self.open_discovery_catalogue(
                     net::RecordHolderSnap::Folio { pos },
@@ -543,10 +540,7 @@ impl Game {
             remote.session.send(&net::C2S::AssembleTuningLens { pos });
             return;
         }
-        match self
-            .server
-            .world
-            .assemble_tuning_lens_at(pos, &mut self.inventory)
+        match self.runtime.local_mut().world.assemble_tuning_lens_at(pos, &mut self.inventory)
         {
             Ok(_) => {
                 self.toast("The Wellglass settles against the Echo Slate plate.".into());
@@ -574,10 +568,7 @@ impl Game {
             });
             return;
         }
-        match self
-            .server
-            .world
-            .exchange_experiment_item_at(pos, &mut self.inventory, slot)
+        match self.runtime.local_mut().world.exchange_experiment_item_at(pos, &mut self.inventory, slot)
         {
             Ok(message) => self.toast(message),
             Err(error) => self.toast(error),
@@ -597,20 +588,17 @@ impl Game {
                 return;
             }
             let player_id = crate::identity::local_player_id(
-                &self.server.world.save_dir_for_saving(),
+                &self.runtime.local().world.save_dir_for_saving(),
                 self.identity.device_id(),
             )
             .unwrap_or(crate::identity::PlayerId([0; 16]));
-            match self.server.world.begin_contextual_ritual(
+            match self.runtime.local_mut().world.begin_contextual_ritual(
                 player_id.0,
                 &self.config.display_name,
                 pos,
             ) {
                 Ok(result) => {
-                    if let Some(cue) = self
-                        .server
-                        .world
-                        .working_cues()
+                    if let Some(cue) = self.runtime.local().world.working_cues()
                         .into_iter()
                         .find(|cue| cue.stable_id == result.stable_id)
                     {
@@ -636,7 +624,7 @@ impl Game {
             });
             return;
         }
-        match self.server.world.operate_binding_frame(
+        match self.runtime.local_mut().world.operate_binding_frame(
             pos,
             &mut self.inventory,
             slot,
@@ -686,7 +674,7 @@ impl Game {
             return;
         }
         let actor = crate::identity::local_player_id(
-            &self.server.world.save_dir_for_saving(),
+            &self.runtime.local().world.save_dir_for_saving(),
             self.identity.device_id(),
         )
         .unwrap_or(crate::identity::PlayerId([0; 16]));
@@ -696,10 +684,7 @@ impl Game {
             expected_revision,
             action,
         };
-        match self
-            .server
-            .world
-            .operate_alchemy(pos, &mut self.inventory, request)
+        match self.runtime.local_mut().world.operate_alchemy(pos, &mut self.inventory, request)
         {
             Ok(result) => {
                 self.interaction
@@ -727,11 +712,11 @@ impl Game {
             return;
         };
         let actor = crate::identity::local_player_id(
-            &self.server.world.save_dir_for_saving(),
+            &self.runtime.local().world.save_dir_for_saving(),
             self.identity.device_id(),
         )
         .unwrap_or(crate::identity::PlayerId([0; 16]));
-        match self.server.world.use_preparation(
+        match self.runtime.local_mut().world.use_preparation(
             actor.0,
             &self.config.display_name,
             actor_pos,
@@ -759,16 +744,12 @@ impl Game {
 
         let held_slot = self.input.hotbar_sel;
         let held = self.inventory.slots[held_slot];
-        let apparatus = self
-            .server
-            .world
-            .alchemy_state()
-            .and_then(|state| state.apparatus.get(&pos))
+        let apparatus = self.runtime.view().alchemy_apparatus_at(pos)
             .cloned();
         let interaction = self
             .content
             .reg
-            .block(self.server.world.get_block_at(pos))
+            .block(self.runtime.view().get_block_at(pos))
             .interaction
             .as_deref();
         let kind = match interaction {
@@ -790,11 +771,7 @@ impl Game {
             .as_ref()
             .and_then(|apparatus| apparatus.batch.as_ref())
         else {
-            if let Some(job) = self
-                .server
-                .world
-                .alchemy_state()
-                .and_then(|state| state.ordinary_jobs.get(&pos))
+            if let Some(job) = self.runtime.view().ordinary_alchemy_job_at(pos)
             {
                 let action = match job.kind {
                     crate::alchemy::OrdinaryProcessKind::FermentAlcohol => {
@@ -1033,24 +1010,7 @@ impl Game {
             _ => definition.process.apparatus(),
         };
         if kind != required_kind {
-            let destination = self
-                .server
-                .world
-                .alchemy_state()
-                .into_iter()
-                .flat_map(|state| state.apparatus.iter())
-                .filter(|(_, apparatus)| {
-                    apparatus.kind == required_kind && apparatus.batch.is_none()
-                })
-                .map(|(candidate, _)| *candidate)
-                .filter(|candidate| {
-                    candidate.face() == pos.face()
-                        && i32::from(candidate.u()).abs_diff(i32::from(pos.u()))
-                            + i32::from(candidate.y()).abs_diff(i32::from(pos.y()))
-                            + i32::from(candidate.v()).abs_diff(i32::from(pos.v()))
-                            <= 4
-                })
-                .min();
+            let destination = self.runtime.view().idle_apparatus_near(pos, required_kind);
             if let Some(destination) = destination {
                 self.perform_alchemy_action(pos, ApparatusAction::TransferMash { destination });
             } else {
@@ -1158,7 +1118,7 @@ impl Game {
                 }
             }
             ProcessStep::Settle | ProcessStep::Distill | ProcessStep::Filter => {
-                let now = (self.server.world.clock.max(0.0) * 20.0).round() as u64;
+                let now = (self.runtime.view().clock().max(0.0) * 20.0).round() as u64;
                 if now < batch.due_tick {
                     let seconds = (batch.due_tick - now).div_ceil(20);
                     self.toast(format!(
@@ -1213,7 +1173,7 @@ impl Game {
             .find(|pos| {
                 self.content
                     .reg
-                    .block(self.server.world.get_block_at(*pos))
+                    .block(self.runtime.view().get_block_at(*pos))
                     .discovery_fixture
                     .as_ref()
                     .is_some_and(|fixture| fixture.kind == "survey_folio")
@@ -1238,22 +1198,19 @@ impl Game {
         let Some(at) = self.player.pos.block() else {
             return;
         };
-        if let Err(error) = self.server.world.bind_discovery_stack_at(at, &mut held) {
+        if let Err(error) = self.runtime.local_mut().world.bind_discovery_stack_at(at, &mut held) {
             self.toast(error.to_string());
             return;
         }
         self.inventory.slots[held_slot] = Some(held);
-        match self.server.world.block_entity_at(&folio_pos) {
+        match self.runtime.view().block_entity_at(&folio_pos) {
             Some(world::BlockEntity::SurveyFolio(folio)) if folio.object_id != 0 => {}
             _ => {
                 self.toast("The adjacent folio has no record identity.".into());
                 return;
             }
         }
-        let held_records = self
-            .server
-            .world
-            .discovery_summaries(held.arcane_id, true)
+        let held_records = self.runtime.local().world.discovery_summaries(held.arcane_id, true)
             .unwrap_or_default();
         self.open_discovery_catalogue(
             source,
@@ -1267,7 +1224,7 @@ impl Game {
     /// The attunement sidecar for the current world (local knowledge —
     /// what this player's feet have actually touched).
     fn attune_path(&self) -> std::path::PathBuf {
-        self.server.world.save_dir_for_saving().join("attuned.tsv")
+        self.runtime.player_sidecar_dir().join("attuned.tsv")
     }
 
     pub(super) fn load_attunements(&mut self) {
@@ -1310,11 +1267,11 @@ impl Game {
     /// Touch a waystone: learn it, then hear where the others stand.
     pub(super) fn read_waystone(&mut self, pos: crate::planet::BlockPos) {
         let surface = pos.surface();
-        let name = match self.server.world.block_entity_at(&pos) {
+        let name = match self.runtime.view().block_entity_at(&pos) {
             Some(world::BlockEntity::Sign(sg)) if !sg.lines[0].is_empty() => sg.lines[0].clone(),
             _ => {
                 let atlas_name =
-                    self.server.world.planet_atlas().and_then(|atlas| {
+                    self.runtime.view().planet_atlas().and_then(|atlas| {
                         atlas.hydrological_name_at(surface).map(ToOwned::to_owned)
                     });
                 let Some(atlas_name) = atlas_name else {
@@ -1382,7 +1339,7 @@ impl Game {
     /// Bedroll: sleep to dawn if it's night and the wild is far enough.
     /// In multiplayer, dawn waits for everyone (the sleep vote).
     pub(super) fn try_sleep(&mut self) {
-        let sun = (self.server.time_of_day * std::f32::consts::TAU).sin();
+        let sun = (self.runtime.time_of_day() * std::f32::consts::TAU).sin();
         if sun > -0.05 {
             self.toast("You can only sleep at night.".to_string());
             return;
@@ -1405,7 +1362,7 @@ impl Game {
             return;
         }
         let reg = self.content.reg.clone();
-        let near_warden = self.server.world.mobs().iter().any(|m| {
+        let near_warden = self.runtime.view().mobs().iter().any(|m| {
             reg.animals.get(m.species).is_some_and(|d| d.hostile)
                 && (m.pos - self.player.pos).length_squared() < 24.0 * 24.0
         });
@@ -1414,14 +1371,14 @@ impl Game {
             return;
         }
         // Time passes fairly: the skipped night still decays ire.
-        let skipped = (1.0 + 0.3 - self.server.time_of_day) % 1.0;
-        if self.server.world.tick_ire(skipped) {
-            let r = self.server.world.accept_offerings();
+        let skipped = (1.0 + 0.3 - self.runtime.time_of_day()) % 1.0;
+        if self.runtime.local_mut().world.tick_ire(skipped) {
+            let r = self.runtime.local_mut().world.accept_offerings();
             if r > 0.0 {
                 self.toast("The wild has accepted your offering.".to_string());
             }
         }
-        self.server.sleep_to_dawn();
+        self.runtime.local_mut().sleep_to_dawn();
         self.survival.spawn_point = self.player.pos;
         if !self.creative {
             self.inventory.wear_tool(&reg, self.input.hotbar_sel);

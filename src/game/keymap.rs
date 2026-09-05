@@ -166,7 +166,7 @@ impl Game {
                     }
                     CameraMode::Orbit => self.camera.mode = CameraMode::First,
                 }
-                if let Err(error) = self.server.world.set_camera(self.camera.mode.key()) {
+                if let Err(error) = self.runtime.local_mut().world.set_camera(self.camera.mode.key()) {
                     eprintln!("camera: could not persist mode: {error}");
                 }
                 self.sfx(Sfx::Click);

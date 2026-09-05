@@ -77,3 +77,11 @@ contains composition state and selected test entry points; it does not supply a
 broad namespace to child modules. Input, navigation, widgets, and presentation
 helpers expose their own contracts. Native proof imports name their actual
 dependencies even though the proof remains attached to the action adapter.
+
+`runtime.rs` selects an authoritative Server or an independent ReplicaWorld.
+Rendering, physics, selection, UI, and script reads receive a bounded WorldView.
+Guest clock/snapshots, cosmetic mob feedback, container prediction, and residency
+bookkeeping do not require a simulation or save-capable World. Local operation
+adapters must handle their guest request path before borrowing authority.
+Player waystone knowledge and KV keep their existing client sidecar directory;
+that path belongs to the graphical runtime, not the replica terrain owner.

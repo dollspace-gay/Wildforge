@@ -24,6 +24,15 @@ pub struct ItemEntity {
     pub arcane_id: u64,
 }
 
+/// Rebind loose-item definitions during atomic content publication. Missing
+/// items retain the existing removal policy; quantities and instance IDs stay.
+pub(crate) fn remap_items(items: &mut Vec<ItemEntity>, old: &Registry, registry: &Registry) {
+    items.retain_mut(|entity| match registry.item_id(&old.item(entity.item).name) {
+        Some(item) => { entity.item = item; true }
+        None => false,
+    });
+}
+
 const SIZE: f32 = 0.25;
 const DESPAWN: f32 = 300.0;
 /// Age before the dropping player can pick it back up.

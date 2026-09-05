@@ -62,3 +62,71 @@ pub(super) fn seasonal_want(season: usize) -> (usize, &'static str) {
         _ => (3, "The wild hungers. Food is welcome."),
     }
 }
+
+/// Atlas-free observed weather, including the existing capture override policy.
+pub(super) fn fallback_weather(
+    temperature_c: f32, weather_override: Option<crate::planet_atlas::LocalWeatherSample>,
+) -> crate::planet_atlas::LocalWeatherSample {
+        if let Some(mut sample) = weather_override {
+            sample.temperature_c = temperature_c;
+            if sample.kind.precipitating()
+                && sample.precipitation == crate::planet_atlas::PrecipitationForm::None
+            {
+                sample.precipitation = if temperature_c <= 0.0 {
+                    crate::planet_atlas::PrecipitationForm::Snow
+                } else {
+                    crate::planet_atlas::PrecipitationForm::Rain
+                };
+            }
+            return sample;
+        }
+        let kind = crate::planet_atlas::LocalWeather::Clear;
+        crate::planet_atlas::LocalWeatherSample {
+            kind,
+            precipitation: if !kind.precipitating() {
+                crate::planet_atlas::PrecipitationForm::None
+            } else if temperature_c <= 0.0 {
+                crate::planet_atlas::PrecipitationForm::Snow
+            } else {
+                crate::planet_atlas::PrecipitationForm::Rain
+            },
+            temperature_c,
+            ..crate::planet_atlas::LocalWeatherSample::default()
+        }
+}
+
+/// Resolve a capture/development weather request; this function moves no water.
+pub(super) fn forced_weather(requested: &str) -> crate::planet_atlas::LocalWeatherSample {
+        let (requested, forced_form) = match requested {
+            "overcast" => (
+                crate::planet_atlas::LocalWeather::Overcast,
+                crate::planet_atlas::PrecipitationForm::None,
+            ),
+            "rain" => (
+                crate::planet_atlas::LocalWeather::Precipitation,
+                crate::planet_atlas::PrecipitationForm::Rain,
+            ),
+            "snow" => (
+                crate::planet_atlas::LocalWeather::Precipitation,
+                crate::planet_atlas::PrecipitationForm::Snow,
+            ),
+            "precip" => (
+                crate::planet_atlas::LocalWeather::Precipitation,
+                crate::planet_atlas::PrecipitationForm::None,
+            ),
+            "storm" => (
+                crate::planet_atlas::LocalWeather::Storm,
+                crate::planet_atlas::PrecipitationForm::None,
+            ),
+            _ => (
+                crate::planet_atlas::LocalWeather::Clear,
+                crate::planet_atlas::PrecipitationForm::None,
+            ),
+        };
+        crate::planet_atlas::LocalWeatherSample {
+            kind: requested,
+            precipitation: forced_form,
+            precipitation_units: u16::from(requested.precipitating()),
+            ..crate::planet_atlas::LocalWeatherSample::default()
+        }
+}

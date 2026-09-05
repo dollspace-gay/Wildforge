@@ -17,3 +17,9 @@ and the ordered Current retirement, material loss, and byproduct effects.
 The graphical adapter keeps its existing tech-KV gate, XP, script callback, and
 prediction policy. `equipment.rs` owns armor/charm slot eligibility and cursor
 exchange; component return remains with the loadout owner.
+
+`container.rs` applies chest/offering/stall, furnace, and recognized machine
+slot transactions to explicit storage and cursor inputs. Transport authorization
+stays in the host adapter; local furnace XP is returned as an effect. Crafting
+shares byproduct inventory publication while only authority retires charged
+inputs and records material losses. Guest prediction has no ledger capability.

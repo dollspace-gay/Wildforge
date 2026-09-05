@@ -1,5 +1,7 @@
 //! Per-frame client update, scene assembly, and renderer submission.
 
+use crate::world::TerrainRead;
+
 use crate::atlas;
 use crate::audio;
 use crate::audio::Sfx;
@@ -19,7 +21,6 @@ use crate::server;
 use crate::style;
 use crate::visual_capture;
 use crate::world;
-use crate::world::World;
 use glam::Vec3;
 use std::time::Instant;
 use super::Game;
@@ -107,7 +108,7 @@ impl Game {
         }
         let reg = self.content.reg.clone();
         let held = self.inventory.slots[self.input.hotbar_sel];
-        let implement_visual = held.and_then(|stack| self.server.world.implement_visual(stack));
+        let implement_visual = held.and_then(|stack| self.runtime.view().implement_visual(stack));
 
         // Camera basis: f forward, r screen-right, u screen-up.
         let f = self.camera.forward();
@@ -184,7 +185,7 @@ impl Game {
             .player
             .eye()
             .block()
-            .map_or((0, 15), |pos| self.server.world.light_at_pos(pos));
+            .map_or((0, 15), |pos| self.runtime.view().light_at_pos(pos));
         let lum = (bl as f32 / 15.0, sl as f32 / 15.0);
 
         // A local-space box textured one tile per face (arm, held block).
@@ -577,10 +578,7 @@ impl Game {
         self.presentation.ambient_timer -= dt;
         if !paused && self.presentation.ambient_timer <= 0.0 && self.presentation.juice {
             self.presentation.ambient_timer = 1.6 + self.presentation.vary() * 2.4;
-            let day = self
-                .server
-                .world
-                .daylight_at_surface(self.player.pos.surface())
+            let day = self.runtime.view().daylight_at_surface(self.player.pos.surface())
                 > 0.5;
             let r1 = self.presentation.vary();
             let r2 = self.presentation.vary();
@@ -603,7 +601,7 @@ impl Game {
                     (-2..=2i32).any(|dy| {
                         (-2..=2i32).any(|dz| {
                             center.offset(dx, dy, dz).is_some_and(|at| {
-                                pred(&reg.block(self.server.world.get_block_at(at)).name)
+                                pred(&reg.block(self.runtime.view().get_block_at(at)).name)
                             })
                         })
                     })
@@ -646,10 +644,7 @@ impl Game {
         {
             self.presentation.presence_timer = 6.0 + (self.presentation.vary() - 0.9) * 20.0;
             let reg = self.content.reg.clone();
-            let lurker = self
-                .server
-                .world
-                .mobs()
+            let lurker = self.runtime.view().mobs()
                 .iter()
                 .filter(|m| {
                     reg.animals[m.species].hostile && m.state != crate::mobs::MobState::Hunt
@@ -694,7 +689,7 @@ impl Game {
             && self.player.on_ground
             && let Some(at) = self.player.pos.block()
         {
-            self.server.world.tread_at(at);
+            self.runtime.local_mut().world.tread_at(at);
         }
 
         // Footsteps: mine, my fellow players', and the creatures'.
@@ -714,7 +709,7 @@ impl Game {
             // Mobs step when their stride phase crosses a beat.
             let cam = self.camera.pos;
             let mut steps: Vec<(audio::StepMat, f32, f32)> = Vec::new();
-            for m in self.server.world.mobs() {
+            for m in self.runtime.view().mobs() {
                 let d = (m.pos.render_pos() - cam).length();
                 if d > 16.0 || m.id == 0 {
                     continue;
@@ -803,8 +798,8 @@ impl Game {
                 eprintln!(
                     "profile: stream {:.2}ms, resident {}, dirty {}",
                     stream_started.elapsed().as_secs_f64() * 1_000.0,
-                    self.server.world.chunk_count(),
-                    self.server.world.dirty_chunks().len(),
+                    self.runtime.view().chunk_count(),
+                    self.runtime.view().dirty_chunks().len(),
                 );
             }
             // The authoritative simulation steps at its fixed tick; the
@@ -823,15 +818,15 @@ impl Game {
                         0.0
                     },
                     quiet_charm: self.survival.armor[4]
-                        .filter(|stack| self.server.world.charm_can_pay(*stack, "quiet")),
+                        .filter(|stack| self.runtime.view().charm_can_pay(*stack, "quiet")),
                 };
                 // Hosting: guests are simulated players too, and their
                 // requests apply before the tick.
                 let players = if let Some(mut sess) = self.multiplayer.host.take() {
-                    self.server.world.set_edit_logging(true);
+                    self.runtime.local_mut().world.set_edit_logging(true);
                     let held = self.inventory.slots[self.input.hotbar_sel];
                     let fx = sess.pump_with_host_stack(
-                        &mut self.server,
+                        self.runtime.local_mut(),
                         Some((
                             self.player.pos,
                             self.camera.yaw,
@@ -864,8 +859,8 @@ impl Game {
                                 // dispatch the mod's hook here where the
                                 // scripts live.
                                 if self.content.scripts.wants("on_screen_click") {
-                                    self.content.scripts.dispatch(
-                                        &self.server.world,
+                                    self.content.scripts.dispatch_view(
+                                        &self.runtime.view(),
                                         "on_screen_click",
                                         (screen, action),
                                     );
@@ -874,7 +869,7 @@ impl Game {
                             }
                         }
                     }
-                    let players = sess.authoritative_player_ctxs(&self.server.world, Some(ctx));
+                    let players = sess.authoritative_player_ctxs(&self.runtime.local().world, Some(ctx));
                     self.multiplayer.host = Some(sess);
                     players
                 } else {
@@ -882,13 +877,13 @@ impl Game {
                 };
                 let mut evs = Vec::new();
                 let server_started = std::time::Instant::now();
-                self.server.advance(dt, &players, &mut evs);
+                self.runtime.local_mut().advance(dt, &players, &mut evs);
                 if profile_frame {
                     eprintln!(
                         "profile: server {:.2}ms, mobs {}, projectiles {}",
                         server_started.elapsed().as_secs_f64() * 1_000.0,
-                        self.server.world.mobs().len(),
-                        self.server.world.projectiles().len(),
+                        self.runtime.view().mobs().len(),
+                        self.runtime.view().projectiles().len(),
                     );
                 }
                 for ev in evs {
@@ -902,8 +897,8 @@ impl Game {
                         } => {
                             if who == 0 && self.multiplayer.remote.is_none() {
                                 if self.content.scripts.wants("on_attack") {
-                                    self.content.scripts.dispatch(
-                                        &self.server.world,
+                                    self.content.scripts.dispatch_view(
+                                        &self.runtime.view(),
                                         "on_attack",
                                         (
                                             attack.clone(),
@@ -916,7 +911,7 @@ impl Game {
                                 self.hurt_player_from_wild(dmg, from, dmg_type.as_deref());
                             } else if let Some(sess) = &mut self.multiplayer.host {
                                 // `who` is that guest's own net id.
-                                sess.hurt_guest(&mut self.server, who, dmg, from);
+                                sess.hurt_guest(self.runtime.local_mut(), who, dmg, from);
                             }
                         }
                         server::SimEvent::BoltCast => self.sfx(Sfx::Bolt(1.2)),
@@ -987,12 +982,9 @@ impl Game {
                         }
                         server::SimEvent::Dross(cue) => {
                             if let Some(session) = &self.multiplayer.host {
-                                session.broadcast_dross_cue(&self.server.world, cue);
+                                session.broadcast_dross_cue(&self.runtime.local().world, cue);
                             }
-                            let local_region = self
-                                .server
-                                .world
-                                .planet_atlas()
+                            let local_region = self.runtime.view().planet_atlas()
                                 .map(|atlas| atlas.atlas_pos(self.player.pos.surface()));
                             if local_region == Some(cue.region) {
                                 self.present_dross_cue(cue);
@@ -1000,17 +992,17 @@ impl Game {
                         }
                     }
                 }
-                for (pos, s) in self.server.world.take_pending_drops() {
+                for (pos, s) in self.runtime.local_mut().world.take_pending_drops() {
                     let center = pos.entity_center();
                     let a = self.rand01() * std::f32::consts::TAU;
                     let v = Vec3::new(a.cos() * 1.5, 2.5, a.sin() * 1.5);
                     let mut entity = ItemEntity::new(center, v, s.item, s.count);
                     entity.durability = s.durability;
                     entity.arcane_id = s.arcane_id;
-                    self.server.world.spawn_loose_item(entity);
+                    self.runtime.local_mut().world.spawn_loose_item(entity);
                 }
                 // The wild's whispers reach the ear as toasts.
-                for line in std::mem::take(&mut self.server.world.whispers) {
+                for line in std::mem::take(&mut self.runtime.local_mut().world.whispers) {
                     self.toast(line);
                 }
                 // Crossing into marked country: one line per region
@@ -1019,7 +1011,7 @@ impl Game {
                 let cell = world::RegionCell::from_surface(surface);
                 if self.presentation.last_ire_cell != Some(cell) {
                     self.presentation.last_ire_cell = Some(cell);
-                    let standing = self.server.world.regional_ire_at_surface(surface);
+                    let standing = self.runtime.view().regional_ire_at_surface(surface);
                     if standing.abs() >= 8.0 && self.presentation.whispered_cells.insert(cell) {
                         self.toast(
                             if standing > 0.0 {
@@ -1038,14 +1030,12 @@ impl Game {
                 // unaided qualitative vocabulary.
                 let arcane_sign = if self.multiplayer.remote.is_some() {
                     Some(crate::arcane_geography::coarse_sensory_cue(
-                        self.server.world.remote_arcane_cue(),
-                        self.server.world.remote_arcane_dominant(),
+                        self.runtime.view().remote_arcane_cue(),
+                        self.runtime.view().remote_arcane_dominant(),
                     ))
                 } else {
-                    self.server.world.planet_atlas().and_then(|atlas| {
-                        self.server
-                            .world
-                            .arcane_survey_at(atlas.atlas_pos(surface), false)
+                    self.runtime.view().planet_atlas().and_then(|atlas| {
+                        self.runtime.local().world.arcane_survey_at(atlas.atlas_pos(surface), false)
                             .map(|survey| survey.sensory_cue())
                     })
                 };
@@ -1054,10 +1044,7 @@ impl Game {
                 {
                     self.toast(sign);
                 }
-                if let Some(observation) = self
-                    .server
-                    .world
-                    .perceived_arcane_ecology_at(surface, self.scan_range())
+                if let Some(observation) = self.runtime.view().perceived_arcane_ecology_at(surface, self.scan_range())
                     && self
                         .presentation
                         .arcane_signs
@@ -1070,7 +1057,7 @@ impl Game {
                 | Screen::Chest(pos)
                 | Screen::Offering(pos)
                 | Screen::Bloomery(pos) = self.ui_state.screen
-                    && self.server.world.block_entity_at(&pos).is_none()
+                    && self.runtime.view().block_entity_at(&pos).is_none()
                 {
                     self.set_screen(Screen::Playing);
                 }
@@ -1082,7 +1069,7 @@ impl Game {
                         self.multiplayer.tick_accum = 0.0;
                         self.content
                             .scripts
-                            .dispatch(&self.server.world, "on_tick", (t as f64,));
+                            .dispatch_view(&self.runtime.view(), "on_tick", (t as f64,));
                         self.apply_script_cmds();
                     }
                 }
@@ -1092,10 +1079,7 @@ impl Game {
 
     fn refresh_content_and_toasts(&mut self, dt: f32) {
         // The turning of the season repaints the leaves.
-        let local_season = self
-            .server
-            .world
-            .season_at_surface(self.player.pos.surface());
+        let local_season = self.runtime.view().season_at_surface(self.player.pos.surface());
         if self.in_world && local_season != self.presentation.atlas_season {
             let mut atlas = atlas::build_atlas(
                 &self.content.reg.tex_files,
@@ -1136,7 +1120,7 @@ impl Game {
         let Some(pchunk) = self.player.pos.chunk() else {
             return;
         };
-        let can_sim = self.server.world.has_chunk(pchunk) && !paused;
+        let can_sim = self.runtime.view().has_chunk(pchunk) && !paused;
         if can_sim && self.ui_state.screen != Screen::Dead {
             self.update_blocking();
             let (forward, strafe) = movement_axes(&self.input.keys);
@@ -1188,13 +1172,13 @@ impl Game {
                 if self.input.keys.sprint {
                     v.y -= 8.0;
                 }
-                self.player.fly(&self.server.world, v, dt);
+                self.player.fly(&self.runtime.view(), v, dt);
             }
             let was_in_water = self.player.in_water;
             let fall_speed = self.player.vel.y;
             if !self.flying {
                 self.player.update(
-                    &self.server.world,
+                    &self.runtime.view(),
                     &input,
                     self.camera.local_flat_forward(),
                     self.camera.local_right(),
@@ -1206,7 +1190,7 @@ impl Game {
             // surface, glide fast, and the boat glues underneath.
             // Jump steps off.
             if let Some(bid) = self.interaction.riding {
-                let gone = self.server.world.mob_by_id(bid).is_none();
+                let gone = self.runtime.view().mob_by_id(bid).is_none();
                 if gone || input.jump {
                     if !gone && self.multiplayer.remote.is_some() {
                         if let Some(rc) = &self.multiplayer.remote {
@@ -1215,7 +1199,8 @@ impl Game {
                                 mount: false,
                             });
                         }
-                    } else if let Some(m) = self.server.world.mob_by_id_mut(bid) {
+                    } else if !self.runtime.is_guest()
+                        && let Some(m) = self.runtime.local_mut().world.mob_by_id_mut(bid) {
                         m.ridden_by = None;
                     }
                     self.interaction.riding = None;
@@ -1234,11 +1219,7 @@ impl Game {
                         .expect("ridden vehicle stays below its rider")
                         .pos;
                     let yaw = self.camera.yaw;
-                    if let Some(m) = self.server.world.mob_by_id_mut(bid) {
-                        m.pos = at;
-                        m.vel = Vec3::ZERO;
-                        m.yaw = -yaw + std::f32::consts::FRAC_PI_2;
-                    }
+                    self.runtime.present_ridden_mob(bid, at, yaw);
                 }
             }
             if !was_in_water && self.player.in_water && fall_speed < -4.0 {
@@ -1254,7 +1235,7 @@ impl Game {
             crate::camera::CameraMode::First => {}
             crate::camera::CameraMode::Third => {
                 self.camera
-                    .place_chase(self.player.eye(), &self.server.world);
+                    .place_chase(self.player.eye(), &self.runtime.view());
             }
             crate::camera::CameraMode::Orbit => {
                 self.camera.place_orbit(self.player.eye());
@@ -1269,7 +1250,7 @@ impl Game {
     fn build_and_render_frame(&mut self, dt: f32, now: Instant) {
         let local_up = self.camera.up();
         let sun_dir_true = if self.in_world {
-            self.server.world.sun_direction().as_vec3()
+            self.runtime.view().sun_direction().as_vec3()
         } else {
             self.camera
                 .world_vector(Vec3::new(0.0, 1.0, 0.45))
@@ -1322,7 +1303,7 @@ impl Game {
         // near-dark, a full moon lights the night. Clamped like the sun so its
         // shadow holds up.
         let illum = if self.in_world {
-            self.server.world.moon_illumination()
+            self.runtime.view().moon_illumination()
         } else {
             0.0
         };
@@ -1351,9 +1332,7 @@ impl Game {
         // gently, gray the sky, and pull the fog in. Lerped over ~10 s
         // so transitions read as skies changing, not a light switch.
         let local_weather = self.in_world.then(|| {
-            self.server
-                .world
-                .weather_at_surface(self.player.pos.surface())
+            self.runtime.view().weather_at_surface(self.player.pos.surface())
         });
         let gloom_target = if let Some(weather) = local_weather {
             match weather.kind {
@@ -1435,7 +1414,7 @@ impl Game {
             moon_fill,
         };
         self.room_light.update(
-            &self.server.world,
+            &self.runtime.view(),
             &self.block_albedo,
             eye.local(),
             warm_sun_chart,
@@ -1466,10 +1445,7 @@ impl Game {
 
         // Weather wins while it is audible; in fair conditions nearby living
         // Current supplies its own restrained harmonic bed.
-        let ecology_ambience = self
-            .server
-            .world
-            .perceived_arcane_ecology_at(self.player.pos.surface(), self.scan_range());
+        let ecology_ambience = self.runtime.view().perceived_arcane_ecology_at(self.player.pos.surface(), self.scan_range());
         if let Some(a) = &self.audio {
             let want = if self.ui_state.screen == Screen::Paused {
                 // The pause menu holds the world's breath: no rain,
@@ -1507,9 +1483,7 @@ impl Game {
                     // The night bed reads the land underfoot: crickets
                     // in tended country, the wrathful hush where the
                     // ground remembers (legible escalation, stage 2).
-                    self.server
-                        .world
-                        .ire_tier_at_surface(self.player.pos.surface())
+                    self.runtime.view().ire_tier_at_surface(self.player.pos.surface())
                         < 2,
                 ))
             } else {
@@ -1531,7 +1505,7 @@ impl Game {
         let playing = self.ui_state.screen == Screen::Playing;
         let outline = if playing && self.config.outline {
             raycast::raycast_at(
-                &self.server.world,
+                &self.runtime.view(),
                 self.player.eye(),
                 self.camera.local_forward(),
                 self.reach(),
@@ -1560,9 +1534,7 @@ impl Game {
                 .max()
                 .unwrap_or_default()
         } else {
-            self.server
-                .world
-                .working_cues()
+            self.runtime.local().world.working_cues()
                 .into_iter()
                 .map(|cue| cue.warning_band)
                 .max()
@@ -1576,7 +1548,7 @@ impl Game {
             [0.62 + phase, 0.48 + phase, 0.88]
         } else if held_wand {
             outline.map_or([0.42, 0.34, 0.68], |pos| {
-                let block = self.server.world.get_block_at(pos);
+                let block = self.runtime.view().get_block_at(pos);
                 let definition = self.content.reg.block(block);
                 if self.content.reg.is_water(block) {
                     [0.18, 0.64, 0.92]
@@ -1591,13 +1563,13 @@ impl Game {
         } else {
             [0.05, 0.05, 0.05]
         };
-        let underwater = self.player.head_underwater(&self.server.world);
+        let underwater = self.player.head_underwater(&self.runtime.view());
         let fog = (self.config.view_dist as f32 - 0.5) * CHUNK_X as f32 * (1.0 - 0.35 * gloom);
 
         // World-space extras: item entities + mining crack overlay.
         let mut entity_verts = Vec::new();
         let mut entity_idx = Vec::new();
-        let sample = |w: &World, p: crate::planet::EntityPos| -> ([f32; 3], f32) {
+        let sample = |w: &dyn TerrainRead, p: crate::planet::EntityPos| -> ([f32; 3], f32) {
             let sample = p
                 .translated(Vec3::new(0.0, 0.4, 0.0))
                 .ok()
@@ -1608,15 +1580,15 @@ impl Game {
                 s as f32 / 15.0,
             )
         };
-        for it in self.server.world.loose_items() {
-            let lum = sample(&self.server.world, it.pos);
+        for it in self.runtime.view().loose_items() {
+            let lum = sample(&self.runtime.view(), it.pos);
             it.emit(&self.content.reg, lum, &mut entity_verts, &mut entity_idx);
         }
-        for m in self.server.world.mobs() {
-            let lum = sample(&self.server.world, m.pos);
+        for m in self.runtime.view().mobs() {
+            let lum = sample(&self.runtime.view(), m.pos);
             m.emit(&self.content.reg, lum, &mut entity_verts, &mut entity_idx);
         }
-        for p in self.server.world.projectiles() {
+        for p in self.runtime.view().projectiles() {
             p.emit(&mut entity_verts, &mut entity_idx);
         }
         // Cosmetic debris and dust ride the same batch.
@@ -1670,7 +1642,7 @@ impl Game {
                     translated.v().floor() as u16,
                 )
                 .expect("canonical demo position has a surface cell");
-                let py = self.server.world.surface_height_at(surface) as f32 + 1.0;
+                let py = self.runtime.view().surface_height_at(surface) as f32 + 1.0;
                 let at = crate::planet::EntityPos::new(
                     surface.face(),
                     translated.u(),
@@ -1678,7 +1650,7 @@ impl Game {
                     translated.v(),
                 )
                 .expect("demo player surface is canonical");
-                let lum = sample(&self.server.world, at);
+                let lum = sample(&self.runtime.view(), at);
                 let held = if i == 1 {
                     torch_art
                 } else {
@@ -1731,7 +1703,7 @@ impl Game {
                         .unwrap_or_default();
                     (held, implement, st)
                 };
-                let lum = sample(&self.server.world, logical);
+                let lum = sample(&self.runtime.view(), logical);
                 mobs::emit_humanoid_interpolated(
                     logical,
                     pos,
@@ -1766,7 +1738,7 @@ impl Game {
                         .map(|(id, g)| {
                             let (p, y) = g.render_pos();
                             let implement = g.inventory.slots[g.hotbar]
-                                .and_then(|stack| self.server.world.implement_visual(stack));
+                                .and_then(|stack| self.runtime.view().implement_visual(stack));
                             (*id, p, g.render_entity_pos(), y, g.held, g.style, implement)
                         })
                         .collect()
@@ -1779,7 +1751,7 @@ impl Game {
                 } else {
                     Some(ItemId(held_wire))
                 };
-                let lum = sample(&self.server.world, logical);
+                let lum = sample(&self.runtime.view(), logical);
                 mobs::emit_humanoid_interpolated(
                     logical,
                     pos,
@@ -1802,8 +1774,8 @@ impl Game {
             let logical = self.player.pos;
             let render = logical.render_pos();
             let held = self.inventory.slots[self.input.hotbar_sel];
-            let implement = held.and_then(|stack| self.server.world.implement_visual(stack));
-            let lum = sample(&self.server.world, self.player.eye());
+            let implement = held.and_then(|stack| self.runtime.view().implement_visual(stack));
+            let lum = sample(&self.runtime.view(), self.player.eye());
             let gait = self.presentation.gait_for(u32::MAX, render, dt);
             mobs::emit_humanoid_interpolated(
                 logical,
@@ -1820,8 +1792,8 @@ impl Game {
             );
         }
         // Airborne sand tumbles as full-size cubes.
-        for f in self.server.world.falling_blocks().to_vec() {
-            let lum = sample(&self.server.world, f.pos);
+        for f in self.runtime.view().falling_blocks().to_vec() {
+            let lum = sample(&self.runtime.view(), f.pos);
             let origin = f.pos.render_pos();
             let local_frame = crate::planet::local_frame(f.pos.surface_point());
             let east = local_frame.east.as_vec3();
@@ -1927,7 +1899,7 @@ impl Game {
                 }
             };
             let mut work: Vec<(u16, crate::planet::EntityPos, f32, f32)> = Vec::new();
-            for (&pos, e) in self.server.world.block_entities() {
+            for (&pos, e) in self.runtime.view().block_entities() {
                 match e {
                     world::BlockEntity::Anvil(a) => {
                         if let Some(b) = a.bloom {
@@ -2005,10 +1977,10 @@ impl Game {
                 let Some(column) = sample.block() else {
                     continue;
                 };
-                if !self.server.world.rains_at_surface(column.surface()) {
+                if !self.runtime.view().rains_at_surface(column.surface()) {
                     continue;
                 }
-                let snow = self.server.world.snows_at_surface(column.surface());
+                let snow = self.runtime.view().snows_at_surface(column.surface());
                 let speed = if snow { 3.0 } else { 13.0 };
                 let span = 14.0;
                 let y = self.player.pos.y() + 7.0 - (t * speed + phase * span) % span;
@@ -2020,7 +1992,7 @@ impl Game {
                 let Some(streak_block) = streak.block() else {
                     continue;
                 };
-                if self.server.world.light_at_pos(streak_block).1 < 15 {
+                if self.runtime.view().light_at_pos(streak_block).1 < 15 {
                     continue; // a roof owns this column
                 }
                 let frame = crate::planet::local_frame(streak.surface_point());
@@ -2086,10 +2058,7 @@ impl Game {
         if let Some((target, progress)) = self.interaction.breaking {
             let world_pos = match target {
                 super::BreakTarget::World(p) => Some(p),
-                super::BreakTarget::Structure(id, offset) => self
-                    .server
-                    .world
-                    .local_structure(id)
+                super::BreakTarget::Structure(id, offset) => self.runtime.view().local_structure(id)
                     .and_then(|s| s.world_position(offset)),
             };
             if let Some(p) = world_pos {
@@ -2104,7 +2073,7 @@ impl Game {
             && !self.inventory.slots[self.input.hotbar_sel]
                 .is_some_and(|st| self.content.reg.item(st.item).hammer)
         {
-            let b = self.server.world.get_block_at(t);
+            let b = self.runtime.view().get_block_at(t);
             let slot = self.content.reg.block(b).tiles[2];
             let ts = 1.0 / atlas::ATLAS_TILES as f32;
             let (tx, ty) = (
@@ -2251,7 +2220,7 @@ impl Game {
                 .map(|(cue, _)| cue.clone())
                 .collect::<Vec<_>>()
         } else {
-            self.server.world.working_cues()
+            self.runtime.local().world.working_cues()
         };
         for cue in active_workings
             .iter()
@@ -2280,10 +2249,7 @@ impl Game {
         if self.in_world
             && let Some(stack) = self.inventory.slots[self.input.hotbar_sel]
         {
-            let glow = self
-                .server
-                .world
-                .implement_visual(stack)
+            let glow = self.runtime.view().implement_visual(stack)
                 .and_then(|visual| self.implement_glow(visual))
                 .or_else(|| self.held_glow(stack.item));
             if let Some((color, range)) = glow {
@@ -2311,7 +2277,7 @@ impl Game {
         // warms the hue and a nearby strained vessel gives a sparse warning
         // envelope even when nobody has a frame screen open.
         let apparatus_cues = if self.in_world {
-            self.server.world.apparatus_cues_near(self.player.pos, 48.0)
+            self.runtime.view().apparatus_cues_near(self.player.pos, 48.0)
         } else {
             Vec::new()
         };
@@ -2384,7 +2350,7 @@ impl Game {
                     }
                     let stack = g.inventory.slots[g.hotbar];
                     let glow = stack
-                        .and_then(|stack| self.server.world.implement_visual(stack))
+                        .and_then(|stack| self.runtime.view().implement_visual(stack))
                         .and_then(|visual| self.implement_glow(visual))
                         .or_else(|| {
                             (g.held != u16::MAX)
@@ -2410,7 +2376,7 @@ impl Game {
                     }
                 }
             }
-            for m in self.server.world.mobs().iter().filter(|m| m.id != 0) {
+            for m in self.runtime.view().mobs().iter().filter(|m| m.id != 0) {
                 let Some(g) = self.content.reg.animals[m.species].glow else {
                     continue;
                 };
@@ -2472,13 +2438,11 @@ impl Game {
         if trace_strength > 0.0 {
             let (bands, dominant) = if self.multiplayer.remote.is_some() {
                 (
-                    self.server.world.remote_arcane_cue(),
-                    self.server.world.remote_arcane_dominant(),
+                    self.runtime.view().remote_arcane_cue(),
+                    self.runtime.view().remote_arcane_dominant(),
                 )
-            } else if let Some(atlas) = self.server.world.planet_atlas() {
-                self.server
-                    .world
-                    .arcane_sensory_cue_at(atlas.atlas_pos(self.player.pos.surface()))
+            } else if let Some(atlas) = self.runtime.view().planet_atlas() {
+                self.runtime.local().world.arcane_sensory_cue_at(atlas.atlas_pos(self.player.pos.surface()))
             } else {
                 ([0; 2], 0)
             };
@@ -2610,7 +2574,7 @@ impl Game {
                         player.v().floor() as u16,
                     )
                     .expect("canonical player has a valid capture column");
-                    let column_top = self.server.world.surface_height_at(surface);
+                    let column_top = self.runtime.view().surface_height_at(surface);
                     let (opaque_chunks, water_chunks, empty_chunks) =
                         self.renderer.chunk_mesh_counts();
                     eprintln!(
@@ -2632,12 +2596,12 @@ impl Game {
                         player.y(),
                         player.v(),
                         column_top,
-                        self.server.world.chunk_count(),
+                        self.runtime.view().chunk_count(),
                         self.renderer.chunk_count(),
                         opaque_chunks,
                         water_chunks,
                         empty_chunks,
-                        self.server.world.dirty_chunks().len(),
+                        self.runtime.view().dirty_chunks().len(),
                     );
                     if visual_capture::evidence_enabled() {
                         let metadata = self
@@ -2663,7 +2627,7 @@ impl Game {
                 format!(
                     " | {}",
                     p.block()
-                        .map(|at| self.server.world.biome_here_at(at.surface()).name())
+                        .map(|at| self.runtime.view().biome_here_at(at.surface()).name())
                         .unwrap_or("Beyond the world")
                 )
             } else {
@@ -2709,7 +2673,7 @@ impl Game {
         if self.auto_shot.is_some()
             && let Ok(requested) = std::env::var("WILDFORGE_WEATHER")
         {
-            self.server.world.force_local_weather(&requested);
+            self.runtime.force_local_weather(&requested);
             self.presentation.weather_vis = match requested.as_str() {
                 "overcast" => 0.4,
                 "precip" | "rain" | "snow" => 0.55,

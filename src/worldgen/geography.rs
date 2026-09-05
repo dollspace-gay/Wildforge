@@ -4,13 +4,15 @@ use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 use noise::Perlin;
 
-use super::{ProvinceKey, ProvinceLabel, Spline};
+use super::{ProvinceKey, ProvinceLabel, Spline, hash2};
 use crate::planet::SurfacePos;
 use crate::planet_atlas::PlanetAtlas;
 
 mod climate;
 mod provinces;
 mod relief;
+mod prospecting;
+mod deposits;
 
 /// Owns seeded climate and province classification, including the derived label
 /// cache. Generation and guest observations share this algorithm without giving
@@ -25,6 +27,7 @@ pub(crate) struct Geography {
     moisture: Perlin,
     pub(super) detail: Perlin,
     pub(super) bandwarp: Perlin,
+    pub(super) granite3d: Perlin,
     seed: u32,
     offset_base: Spline,
     mountain_amp: Spline,
@@ -43,6 +46,7 @@ impl Geography {
             moisture: p(5),
             detail: p(2),
             bandwarp: p(40),
+            granite3d: p(42),
             seed,
             // Continental base height: ocean floor -> coast -> inland.
             offset_base: Spline::new(&[
@@ -64,6 +68,18 @@ impl Geography {
                 (1.0, 0.0),
             ]),
         }
+    }
+
+    pub(super) fn chunk_hash(&self, salt: u32, pos: crate::chunk::ChunkPos) -> u32 {
+        hash2(
+            self.seed ^ salt ^ (pos.face() as u32).wrapping_mul(0x9e37_79b9),
+            i32::from(pos.u()),
+            i32::from(pos.v()),
+        )
+    }
+
+    fn radial_noise_at(noise: &Perlin, pos: SurfacePos, y: f64, scale: f64, offset: [f64; 3]) -> f32 {
+        crate::climate::radial_noise(noise, pos, y, scale, offset)
     }
 
     fn noise_at(noise: &Perlin, pos: SurfacePos, scale: f64, offset: [f64; 3]) -> f32 {

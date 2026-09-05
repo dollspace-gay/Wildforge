@@ -6,6 +6,15 @@ use crate::planet::SurfacePos;
 use super::Tectonics;
 
 impl Generator {
+    pub fn pluton_at_surface(&self, pos: SurfacePos) -> bool { self.geography.pluton_at_surface(pos) }
+    pub fn prospect_at(&self, pos: SurfacePos) -> super::ProspectReading { self.geography.prospect_at(pos) }
+    pub fn pipe_at(&self, pos: crate::chunk::ChunkPos) -> Option<(usize, usize, bool)> {
+        self.geography.pipe_at(pos)
+    }
+    pub fn geode_at(&self, pos: crate::chunk::ChunkPos) -> Option<(usize, usize, i32, i32)> {
+        self.geography.geode_at(pos)
+    }
+
     #[cfg(test)]
     pub const PROVINCE_CELLS: u8 = Geography::PROVINCE_CELLS;
 

@@ -1,5 +1,7 @@
 //! Inventory, crafting, armor, and machine-container interactions.
 
+use crate::world::TerrainRead;
+
 use crate::audio::Sfx;
 use crate::crafting;
 use crate::identity;
@@ -80,19 +82,13 @@ impl Game {
         ) else {
             return;
         };
-        let kind = effects.finish(
-            &mut self.server.world,
-            self.player.pos.block(),
-            &mut self.inventory,
-            self.multiplayer.remote.is_none(),
-            "full inventory after crafting",
-        );
+        let kind = self.runtime.finish_craft(effects, self.player.pos.block(), &mut self.inventory);
         self.sfx(Sfx::Craft);
         if let crate::player_ops::craft::CraftKind::Recipe(output) = kind {
             self.grant_xp("craft");
             if self.content.scripts.wants("on_craft") {
                 let name = reg.item(output).name.clone();
-                self.content.scripts.dispatch(&self.server.world, "on_craft", (name,));
+                self.content.scripts.dispatch_view(&self.runtime.view(), "on_craft", (name,));
                 self.apply_script_cmds();
             }
         }
@@ -151,7 +147,7 @@ impl Game {
             return;
         }
         let held = self.ui_state.held_stack;
-        let Some(mob) = self.server.world.mob_by_id_mut(mob_id) else {
+        let Some(mob) = self.runtime.local_mut().world.mob_by_id_mut(mob_id) else {
             return;
         };
         let Some(cargo) = mob.cargo.as_mut() else {
@@ -194,12 +190,12 @@ impl Game {
     /// Whether the local player owns this stall (local worlds/hosts).
     pub(super) fn stall_is_mine(&self, pos: crate::planet::BlockPos) -> bool {
         let my_id = identity::local_player_id(
-            &self.server.world.save_dir_for_saving(),
+            &self.runtime.local().world.save_dir_for_saving(),
             self.identity.device_id(),
         )
         .map(|p| p.0)
         .unwrap_or([0; 16]);
-        match self.server.world.block_entity_at(&pos) {
+        match self.runtime.view().block_entity_at(&pos) {
             Some(world::BlockEntity::Stall(st)) => st.owner == my_id,
             _ => false,
         }
@@ -209,7 +205,6 @@ impl Game {
         if slot > 12 {
             return;
         }
-        let reg = self.content.reg.clone();
         if let Some(rc) = &self.multiplayer.remote {
             rc.session.send(&net::C2S::ContainerClick {
                 pos,
@@ -221,29 +216,24 @@ impl Game {
         if !self.stall_is_mine(pos) {
             return; // visitors browse; the BUY button is theirs
         }
-        let held = self.ui_state.held_stack;
-        let Some(world::BlockEntity::Stall(st)) = self.server.world.block_entity_mut_at(&pos)
-        else {
-            return;
+        let owner = match self.runtime.view().block_entity_at(&pos) {
+            Some(world::BlockEntity::Stall(stall)) => stall.owner,
+            _ => return,
         };
-        let sref = match slot {
-            0..=5 => &mut st.goods[slot],
-            6 => &mut st.price,
-            _ => &mut st.till[slot - 7],
-        };
-        let (ns, nh) = inventory::click_stack(&reg, *sref, held, right);
-        *sref = ns;
-        self.ui_state.held_stack = nh;
+        let _ = self.runtime.click_container(
+            pos, &mut self.ui_state.held_stack,
+            crate::player_ops::container::Click { slot, right, actor: Some(owner) },
+        );
     }
 
     /// Local purchase: the singleplayer/host mirror of C2S::StallBuy.
     pub(super) fn stall_buy_local(&mut self, pos: crate::planet::BlockPos) {
         let reg = self.content.reg.clone();
-        if !self.server.world.check_stall_at(pos) {
+        if !self.runtime.view().check_stall_at(pos) {
             self.toast("The stall wants its posts and awning.".to_string());
             return;
         }
-        let Some(world::BlockEntity::Stall(stall)) = self.server.world.block_entity_mut_at(&pos) else {
+        let Some(world::BlockEntity::Stall(stall)) = self.runtime.local_mut().world.block_entity_mut_at(&pos) else {
             return;
         };
         let Ok(purchase) = crate::player_ops::trade::purchase(&reg, stall, &mut self.inventory) else {
@@ -272,54 +262,7 @@ impl Game {
         slot: usize,
         right: bool,
     ) {
-        self.remote_container_notify(pos, slot, right);
-        let reg = self.content.reg.clone();
-        // Mirror of the host rule: sealed while firing, charge takes
-        // what the station smelts, the bank takes its fuel; taking is
-        // free. The bloomery wants its chain; the forge takes any
-        // smeltable and any fuel.
-        let held = self.ui_state.held_stack;
-        let (b, ok) = match self.server.world.block_entity_mut_at(&pos) {
-            Some(world::BlockEntity::Multiblock(b))
-                if b.kind.handler(&reg) == Some(crate::machines::MachineHandler::Bloomery) =>
-            {
-                let chain = reg.bloomery.first().cloned();
-                let want = chain.map(|c| if slot < 4 { c.charge } else { c.fuel });
-                let ok = held.is_none() || held.map(|h| Some(h.item)) == Some(want);
-                (b, ok)
-            }
-            Some(world::BlockEntity::Multiblock(b))
-                if b.kind.handler(&reg) == Some(crate::machines::MachineHandler::Forge) =>
-            {
-                let ok = match held {
-                    None => true,
-                    Some(h) if slot < 4 => {
-                        reg.smelts.iter().any(|sm| sm.input.matches(h.item))
-                            || reg
-                                .forge_salvage
-                                .iter()
-                                .any(|salvage| salvage.input == h.item)
-                            || crate::materials::is_reclaimable_stock(&reg, h.item)
-                    }
-                    Some(h) => reg.fuel_value(h.item).is_some(),
-                };
-                (b, ok)
-            }
-            _ => return,
-        };
-        if b.lit || slot >= 8 {
-            return;
-        }
-        let s = if slot < 4 {
-            &mut b.charge[slot]
-        } else {
-            &mut b.fuel[slot - 4]
-        };
-        if ok {
-            let (ns, nh) = inventory::click_stack(&reg, *s, self.ui_state.held_stack, right);
-            *s = ns;
-            self.ui_state.held_stack = nh;
-        }
+        self.exchange_container_slot(pos, slot, right);
     }
 
     /// The LIGHT action: needs an ember in hand or inventory, a valid
@@ -340,7 +283,7 @@ impl Game {
             rc.session.send(&net::C2S::LightBloomery { pos });
             return;
         }
-        let block = self.server.world.get_block_at(pos);
+        let block = self.runtime.view().get_block_at(pos);
         let station = self.content.reg.block(block).interaction.as_deref();
         // Capability E7: light any fire handler by its interaction; the
         // kind's shell and charge rules come from the machine def.
@@ -349,16 +292,16 @@ impl Game {
             .filter(|kind| reg.machine(*kind).is_some_and(|def| def.handler.has_fire()))
         {
             Some(kind) => {
-                let matched = match kind.validate(&self.server.world, pos) {
+                let matched = match kind.validate(&self.runtime.local().world, pos) {
                     Some(matched) => matched,
                     None => {
                         self.toast("The stack is breached.".to_string());
                         return;
                     }
                 };
-                crate::world::machines::light_machine_at(&mut self.server.world, pos, kind, matched)
+                crate::world::machines::light_machine_at(&mut self.runtime.local_mut().world, pos, kind, matched)
             }
-            None => self.server.world.light_bloomery_at(pos),
+            None => self.runtime.local_mut().world.light_bloomery_at(pos),
         };
         match res {
             Ok(()) => {
@@ -367,14 +310,14 @@ impl Game {
                 if !self.creative
                     && let Some(stack) = consumed
                 {
-                    self.server.world.retire_arcane_stack_at(
+                    self.runtime.local_mut().world.retire_arcane_stack_at(
                         pos,
                         ItemStack { count: 1, ..stack },
                         "high-heat station ignition",
                     );
                 }
                 self.sfx(Sfx::Bolt(0.8));
-                let kilnish = self.server.world.block_entity_at(&pos).is_some_and(|e| {
+                let kilnish = self.runtime.view().block_entity_at(&pos).is_some_and(|e| {
                     matches!(
                         e,
                         world::BlockEntity::Multiblock(m)
@@ -412,34 +355,7 @@ impl Game {
     }
 
     pub(super) fn kiln_click(&mut self, pos: crate::planet::BlockPos, slot: usize, right: bool) {
-        self.remote_container_notify(pos, slot, right);
-        let reg = self.content.reg.clone();
-        let Some(world::BlockEntity::Multiblock(k)) = self.server.world.block_entity_mut_at(&pos)
-        else {
-            return;
-        };
-        if k.lit || slot >= 9 {
-            return;
-        }
-        let base = reg.kiln_base;
-        let powders: Vec<ItemId> = reg.kiln.iter().map(|recipe| recipe.powder).collect();
-        let ok_put = |it: ItemId| match slot {
-            0..=3 => base.map(|(sa, _, _)| sa) == Some(it),
-            4 => powders.contains(&it),
-            _ => base.map(|(_, fu, _)| fu) == Some(it),
-        };
-        let s = match slot {
-            0..=3 => &mut k.charge[slot],
-            4 => &mut k.reagent,
-            _ => &mut k.fuel[slot - 5],
-        };
-        if self.ui_state.held_stack.is_none()
-            || self.ui_state.held_stack.map(|h| ok_put(h.item)) == Some(true)
-        {
-            let (ns, nh) = inventory::click_stack(&reg, *s, self.ui_state.held_stack, right);
-            *s = ns;
-            self.ui_state.held_stack = nh;
-        }
+        self.exchange_container_slot(pos, slot, right);
     }
 
     pub(super) fn furnace_slot_rect(&self, i: usize) -> (f32, f32, f32, f32) {
@@ -464,7 +380,7 @@ impl Game {
         f32,
         f32,
     ) {
-        match self.server.world.block_entity_at(&pos) {
+        match self.runtime.view().block_entity_at(&pos) {
             Some(world::BlockEntity::Furnace(f)) => {
                 let time = f
                     .input
@@ -561,16 +477,18 @@ impl Game {
         slot: usize,
         right: bool,
     ) {
+        self.exchange_container_slot(pos, slot, right);
+    }
+
+    /// The same exchange updates a local container or predicts the received
+    /// snapshot. The host echo remains the truth for a graphical guest.
+    fn exchange_container_slot(&mut self, pos: crate::planet::BlockPos, slot: usize, right: bool) {
         self.remote_container_notify(pos, slot, right);
-        let reg = self.content.reg.clone();
-        let Some(world::BlockEntity::Offering(o)) = self.server.world.block_entity_mut_at(&pos)
-        else {
-            return;
-        };
-        let (new_slot, new_held) =
-            inventory::click_stack(&reg, o.slots[slot], self.ui_state.held_stack, right);
-        o.slots[slot] = new_slot;
-        self.ui_state.held_stack = new_held;
+        let result = self.runtime.click_container(
+            pos, &mut self.ui_state.held_stack,
+            crate::player_ops::container::Click { slot, right, actor: None },
+        );
+        if result.is_ok_and(|effect| effect.took_furnace_output) { self.grant_xp("smelt"); }
     }
 
     /// Guests mirror container clicks to the host with the cursor stack
@@ -594,63 +512,11 @@ impl Game {
     }
 
     pub(super) fn chest_click(&mut self, pos: crate::planet::BlockPos, slot: usize, right: bool) {
-        self.remote_container_notify(pos, slot, right);
-        let reg = self.content.reg.clone();
-        let Some(world::BlockEntity::Chest(c)) = self.server.world.block_entity_mut_at(&pos) else {
-            return;
-        };
-        let (new_slot, new_held) =
-            inventory::click_stack(&reg, c.slots[slot], self.ui_state.held_stack, right);
-        c.slots[slot] = new_slot;
-        self.ui_state.held_stack = new_held;
+        self.exchange_container_slot(pos, slot, right);
     }
 
     pub(super) fn furnace_click(&mut self, pos: crate::planet::BlockPos, slot: usize, right: bool) {
-        self.remote_container_notify(pos, slot, right);
-        let reg = self.content.reg.clone();
-        let Some(world::BlockEntity::Furnace(f)) = self.server.world.block_entity_mut_at(&pos)
-        else {
-            return;
-        };
-        match slot {
-            0 | 1 => {
-                let cur = if slot == 0 { f.input } else { f.fuel };
-                let (new_slot, new_held) =
-                    inventory::click_stack(&reg, cur, self.ui_state.held_stack, right);
-                if slot == 0 {
-                    if f.input.map(|s| s.item) != new_slot.map(|s| s.item) {
-                        f.progress = 0.0;
-                    }
-                    f.input = new_slot;
-                } else {
-                    f.fuel = new_slot;
-                }
-                self.ui_state.held_stack = new_held;
-            }
-            _ => {
-                // Output: take-only, merging into the held stack.
-                let Some(out) = f.output else { return };
-                match self.ui_state.held_stack {
-                    None => {
-                        self.ui_state.held_stack = Some(out);
-                        f.output = None;
-                        self.grant_xp("smelt");
-                    }
-                    Some(h)
-                        if h.can_merge(&reg, &out)
-                            && h.count + out.count <= reg.item(h.item).max_stack =>
-                    {
-                        self.ui_state.held_stack = Some(ItemStack {
-                            count: h.count + out.count,
-                            ..h
-                        });
-                        f.output = None;
-                        self.grant_xp("smelt");
-                    }
-                    _ => {}
-                }
-            }
-        }
+        self.exchange_container_slot(pos, slot, right);
     }
 
     pub(super) const BCOLS: usize = 6;
@@ -732,8 +598,8 @@ impl Game {
                         // clones rather than borrows.
                         let sid = id.clone();
                         let act = action.clone();
-                        self.content.scripts.dispatch(
-                            &self.server.world,
+                        self.content.scripts.dispatch_view(
+                            &self.runtime.view(),
                             "on_screen_click",
                             (sid, act),
                         );
@@ -758,7 +624,7 @@ impl Game {
     /// grid but bound to the machine rather than the player's hands.
     pub(super) fn workbench_craft(&mut self, pos: crate::planet::BlockPos, recipe_index: usize) {
         let reg = self.content.reg.clone();
-        let Some(world::BlockEntity::Multiblock(m)) = self.server.world.block_entity_at(&pos)
+        let Some(world::BlockEntity::Multiblock(m)) = self.runtime.view().block_entity_at(&pos)
         else {
             return;
         };

@@ -86,7 +86,7 @@ impl Game {
         let mut g = Game {
             window,
             renderer,
-            server: sim,
+            runtime: super::runtime::PlayRuntime::local_session(sim),
             player: Player::new_at(spawn),
             camera: Camera::new(
                 spawn

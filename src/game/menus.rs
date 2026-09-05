@@ -180,21 +180,21 @@ impl Game {
                         "survival"
                     };
                     let saved = world::write_world_meta_full(
-                        &self.server.world.save_dir_for_saving(),
-                        self.server.world.seed,
+                        &self.runtime.local().world.save_dir_for_saving(),
+                        self.runtime.view().seed(),
                         mode,
-                        self.server.world.ire,
-                        self.server.world.day,
-                        &self.server.world.camera,
+                        self.runtime.view().ire(),
+                        self.runtime.view().day(),
+                        &self.runtime.local().world.camera,
                     );
                     match saved {
                         Ok(()) => {
                             self.creative = next_creative;
                             self.flying = false;
-                            self.server.world.mode = mode.to_string();
+                            self.runtime.local_mut().world.mode = mode.to_string();
                             if self.content.scripts.wants("on_mode_change") {
-                                self.content.scripts.dispatch(
-                                    &self.server.world,
+                                self.content.scripts.dispatch_view(
+                                    &self.runtime.view(),
                                     "on_mode_change",
                                     (mode.to_string(),),
                                 );
@@ -208,10 +208,7 @@ impl Game {
                 } else if self.hit(self.menu_button_rect(2)) {
                     self.sfx(Sfx::Click);
                     if self.multiplayer.host.is_none() && self.multiplayer.remote.is_none() {
-                        let wname = self
-                            .server
-                            .world
-                            .save_dir_for_saving()
+                        let wname = self.runtime.local().world.save_dir_for_saving()
                             .file_name()
                             .map(|n| n.to_string_lossy().to_string())
                             .unwrap_or_else(|| "world".into());
@@ -219,8 +216,8 @@ impl Game {
                             .expect("configured display name is valid");
                         match mp::HostSession::start_windowed(wname, host_name) {
                             Ok(mut sess) => {
-                                sess.fresh_spawn = self.server.world.common_spawn();
-                                self.server.world.set_edit_logging(true);
+                                sess.fresh_spawn = self.runtime.local().world.common_spawn();
+                                self.runtime.local_mut().world.set_edit_logging(true);
                                 self.toast(format!(
                                     "Open to friends on port {} (LAN + direct IP).",
                                     sess.net.port

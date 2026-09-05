@@ -4,6 +4,8 @@
 //! main thread only adopts finished chunks (light, seams, reconcile), captures
 //! immutable mesh inputs, and uploads completed meshes on a per-frame budget.
 
+use crate::world::TerrainRead;
+
 use crate::chunk::CHUNK_X;
 use crate::chunk::ChunkPos;
 use crate::mesher;
@@ -26,7 +28,7 @@ impl Game {
         [(-1, 0), (1, 0), (0, -1), (0, 1)].iter().all(|(du, dv)| {
             let neighbor = position.offset(*du, *dv);
             let expected = neighbor.distance(center) <= f64::from(view_dist * CHUNK_X as i32) + 1.0;
-            !expected || self.server.world.has_chunk(neighbor)
+            !expected || self.runtime.view().has_chunk(neighbor)
         })
     }
 
@@ -45,7 +47,7 @@ impl Game {
             for dz in -vd..=vd {
                 let pos = center.offset(dx, dz);
                 if pos.distance(center) <= f64::from(vd * CHUNK_X as i32) + 1.0
-                    && !self.server.world.has_chunk(pos)
+                    && !self.runtime.view().has_chunk(pos)
                 {
                     pending += 1;
                 }
@@ -62,10 +64,7 @@ impl Game {
                 .count()
         });
         pending
-            + self
-                .server
-                .world
-                .dirty_chunks()
+            + self.runtime.view().dirty_chunks()
                 .into_iter()
                 .filter(|position| {
                     self.chunk_mesh_ready(*position, center, vd)
@@ -90,7 +89,7 @@ impl Game {
                 if pos.distance(center) > f64::from(vd * CHUNK_X as i32) + 1.0 {
                     continue;
                 }
-                if !self.server.world.has_chunk(pos) {
+                if !self.runtime.view().has_chunk(pos) {
                     wanted.push((dx * dx + dz * dz, pos));
                 }
             }
@@ -111,9 +110,9 @@ impl Game {
         if let Some(pool) = &mut self.gen_pool {
             pool.reconfigure(
                 crate::terrain_jobs::TerrainContext::new(
-                    self.server.world.seed,
-                    self.server.world.planet_atlas(),
-                    self.server.world.chunk_loader(),
+                    self.runtime.view().seed(),
+                    self.runtime.view().planet_atlas(),
+                    self.runtime.local().world.chunk_loader(),
                 ),
                 crate::terrain_jobs::WorkerPolicy::Interactive,
             );
@@ -139,14 +138,14 @@ impl Game {
                     Ok(prepared) => {
                         let pos = prepared.position;
                         let fresh = prepared.is_fresh();
-                        if self.server.world.adopt_prepared_at_revision(
+                        if self.runtime.local_mut().world.adopt_prepared_at_revision(
                             pos,
                             prepared.chunk,
                             fresh,
                             &prepared.revision,
                         ) {
                             for (dx, dz) in [(-1, 0), (1, 0), (0, -1), (0, 1)] {
-                                self.server.world.mark_chunk_dirty(pos.offset(dx, dz));
+                                self.runtime.local_mut().world.mark_chunk_dirty(pos.offset(dx, dz));
                             }
                         }
                     }
@@ -163,13 +162,13 @@ impl Game {
                     break;
                 }
             }
-        } else if !self.server.world.is_remote() {
+        } else if !self.runtime.view().is_remote() {
             // No pool (a fresh session mid-setup): the synchronous
             // path stays correct, just slower.
             for (_, pos) in wanted.into_iter().take(GEN_BUDGET) {
-                self.server.world.ensure_chunk(pos);
+                self.runtime.local_mut().world.ensure_chunk(pos);
                 for (dx, dz) in [(-1, 0), (1, 0), (0, -1), (0, 1)] {
-                    self.server.world.mark_chunk_dirty(pos.offset(dx, dz));
+                    self.runtime.local_mut().world.mark_chunk_dirty(pos.offset(dx, dz));
                 }
             }
         }
@@ -183,7 +182,7 @@ impl Game {
         // the dedicated server runs (World::retain_chunks); here it is spelled
         // out because the renderer and the light cache have to let go too.
         let limit = vd + 2;
-        let far = self.server.world.chunks_outside_all(&[center], limit);
+        let far = self.runtime.view().chunks_outside_all(&[center], limit);
         if !far.is_empty() {
             // Save only what leaves; a full save_modified here wrote
             // the whole world (palette, entities, mobs, stamps, every
@@ -192,7 +191,7 @@ impl Game {
             // stutter machine. This IS the incremental save now: the
             // timer is gone, and a chunk is written as it leaves the
             // view rather than the whole world on a clock.
-            let (report, released) = self.server.world.evict_chunks(far);
+            let (report, released) = self.runtime.evict_chunks(far);
             for pos in released {
                 self.renderer.drop_chunk(pos);
                 self.presentation.lights.chunk_dropped(pos);
@@ -218,7 +217,7 @@ impl Game {
         let completed_meshes = if let Some(pool) = &mut self.mesh_pool {
             let mut completed = Vec::new();
             while let Some(result) =
-                pool.try_ready(&self.server.world.reg, &current_variant_signature)
+                pool.try_ready(self.runtime.view().registry(), &current_variant_signature)
             {
                 completed.push(result);
             }
@@ -227,10 +226,7 @@ impl Game {
             Vec::new()
         };
         for (position, mesh) in completed_meshes {
-            let still_current = self
-                .server
-                .world
-                .chunk(position)
+            let still_current = self.runtime.view().chunk(position)
                 .is_some_and(|chunk| !chunk.dirty);
             if !still_current {
                 continue;
@@ -251,10 +247,7 @@ impl Game {
         // circular residency set still has an outer boundary; neighbors beyond
         // the negotiated radius are deliberately sampled as air, so the ring
         // that used to remain invisible forever is meshed exactly once.
-        let mut dirty: Vec<(i32, ChunkPos)> = self
-            .server
-            .world
-            .dirty_chunks()
+        let mut dirty: Vec<(i32, ChunkPos)> = self.runtime.view().dirty_chunks()
             .into_iter()
             .map(|p| (p.distance(center) as i32, p))
             .collect();
@@ -277,7 +270,7 @@ impl Game {
             .into_iter()
             .take(available.min(1))
             .filter_map(|(_, position)| {
-                mesher::ChunkMeshInput::capture(&self.server.world, position).map(|input| {
+                mesher::ChunkMeshInput::capture(&self.runtime.view(), position).map(|input| {
                     (
                         input,
                         self.content.tile_variants.clone(),
@@ -295,7 +288,7 @@ impl Game {
             if sent {
                 // This snapshot owns the current dirty state. Any subsequent
                 // edit flips it dirty again while the worker is running.
-                self.server.world.mark_chunk_meshed(position);
+                self.runtime.mark_chunk_meshed(position);
             }
         }
     }

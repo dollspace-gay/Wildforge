@@ -19,7 +19,7 @@ use crate::planet::{
     BlockPos, Direction6, EntityPos, Face, SurfacePos, geodesic_distance, great_circle_bearing,
     step6,
 };
-use crate::world::World;
+use crate::world::{TerrainRead, World, WorldView};
 
 /// Deferred world mutations queued by scripts during an event, applied by the
 /// game loop afterwards (scripts never hold `&mut World`).
@@ -65,32 +65,32 @@ pub struct ScriptHost {
 }
 
 thread_local! {
-    static WORLD: Cell<*const World> = const { Cell::new(std::ptr::null()) };
+    static WORLD: Cell<*const WorldView<'static>> = const { Cell::new(std::ptr::null()) };
 }
 
 /// Scoped access to the world for read-only host functions during dispatch.
-struct WorldGuard;
-impl WorldGuard {
-    fn new(world: &World) -> WorldGuard {
-        WORLD.with(|w| w.set(world as *const World));
-        WorldGuard
+struct WorldGuard<'a> {
+    prior: *const WorldView<'static>,
+    _borrow: std::marker::PhantomData<&'a WorldView<'a>>,
+}
+impl<'a> WorldGuard<'a> {
+    fn new(world: &'a WorldView<'a>) -> Self {
+        let pointer = world as *const WorldView<'a> as *const WorldView<'static>;
+        Self { prior: WORLD.with(|slot| slot.replace(pointer)), _borrow: std::marker::PhantomData }
     }
 }
-impl Drop for WorldGuard {
-    fn drop(&mut self) {
-        WORLD.with(|w| w.set(std::ptr::null()));
-    }
+impl Drop for WorldGuard<'_> {
+    fn drop(&mut self) { WORLD.with(|slot| slot.set(self.prior)); }
 }
 
-fn with_world<R>(f: impl FnOnce(&World) -> R, default: R) -> R {
-    WORLD.with(|w| {
-        let p = w.get();
-        if p.is_null() {
-            default
-        } else {
-            // SAFETY: the pointer is set only for the duration of a dispatch
-            // call that holds `&World`, on this thread, and cleared on drop.
-            f(unsafe { &*p })
+fn with_world<R>(f: impl for<'a> FnOnce(&'a WorldView<'a>) -> R, default: R) -> R {
+    WORLD.with(|slot| {
+        let pointer = slot.get();
+        if pointer.is_null() { default } else {
+            // SAFETY: WorldGuard borrows the view and its owner throughout the
+            // synchronous dispatch on this thread. No reference leaves this
+            // callback. Drop restores the prior dispatch even during unwinding.
+            f(unsafe { &*pointer })
         }
     })
 }
@@ -176,7 +176,7 @@ impl ScriptHost {
                     return String::new();
                 };
                 with_world(
-                    |w| w.reg.block(w.get_block_at(pos)).name.clone(),
+                    |w| w.registry().block(w.get_block_at(pos)).name.clone(),
                     String::new(),
                 )
             },
@@ -194,10 +194,7 @@ impl ScriptHost {
             with_world(
                 |world| {
                     let mut map = Map::new();
-                    let bands = world
-                        .planet_atlas()
-                        .map(|atlas| world.arcane_cue_at(atlas.atlas_pos(surface)))
-                        .unwrap_or([0; 2]);
+                    let bands = world.script_arcane_estimate(surface);
                     map.insert("current_band".into(), i64::from(bands[0]).into());
                     map.insert("dross_band".into(), i64::from(bands[1]).into());
                     map
@@ -372,6 +369,10 @@ impl ScriptHost {
     /// Dispatch an event to every mod that defines it. Returns false if any
     /// handler explicitly returned `false` (cancels cancellable events).
     pub fn dispatch(&mut self, world: &World, event: &str, args: impl FuncArgs + Clone) -> bool {
+        self.dispatch_view(&world.view(), event, args)
+    }
+
+    pub(crate) fn dispatch_view(&mut self, world: &WorldView<'_>, event: &str, args: impl FuncArgs + Clone) -> bool {
         let _guard = WorldGuard::new(world);
         let mut allow = true;
         for m in &self.mods {
@@ -412,6 +413,15 @@ impl ScriptHost {
     pub fn run_fn(
         &mut self,
         world: &World,
+        hook: &crate::registry::ScriptHook,
+        args: Vec<String>,
+    ) -> Dynamic {
+        self.run_fn_view(&world.view(), hook, args)
+    }
+
+    pub(crate) fn run_fn_view(
+        &mut self,
+        world: &WorldView<'_>,
         hook: &crate::registry::ScriptHook,
         args: Vec<String>,
     ) -> Dynamic {

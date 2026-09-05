@@ -1,5 +1,7 @@
 //! Survival ticking, item pickup, and player-facing status messages.
 
+use crate::world::TerrainRead;
+
 use crate::audio;
 use crate::audio::Sfx;
 use crate::entity;
@@ -56,7 +58,7 @@ impl Game {
             return vec!["templates: capture | ghost | cost | list | drop | cancel | stamp | spawn | despawn".into()];
         };
         if cmd != "stamp" {
-            return self.server.world.template_command(line);
+            return self.runtime.local_mut().world.template_command(line);
         }
         let Some(name) = tokens.next() else {
             return vec!["usage: stamp <name> <face> <u> <y> <v> [rot]".into()];
@@ -65,13 +67,10 @@ impl Game {
             return vec!["stamp: bad anchor — <face> <u> <y> <v> [rot]".into()];
         };
         let rot = parse_rot(tokens.next()).unwrap_or(Rotation::R0);
-        let Some(t) = self.server.world.template(name).cloned() else {
+        let Some(t) = self.runtime.local().world.template(name).cloned() else {
             return vec![format!("no template named {name}")];
         };
-        match self
-            .server
-            .world
-            .stamp_instant(&t, pos, rot, &mut self.inventory, self.creative)
+        match self.runtime.local_mut().world.stamp_instant(&t, pos, rot, &mut self.inventory, self.creative)
         {
             Ok(msg) => vec![msg],
             Err(error) => vec![format!("stamp {name}: {error}")],
@@ -79,17 +78,18 @@ impl Game {
     }
 
     pub(super) fn update_food(&mut self, dt: f32, input: &physics::Input) {
-        if self.creative || !self.server.world.ruleset().hunger {
+        if self.creative || !self.runtime.view().ruleset().hunger {
             return;
         }
         // The hunger charm prepays one fixed five-second interval. If the
         // debit fails or the charm depletes, no fraction of the benefit is
         // applied and ordinary starvation resumes immediately.
         if self.survival.hunger_charm_credit <= 0.0
+            && !self.runtime.is_guest()
             && let Some(mut charm) = self.survival.armor[4]
             && self.content.reg.item(charm.item).charm.as_deref() == Some("hunger")
             && let Some(pos) = self.player.pos.block()
-            && self.server.world.debit_charm_at(
+            && self.runtime.local_mut().world.debit_charm_at(
                 pos,
                 &mut charm,
                 "hunger",
@@ -124,15 +124,12 @@ impl Game {
                 let mush = reg.item_id("base:spoiled_mush");
                 let mut consumed = Vec::new();
                 let actor = crate::identity::local_player_id(
-                    &self.server.world.save_dir_for_saving(),
+                    &self.runtime.local().world.save_dir_for_saving(),
                     self.identity.device_id(),
                 )
                 .unwrap_or(crate::identity::PlayerId([0; 16]))
                 .0;
-                let pack_temperature_millic = (self
-                    .server
-                    .world
-                    .weather_at_surface(self.player.pos.surface())
+                let pack_temperature_millic = (self.runtime.view().weather_at_surface(self.player.pos.surface())
                     .temperature_c
                     * 1_000.0)
                     .round()
@@ -143,7 +140,7 @@ impl Game {
                     let Some(st) = s else { return };
                     if st.arcane_id != 0 {
                         let holdfast_step = slot.map_or(step, |slot| {
-                            self.server.world.holdfast_age_step(
+                            self.runtime.local_mut().world.holdfast_age_step(
                                 actor,
                                 slot,
                                 *st,
@@ -154,7 +151,7 @@ impl Game {
                         let ordinary_age_ticks = sweep_ticks
                             .saturating_mul(u64::from(holdfast_step))
                             .div_ceil(u64::from(step.max(1)));
-                        match self.server.world.age_preparation_storage(
+                        match self.runtime.local_mut().world.age_preparation_storage(
                             *st,
                             pack_temperature_millic,
                             ordinary_age_ticks,
@@ -177,7 +174,7 @@ impl Game {
                         st.durability = full;
                     } else {
                         let holdfast_step = slot.map_or(step, |slot| {
-                            self.server.world.holdfast_age_step(
+                            self.runtime.local_mut().world.holdfast_age_step(
                                 actor,
                                 slot,
                                 *st,
@@ -188,7 +185,7 @@ impl Game {
                         let actual_step = if st.arcane_id == 0 {
                             holdfast_step
                         } else {
-                            self.server.world.coated_specimen_age_advance(
+                            self.runtime.local_mut().world.coated_specimen_age_advance(
                                 st.arcane_id,
                                 u64::from(holdfast_step),
                                 pack_temperature_millic,
@@ -217,7 +214,7 @@ impl Game {
                 if let Some(at) = self.player.pos.block() {
                     for slot in 0..self.inventory.slots.len() {
                         if let Some(stack) = self.inventory.slots[slot]
-                            && let Err(error) = self.server.world.leak_fragile_item_charge(
+                            && let Err(error) = self.runtime.local_mut().world.leak_fragile_item_charge(
                                 actor,
                                 slot,
                                 stack,
@@ -229,7 +226,7 @@ impl Game {
                         }
                     }
                 }
-                if let Err(error) = self.server.world.record_consumed_stacks(consumed) {
+                if let Err(error) = self.runtime.local_mut().world.record_consumed_stacks(consumed) {
                     eprintln!("materials: spoiled carried food accounting failed: {error}");
                 }
             }
@@ -246,7 +243,7 @@ impl Game {
                 self.survival.alchemy_accum %= 1.0;
                 if let Some(actor_pos) = self.player.pos.block() {
                     let actor = crate::identity::local_player_id(
-                        &self.server.world.save_dir_for_saving(),
+                        &self.runtime.local().world.save_dir_for_saving(),
                         self.identity.device_id(),
                     )
                     .unwrap_or(crate::identity::PlayerId([0; 16]));
@@ -258,10 +255,7 @@ impl Game {
                         strain: 0.0,
                         bodily_dross: self.survival.bodily_dross,
                     };
-                    match self
-                        .server
-                        .world
-                        .tick_preparation_statuses(actor.0, actor_pos, physiology)
+                    match self.runtime.local_mut().world.tick_preparation_statuses(actor.0, actor_pos, physiology)
                     {
                         Ok(result) => {
                             let old_dross_band = self.survival.preparation_modifiers.dross_band;
@@ -350,7 +344,7 @@ impl Game {
                         .map(|stack| ItemStack::new(&self.content.reg, stack.item, 1));
                     if self.multiplayer.remote.is_none()
                         && let Some(stack) = consumed
-                        && let Err(error) = self.server.world.record_consumed_stacks([stack])
+                        && let Err(error) = self.runtime.local_mut().world.record_consumed_stacks([stack])
                     {
                         eprintln!("materials: eaten food accounting failed: {error}");
                     }
@@ -364,7 +358,7 @@ impl Game {
     }
 
     pub(super) fn update_survival(&mut self, dt: f32) {
-        let ruleset = self.server.world.ruleset();
+        let ruleset = self.runtime.view().ruleset();
         // Fall damage: measure from the apex of the fall.
         if self.player.in_water || self.player.on_ground {
             if let (Some(start), true) = (self.survival.fall_start, self.player.on_ground) {
@@ -376,7 +370,7 @@ impl Game {
                         .translated(Vec3::new(0.0, -0.6, 0.0))
                         .ok()
                         .and_then(|canonical| canonical.pos.block())
-                        .map(|block| self.server.world.get_block_at(block))
+                        .map(|block| self.runtime.view().get_block_at(block))
                         .unwrap_or(crate::registry::AIR);
                     let tile = self.content.reg.block(under).tiles[2];
                     self.presentation.puff(self.player.pos.render_pos(), tile, 5);
@@ -412,7 +406,7 @@ impl Game {
             .translated(Vec3::new(0.0, 0.4, 0.0))
             .ok()
             .and_then(|canonical| canonical.pos.block())
-            .map(|block| self.server.world.get_block_at(block))
+            .map(|block| self.runtime.view().get_block_at(block))
             .unwrap_or(crate::registry::AIR);
         if self.content.reg.is_lava(feet) {
             self.survival.burn_timer += dt;
@@ -428,7 +422,7 @@ impl Game {
         }
 
         // Drowning.
-        if self.player.head_underwater(&self.server.world) {
+        if self.player.head_underwater(&self.runtime.view()) {
             self.survival.air -= dt;
             if self.survival.air <= 0.0 {
                 self.survival.air = 0.0;
@@ -456,7 +450,7 @@ impl Game {
         if self.multiplayer.remote.is_some() || self.ui_state.screen == Screen::Dead {
             return;
         }
-        let mut items = self.server.world.take_loose_items();
+        let mut items = self.runtime.local_mut().world.take_loose_items();
         // Pickup: magnetize into the inventory.
         let target = self
             .player
@@ -535,6 +529,6 @@ impl Game {
             }
             i += 1;
         }
-        self.server.world.replace_loose_items(items);
+        self.runtime.local_mut().world.replace_loose_items(items);
     }
 }

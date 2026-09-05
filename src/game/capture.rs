@@ -1,5 +1,7 @@
 //! Fail-closed identity snapshots for native visual qualification captures.
 
+use crate::world::TerrainRead;
+
 use crate::visual_capture;
 use crate::world;
 use super::BUILD_MARKER;
@@ -52,16 +54,13 @@ impl Game {
             ));
         }
 
-        let atlas = self
-            .server
-            .world
-            .planet_atlas()
+        let atlas = self.runtime.view().planet_atlas()
             .ok_or("visual evidence requires a production planetary atlas")?;
         let player = self.player.pos;
         let surface = player.surface();
-        let weather = self.server.world.weather_at_surface(surface);
+        let weather = self.runtime.view().weather_at_surface(surface);
         let (opaque_chunks, water_chunks, empty_chunks) = self.renderer.chunk_mesh_counts();
-        let season = self.server.world.season_at_surface(surface);
+        let season = self.runtime.view().season_at_surface(surface);
 
         Ok(visual_capture::CaptureMetadata {
             schema_version: visual_capture::CAPTURE_SCHEMA_VERSION,
@@ -70,7 +69,7 @@ impl Game {
             build,
             world: visual_capture::WorldIdentity {
                 name: world_name,
-                seed: self.server.world.seed,
+                seed: self.runtime.view().seed(),
                 generator_version: world::WORLD_GENERATOR_VERSION,
                 atlas_format_version: atlas.manifest.format_version,
                 atlas_algorithm_version: atlas.manifest.atlas_algorithm_version,
@@ -87,8 +86,8 @@ impl Game {
                 fov_degrees: self.camera.fovy.to_degrees(),
             },
             environment: visual_capture::EnvironmentIdentity {
-                day: self.server.world.day,
-                time_of_day: self.server.time_of_day,
+                day: self.runtime.view().day(),
+                time_of_day: self.runtime.time_of_day(),
                 season: world::SEASONS[season].to_ascii_lowercase(),
                 weather: weather.kind.name().into(),
                 precipitation: precipitation_name(weather.precipitation).into(),
@@ -124,12 +123,12 @@ impl Game {
                 fps: self.fps,
                 simulation_ms: self.frame_ms.0,
                 draw_ms: self.frame_ms.1,
-                resident_chunks: self.server.world.chunk_count(),
+                resident_chunks: self.runtime.view().chunk_count(),
                 gpu_chunks: self.renderer.chunk_count(),
                 opaque_chunks,
                 water_chunks,
                 empty_chunks,
-                dirty_chunks: self.server.world.dirty_chunks().len(),
+                dirty_chunks: self.runtime.view().dirty_chunks().len(),
             },
             family: self
                 .content

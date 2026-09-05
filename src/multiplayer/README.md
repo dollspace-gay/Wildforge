@@ -19,3 +19,7 @@ cargo test --locked tests::multiplayer::
 
 Read [AGENTS.md](AGENTS.md) before changing this area. For a structural migration,
 run the complete applicable gates and record evidence in the migration record.
+
+Container authorization precedes the shared player_ops container transaction.
+The host preserves cursor/player/container echo order and deposit-only rejection;
+slot eligibility and full item identity merges are shared with local prediction.

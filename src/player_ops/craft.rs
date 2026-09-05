@@ -97,7 +97,7 @@ impl CraftEffects {
     /// Retire charged inputs, record scale/loss, then publish secondary outputs
     /// and bury overflow, preserving the pre-extraction side-effect order.
     pub(crate) fn finish(
-        self,
+        mut self,
         world: &mut World,
         position: Option<BlockPos>,
         inventory: &mut Inventory,
@@ -109,19 +109,30 @@ impl CraftEffects {
             CraftKind::Recipe(_) => "charged crafting ingredient consumed",
         };
         if authoritative && let Some(position) = position {
-            for stack in self.retired {
+            for stack in std::mem::take(&mut self.retired) {
                 world.retire_arcane_stack_at(position, stack, reason);
             }
         }
-        if let Some(ledger) = &mut world.material_ledger
+        self.finish_outputs(&world.reg, world.material_ledger.as_mut(), position, inventory, overflow_reason)
+    }
+
+    /// The guest mirrors inventory byproducts without material or Current books.
+    pub(crate) fn finish_prediction(self, registry: &Registry, inventory: &mut Inventory) -> CraftKind {
+        self.finish_outputs(registry, None, None, inventory, "")
+    }
+
+    fn finish_outputs(
+        self, registry: &Registry, mut ledger: Option<&mut crate::materials::MaterialLedger>,
+        position: Option<BlockPos>, inventory: &mut Inventory, overflow_reason: &str,
+    ) -> CraftKind {
+        if let Some(ledger) = ledger.as_deref_mut()
             && let Err(error) = ledger.record_recipe_loss(&self.loss)
         {
             eprintln!("materials: crafting loss accounting failed: {error}");
         }
-        let registry = &world.reg;
         for (item, count) in self.byproducts {
             if crate::materials::is_secondary_item(registry, item)
-                && let Some(ledger) = &mut world.material_ledger
+                && let Some(ledger) = ledger.as_deref_mut()
             {
                 let materials = crate::materials::stack_materials(
                     registry, ItemStack::new(registry, item, count),
@@ -132,7 +143,7 @@ impl CraftEffects {
             }
             let remainder = inventory.add(registry, item, count);
             if remainder != 0
-                && let (Some(position), Some(ledger)) = (position, &mut world.material_ledger)
+                && let (Some(position), Some(ledger)) = (position, ledger.as_deref_mut())
                 && let Err(error) = ledger.bury_stack(
                     registry, position, ItemStack::new(registry, item, remainder), overflow_reason,
                 )

@@ -10,6 +10,8 @@
 //! Nothing here runs unless the matching environment variable is set, so an
 //! ordinary session pays one function call for the lot.
 
+use crate::world::TerrainRead;
+
 use crate::chunk::ChunkPos;
 use crate::chunk::SEA_LEVEL;
 use crate::identity;
@@ -168,7 +170,7 @@ impl Game {
         let left = self.inventory.add(reg, item, count);
         let added = count.saturating_sub(left);
         if added != 0
-            && let Err(error) = self.server.world.record_external_stack(
+            && let Err(error) = self.runtime.local_mut().world.record_external_stack(
                 ItemStack::new(reg, item, added),
                 "development capture inventory",
             )
@@ -188,18 +190,16 @@ impl Game {
             let (bx, bz) = (spawn.x as i32 - 6, spawn.z as i32 - 14);
             for cx in -1..=1 {
                 for cz in -1..=1 {
-                    self.server
-                        .world
-                        .ensure_chunk(chart.chunk(bx, bz).offset(cx, cz));
+                    self.runtime.local_mut().world.ensure_chunk(chart.chunk(bx, bz).offset(cx, cz));
                 }
             }
-            let by = demo_height!(self.server.world, chart, bx, bz);
+            let by = demo_height!(self.runtime.local().world, chart, bx, bz);
             let stone = self.content.reg.block_id("base:stone").unwrap_or(AIR);
             let water = self.content.reg.block_id("base:water").unwrap_or(AIR);
             for y in by + 1..=by + 4 {
-                demo_set!(self.server.world, chart, bx, y, bz, stone);
+                demo_set!(self.runtime.local().world, chart, bx, y, bz, stone);
             }
-            demo_set!(self.server.world, chart, bx, by + 5, bz, water);
+            demo_set!(self.runtime.local().world, chart, bx, by + 5, bz, water);
             eprintln!(
                 "demo water source at ({bx},{},{bz}), spawn {:?}",
                 by + 5,
@@ -231,14 +231,14 @@ impl Game {
         if let Ok(t) = std::env::var("WILDFORGE_TIME")
             && let Ok(t) = t.parse::<f32>()
         {
-            self.server.time_of_day = t.fract();
+            *self.runtime.time_of_day_mut() = t.fract();
         }
         // Dev: force the calendar day, to land on a specific moon phase
         // (day % LUNAR_DAYS; 0 = new, 4 = full at the default cycle length).
         if let Ok(d) = std::env::var("WILDFORGE_DAY")
             && let Ok(d) = d.parse::<u32>()
         {
-            self.server.world.day = d;
+            self.runtime.local_mut().world.day = d;
         }
         // Planetary visual qualification needs to show a whole valley,
         // shoreline, or treeline rather than whatever happens to occupy the
@@ -256,7 +256,7 @@ impl Game {
             self.camera.follow_planet(self.player.eye());
         }
         if self.auto_shot.is_some() {
-            self.server.freeze_clock = true;
+            self.runtime.local_mut().freeze_clock = true;
         }
         // Dev: WILDFORGE_HELD=<item> puts an item in the selected hotbar slot,
         // so a headless run can hold a torch — the held-light path is otherwise
@@ -269,15 +269,13 @@ impl Game {
             {
                 Some(item) => {
                     if let Some(previous) = self.inventory.slots[self.input.hotbar_sel]
-                        && let Err(error) = self.server.world.record_admin_stack_deletion(previous)
+                        && let Err(error) = self.runtime.local_mut().world.record_admin_stack_deletion(previous)
                     {
                         eprintln!("materials: held-item override deletion failed: {error}");
                     }
                     let mut stack = ItemStack::new(&reg, item, 1);
                     let accepted = self.player.pos.block().is_none_or(|at| {
-                        self.server
-                            .world
-                            .bind_arcane_stack_at(at, &mut stack, "development held-item override")
+                        self.runtime.local_mut().world.bind_arcane_stack_at(at, &mut stack, "development held-item override")
                             .map_err(|error| {
                                 eprintln!("arcane: held-item override rejected: {error}");
                                 error
@@ -285,10 +283,7 @@ impl Game {
                             .is_ok()
                     });
                     if accepted {
-                        if let Err(error) = self
-                            .server
-                            .world
-                            .record_external_stack(stack, "development held-item override")
+                        if let Err(error) = self.runtime.local_mut().world.record_external_stack(stack, "development held-item override")
                         {
                             eprintln!("materials: held-item override source failed: {error}");
                         }
@@ -315,7 +310,7 @@ impl Game {
                 let cp = target_chart.chunk(p[0] as i32, p[2] as i32);
                 for dx in -2..=2 {
                     for dz in -2..=2 {
-                        self.server.world.ensure_chunk(cp.offset(dx, dz));
+                        self.runtime.local_mut().world.ensure_chunk(cp.offset(dx, dz));
                     }
                 }
                 self.player.pos =
@@ -361,16 +356,13 @@ impl Game {
             {
                 let x = bx - 6 + (index % 4) as i32 * 4;
                 let z = bz + 5 + (index / 4) as i32 * 4;
-                let y = demo_height!(self.server.world, chart, x, z);
+                let y = demo_height!(self.runtime.local().world, chart, x, z);
                 let pos = chart.block(x, y + 1, z);
-                self.server.world.set_block_at(pos, AIR);
+                self.runtime.local_mut().world.set_block_at(pos, AIR);
                 let Some(item) = self.content.reg.item_id(item_name) else {
                     continue;
                 };
-                if self
-                    .server
-                    .world
-                    .place_item_block_at(pos, ItemStack::new(&self.content.reg, item, 1))
+                if self.runtime.local_mut().world.place_item_block_at(pos, ItemStack::new(&self.content.reg, item, 1))
                 {
                     planted += 1;
                 }
@@ -383,8 +375,8 @@ impl Game {
         {
             for (dx, dz) in [(3, 0), (-3, 2), (0, 4), (2, -4)] {
                 let (x, z) = (spawn.x as i32 + dx, spawn.z as i32 + dz);
-                let y = demo_height!(self.server.world, chart, x, z);
-                demo_set!(self.server.world, chart, x, y + 1, z, torch);
+                let y = demo_height!(self.runtime.local().world, chart, x, z);
+                demo_set!(self.runtime.local().world, chart, x, y + 1, z, torch);
             }
         }
         // Dev: two pillars flanked by a blue and a red lamp — colored-shadow
@@ -396,27 +388,27 @@ impl Game {
             let stone = self.content.reg.block_id("base:cobblestone");
             let bx = spawn.x as i32;
             let bz = spawn.z as i32 + 4;
-            let y = demo_height!(self.server.world, chart, bx, bz);
+            let y = demo_height!(self.runtime.local().world, chart, bx, bz);
             if let Some(stone) = stone {
                 // A neutral grey floor reads colored light far better than grass.
                 for dx in -8..=8 {
                     for dz in -6..=8 {
-                        demo_set!(self.server.world, chart, bx + dx, y, bz + dz, stone);
+                        demo_set!(self.runtime.local().world, chart, bx + dx, y, bz + dz, stone);
                     }
                 }
                 // Two pillars as occluders.
                 for px in [-2i32, 2] {
                     for h in 1..=3 {
-                        demo_set!(self.server.world, chart, bx + px, y + h, bz, stone);
+                        demo_set!(self.runtime.local().world, chart, bx + px, y + h, bz, stone);
                     }
                 }
             }
             // Low colored lamps to either side so shadows rake across the floor.
             if let Some(b) = blue {
-                demo_set!(self.server.world, chart, bx - 5, y + 2, bz, b);
+                demo_set!(self.runtime.local().world, chart, bx - 5, y + 2, bz, b);
             }
             if let Some(r) = red {
-                demo_set!(self.server.world, chart, bx + 5, y + 2, bz, r);
+                demo_set!(self.runtime.local().world, chart, bx + 5, y + 2, bz, r);
             }
         }
         // Dev: an enclosed cobblestone room with a 1-wide door and a 2x2 east
@@ -427,31 +419,31 @@ impl Game {
             && let Some(stone) = self.content.reg.block_id("base:cobblestone")
         {
             let (bx, bz) = (spawn.x as i32, spawn.z as i32);
-            let fy = demo_height!(self.server.world, chart, bx, bz);
+            let fy = demo_height!(self.runtime.local().world, chart, bx, bz);
             for dx in -4..=4 {
                 for dz in -4..=4 {
                     for dy in 0..=6 {
                         let shell =
                             dx == -4 || dx == 4 || dz == -4 || dz == 4 || dy == 0 || dy == 6;
                         let b = if shell { stone } else { AIR };
-                        demo_set!(self.server.world, chart, bx + dx, fy + dy, bz + dz, b);
+                        demo_set!(self.runtime.local().world, chart, bx + dx, fy + dy, bz + dz, b);
                     }
                 }
             }
             // A 1-wide, 2-tall door in the +z wall.
-            demo_set!(self.server.world, chart, bx, fy + 1, bz + 4, AIR);
-            demo_set!(self.server.world, chart, bx, fy + 2, bz + 4, AIR);
+            demo_set!(self.runtime.local().world, chart, bx, fy + 1, bz + 4, AIR);
+            demo_set!(self.runtime.local().world, chart, bx, fy + 2, bz + 4, AIR);
             // A 2x2 window high in the +x (east) wall — the morning sun throws
             // a bright quad onto the floor that tracks across it.
             for wy in 3..=4 {
                 for wz in -1..=0 {
-                    demo_set!(self.server.world, chart, bx + 4, fy + wy, bz + wz, AIR);
+                    demo_set!(self.runtime.local().world, chart, bx + 4, fy + wy, bz + wz, AIR);
                 }
             }
             if std::env::var("WILDFORGE_DEMO_ROOM").as_deref() == Ok("torch")
                 && let Some(torch) = self.content.reg.block_id("base:torch")
             {
-                demo_set!(self.server.world, chart, bx + 2, fy + 1, bz, torch);
+                demo_set!(self.runtime.local().world, chart, bx + 2, fy + 1, bz, torch);
             }
             // Stand the player inside (this world has a saved position).
             self.player.pos = self
@@ -485,10 +477,10 @@ impl Game {
             let center = chart.chunk(bx, bz);
             for cx in -2..=2 {
                 for cz in -2..=2 {
-                    self.server.world.ensure_chunk(center.offset(cx, cz));
+                    self.runtime.local_mut().world.ensure_chunk(center.offset(cx, cz));
                 }
             }
-            let fy = demo_height!(self.server.world, chart, bx, bz);
+            let fy = demo_height!(self.runtime.local().world, chart, bx, bz);
             // Level everything above the floor for a good margin around the
             // box first. Spawn lands wherever the worldgen puts it, and a rise
             // on the east side buries the window — which reads as "the sun
@@ -508,7 +500,7 @@ impl Game {
             for dx in -12..=16 {
                 for dz in -12..=12 {
                     for dy in 1..=22 {
-                        place(&mut self.server.world, bx + dx, fy + dy, bz + dz, AIR);
+                        place(&mut self.runtime.local_mut().world, bx + dx, fy + dy, bz + dz, AIR);
                     }
                 }
             }
@@ -521,7 +513,7 @@ impl Game {
                         let shell =
                             dx == -6 || dx == 6 || dz == -6 || dz == 6 || dy == 0 || dy == 7;
                         let b = if shell { white } else { AIR };
-                        place(&mut self.server.world, bx + dx, fy + dy, bz + dz, b);
+                        place(&mut self.runtime.local_mut().world, bx + dx, fy + dy, bz + dz, b);
                     }
                 }
             }
@@ -537,7 +529,7 @@ impl Game {
             // spot to follow.
             for wy in 3..=5 {
                 for wz in 1..=4 {
-                    place(&mut self.server.world, bx + 6, fy + wy, bz + wz, AIR);
+                    place(&mut self.runtime.local_mut().world, bx + 6, fy + wy, bz + wz, AIR);
                 }
             }
             if mode != "plain"
@@ -552,10 +544,10 @@ impl Game {
                 // capture sweep in docs/, not a derivation.
                 for dz in -5..=5 {
                     for dx in -4..=-2 {
-                        place(&mut self.server.world, bx + dx, fy, bz + dz, red);
+                        place(&mut self.runtime.local_mut().world, bx + dx, fy, bz + dz, red);
                     }
                     for dx in 1..=3 {
-                        place(&mut self.server.world, bx + dx, fy, bz + dz, blue);
+                        place(&mut self.runtime.local_mut().world, bx + dx, fy, bz + dz, blue);
                     }
                 }
             }
@@ -590,16 +582,16 @@ impl Game {
             let stone = self.content.reg.block_id("base:cobblestone");
             let bx = spawn.x as i32;
             let bz = spawn.z as i32 + 5;
-            let y = demo_height!(self.server.world, chart, bx, bz);
+            let y = demo_height!(self.runtime.local().world, chart, bx, bz);
             if let Some(stone) = stone {
                 for dx in -9..=9 {
                     for dz in -7..=9 {
-                        demo_set!(self.server.world, chart, bx + dx, y, bz + dz, stone);
+                        demo_set!(self.runtime.local().world, chart, bx + dx, y, bz + dz, stone);
                     }
                 }
                 for px in [-2i32, 2] {
                     for h in 1..=3 {
-                        demo_set!(self.server.world, chart, bx + px, y + h, bz, stone);
+                        demo_set!(self.runtime.local().world, chart, bx + px, y + h, bz, stone);
                     }
                 }
             }
@@ -635,21 +627,19 @@ impl Game {
             let bz = spawn.z as i32;
             for dx in [-16i32, 0, 16] {
                 for dz in [-16i32, 0, 16] {
-                    self.server
-                        .world
-                        .ensure_chunk(chart.chunk(bx + dx, bz + dz));
+                    self.runtime.local_mut().world.ensure_chunk(chart.chunk(bx + dx, bz + dz));
                 }
             }
-            let y = demo_height!(self.server.world, chart, bx, bz);
+            let y = demo_height!(self.runtime.local().world, chart, bx, bz);
             // Clear and floor the clearing.
             if let Some(grass) = b("base:grass") {
                 for dx in -10..=10i32 {
                     for dz in -4..=14i32 {
                         let (x, z) = (bx + dx, bz + dz);
-                        demo_set!(self.server.world, chart, x, y, z, grass);
+                        demo_set!(self.runtime.local().world, chart, x, y, z, grass);
                         for h in 1..=8 {
-                            if demo_get!(self.server.world, chart, x, y + h, z) != AIR {
-                                demo_set!(self.server.world, chart, x, y + h, z, AIR);
+                            if demo_get!(self.runtime.local().world, chart, x, y + h, z) != AIR {
+                                demo_set!(self.runtime.local().world, chart, x, y + h, z, AIR);
                             }
                         }
                     }
@@ -661,13 +651,13 @@ impl Game {
             {
                 let (sx, sz) = (bx - 4, bz + 6);
 
-                demo_set!(self.server.world, chart, sx, y + 1, sz, counter);
+                demo_set!(self.runtime.local().world, chart, sx, y + 1, sz, counter);
                 for side in [-1i32, 1] {
-                    demo_set!(self.server.world, chart, sx + side, y + 1, sz, log);
-                    demo_set!(self.server.world, chart, sx + side, y + 2, sz, log);
+                    demo_set!(self.runtime.local().world, chart, sx + side, y + 1, sz, log);
+                    demo_set!(self.runtime.local().world, chart, sx + side, y + 2, sz, log);
                 }
                 for i in -1i32..=1 {
-                    demo_set!(self.server.world, chart, sx + i, y + 3, sz, planks);
+                    demo_set!(self.runtime.local().world, chart, sx + i, y + 3, sz, planks);
                 }
                 let mut st = crate::world::StallState {
                     owner: [7; 16],
@@ -682,7 +672,7 @@ impl Game {
                     st.price = Some(ItemStack::new(&reg2, silver, 1));
                 }
                 demo_insert!(
-                    self.server.world,
+                    self.runtime.local().world,
                     chart,
                     (sx, y + 1, sz),
                     crate::world::BlockEntity::Stall(st)
@@ -690,9 +680,9 @@ impl Game {
             }
             // A sign and a named waystone.
             if let Some(sign) = b("base:sign") {
-                demo_set!(self.server.world, chart, bx, y + 1, bz + 6, sign);
+                demo_set!(self.runtime.local().world, chart, bx, y + 1, bz + 6, sign);
                 demo_insert!(
-                    self.server.world,
+                    self.runtime.local().world,
                     chart,
                     (bx, y + 1, bz + 6),
                     crate::world::BlockEntity::Sign(crate::world::SignState {
@@ -705,9 +695,9 @@ impl Game {
                 );
             }
             if let Some(ws) = b("base:waystone") {
-                demo_set!(self.server.world, chart, bx + 3, y + 1, bz + 6, ws);
+                demo_set!(self.runtime.local().world, chart, bx + 3, y + 1, bz + 6, ws);
                 demo_insert!(
-                    self.server.world,
+                    self.runtime.local().world,
                     chart,
                     (bx + 3, y + 1, bz + 6),
                     crate::world::BlockEntity::Sign(crate::world::SignState {
@@ -727,7 +717,7 @@ impl Game {
                 deer.tamed = true;
                 deer.calm = 100000.0;
                 deer.cargo = Some(Default::default());
-                self.server.world.spawn_mob(deer);
+                self.runtime.local_mut().world.spawn_mob(deer);
             }
             // A dug pond with a boat riding it.
             if let (Some(water), Some(dirt), Some(bi)) =
@@ -737,8 +727,8 @@ impl Game {
                     for dz in 0..=3i32 {
                         // A sealed bowl: solid under the water so the
                         // pond can't drain into a cave.
-                        demo_set!(self.server.world, chart, bx + dx, y - 1, bz + dz, dirt);
-                        demo_set!(self.server.world, chart, bx + dx, y, bz + dz, water);
+                        demo_set!(self.runtime.local().world, chart, bx + dx, y - 1, bz + dz, dirt);
+                        demo_set!(self.runtime.local().world, chart, bx + dx, y, bz + dz, water);
                     }
                 }
                 let mut boat = demo_mob!(
@@ -749,7 +739,7 @@ impl Game {
                 );
                 boat.health = reg2.animals[bi].health;
                 boat.tamed = true;
-                self.server.world.spawn_mob(boat);
+                self.runtime.local_mut().world.spawn_mob(boat);
             }
             // Screen shortcuts want the scene to exist first.
             match std::env::var("WILDFORGE_SCREEN").as_deref() {
@@ -764,7 +754,7 @@ impl Game {
                     // Ids are sim-assigned: run one tick so the demo
                     // deer exists on the wire before we key by id.
                     let mut rng = 1u32;
-                    let _ = self.server.world.tick_mobs(
+                    let _ = self.runtime.local_mut().world.tick_mobs(
                         &[crate::server::PlayerCtx {
                             id: 0,
                             pos: spawn,
@@ -777,17 +767,14 @@ impl Game {
                         0.01,
                         &mut rng,
                     );
-                    let id = self
-                        .server
-                        .world
-                        .mobs()
+                    let id = self.runtime.view().mobs()
                         .iter()
                         .find(|m| m.cargo.is_some() && m.id != 0)
                         .map(|m| m.id);
                     if let Some(id) = id {
                         // A little salt rides along for the screenshot.
                         if let Some(salt) = reg2.item_id("base:salt_crystal")
-                            && let Some(m) = self.server.world.mob_by_id_mut(id)
+                            && let Some(m) = self.runtime.local_mut().world.mob_by_id_mut(id)
                             && let Some(cargo) = m.cargo.as_mut()
                         {
                             cargo[0] = Some(ItemStack::new(&reg2, salt, 24));
@@ -795,7 +782,7 @@ impl Game {
                         }
                         for count in [24, 8] {
                             if let Some(salt) = reg2.item_id("base:salt_crystal")
-                                && let Err(error) = self.server.world.record_external_stack(
+                                && let Err(error) = self.runtime.local_mut().world.record_external_stack(
                                     ItemStack::new(&reg2, salt, count),
                                     "development capture animal cargo",
                                 )
@@ -816,23 +803,23 @@ impl Game {
             let reg2 = self.content.reg.clone();
             let bx = spawn.x as i32;
             let bz = spawn.z as i32;
-            let y = demo_height!(self.server.world, chart, bx, bz);
+            let y = demo_height!(self.runtime.local().world, chart, bx, bz);
             if let Some(grass) = b("base:grass") {
                 for dx in -8..=8i32 {
                     for dz in -2..=16i32 {
                         let (x, z) = (bx + dx, bz + dz);
-                        demo_set!(self.server.world, chart, x, y, z, grass);
+                        demo_set!(self.runtime.local().world, chart, x, y, z, grass);
                         for hh in 1..=6 {
-                            if demo_get!(self.server.world, chart, x, y + hh, z) != AIR {
-                                demo_set!(self.server.world, chart, x, y + hh, z, AIR);
+                            if demo_get!(self.runtime.local().world, chart, x, y + hh, z) != AIR {
+                                demo_set!(self.runtime.local().world, chart, x, y + hh, z, AIR);
                             }
                         }
                     }
                 }
             }
             if let (Some(rack), Some(torch)) = (b("base:smoking_rack"), b("base:torch")) {
-                demo_set!(self.server.world, chart, bx - 2, y + 1, bz + 4, torch);
-                demo_set!(self.server.world, chart, bx - 2, y + 2, bz + 4, rack);
+                demo_set!(self.runtime.local().world, chart, bx - 2, y + 1, bz + 4, torch);
+                demo_set!(self.runtime.local().world, chart, bx - 2, y + 2, bz + 4, rack);
                 let mut sm = crate::world::SmokerState::default();
                 if let (Some(raw), Some(smoked)) = (
                     reg2.item_id("base:raw_venison"),
@@ -842,7 +829,7 @@ impl Game {
                     sm.meat[1] = Some(ItemStack::new(&reg2, smoked, 1));
                 }
                 demo_insert!(
-                    self.server.world,
+                    self.runtime.local().world,
                     chart,
                     (bx - 2, y + 2, bz + 4),
                     crate::world::BlockEntity::Smoker(sm),
@@ -852,11 +839,11 @@ impl Game {
             // line marks the settlement's edge; the wild stands just
             // beyond it.
             for _ in 0..12 {
-                demo_ire!(self.server.world, chart, bx, bz, 1.0);
+                demo_ire!(self.runtime.local().world, chart, bx, bz, 1.0);
             }
             if let Some(torch) = b("base:torch") {
                 for dx in [0i32, 3, 6] {
-                    demo_set!(self.server.world, chart, bx + dx, y + 1, bz + 11, torch);
+                    demo_set!(self.runtime.local().world, chart, bx + dx, y + 1, bz + 11, torch);
                 }
             }
             if let Some(ti) = reg2.animals.iter().position(|a| a.hostile) {
@@ -868,8 +855,8 @@ impl Game {
                 );
                 w.health = reg2.animals[ti].health;
                 w.watcher = true;
-                w.watch_baseline = demo_standing!(self.server.world, chart, bx, bz);
-                self.server.world.spawn_mob(w);
+                w.watch_baseline = demo_standing!(self.runtime.local().world, chart, bx, bz);
+                self.runtime.local_mut().world.spawn_mob(w);
             }
         }
         if std::env::var("WILDFORGE_DEMO_HEART").is_ok() {
@@ -878,10 +865,10 @@ impl Game {
             let b = |n: &str| self.content.reg.block_id(n);
             let bx = spawn.x as i32;
             let bz = spawn.z as i32;
-            let y = demo_height!(self.server.world, chart, bx, bz);
+            let y = demo_height!(self.runtime.local().world, chart, bx, bz);
             eprintln!("heart demo anchored at ({bx},{y},{bz})");
             if let Some(grass) = b("base:grass") {
-                let w = &mut self.server.world;
+                let w = &mut self.runtime.local_mut().world;
                 for dx in -18..=18i32 {
                     for dz in -20..=14i32 {
                         let (x, z) = (bx + dx, bz + dz);
@@ -894,7 +881,7 @@ impl Game {
                     }
                 }
             }
-            let w = &mut self.server.world;
+            let w = &mut self.runtime.local_mut().world;
             // One of each shape, each from a different country, so a
             // capture shows the bole, the spring and the stone at all
             // three stages.
@@ -941,10 +928,10 @@ impl Game {
             let b = |n: &str| self.content.reg.block_id(n);
             let bx = spawn.x as i32;
             let bz = spawn.z as i32;
-            let y = demo_height!(self.server.world, chart, bx, bz);
+            let y = demo_height!(self.runtime.local().world, chart, bx, bz);
             eprintln!("eco demo anchored at ({bx},{y},{bz})");
             if let (Some(grass), Some(farm)) = (b("base:grass"), b("base:farmland")) {
-                let w = &mut self.server.world;
+                let w = &mut self.runtime.local_mut().world;
                 for dx in -8..=8i32 {
                     for dz in -2..=12i32 {
                         let (x, z) = (bx + dx, bz + dz);
@@ -1007,7 +994,7 @@ impl Game {
             }
             let reg2 = self.content.reg.clone();
             if let Some(si) = reg2.animal_id("base:deer") {
-                let w = &mut self.server.world;
+                let w = &mut self.runtime.local_mut().world;
                 // A built demo is tended country: calm animals mind
                 // the pen walls here, as they would around any base.
                 for cx in -2..=2i32 {
@@ -1222,16 +1209,16 @@ impl Game {
             let reg2 = self.content.reg.clone();
             let bx = spawn.x as i32;
             let bz = spawn.z as i32;
-            let y = demo_height!(self.server.world, chart, bx, bz);
+            let y = demo_height!(self.runtime.local().world, chart, bx, bz);
             eprintln!("mill demo anchored at ({bx},{y},{bz})");
             if let Some(grass) = b("base:grass") {
                 for dx in -10..=10i32 {
                     for dz in -2..=14i32 {
                         let (x, z) = (bx + dx, bz + dz);
-                        demo_set!(self.server.world, chart, x, y, z, grass);
+                        demo_set!(self.runtime.local().world, chart, x, y, z, grass);
                         for hh in 1..=10 {
-                            if demo_get!(self.server.world, chart, x, y + hh, z) != AIR {
-                                demo_set!(self.server.world, chart, x, y + hh, z, AIR);
+                            if demo_get!(self.runtime.local().world, chart, x, y + hh, z) != AIR {
+                                demo_set!(self.runtime.local().world, chart, x, y + hh, z, AIR);
                             }
                         }
                     }
@@ -1241,7 +1228,7 @@ impl Game {
             if let (Some(stone), Some(shaft), Some(gear)) =
                 (b("base:stone"), b("base:shaft"), b("base:gear"))
             {
-                let w = &mut self.server.world;
+                let w = &mut self.runtime.local_mut().world;
                 // The raised race runs north-south so the wheel's
                 // face greets a camera looking east: stone trough,
                 // water pouring out the south lip under the wheel.
@@ -1458,9 +1445,7 @@ impl Game {
             let bz = spawn.z as i32;
             for dx in [-8i32, 0, 8] {
                 for dz in [-8i32, 0, 8] {
-                    self.server
-                        .world
-                        .ensure_chunk(chart.chunk(bx + dx, bz + dz));
+                    self.runtime.local_mut().world.ensure_chunk(chart.chunk(bx + dx, bz + dz));
                 }
             }
             if let (Some(log), Some(torch)) = (b("base:log"), b("base:torch")) {
@@ -1468,10 +1453,10 @@ impl Game {
                 for dx in -6..=6i32 {
                     for dz in -1..=12i32 {
                         let (x, z) = (bx + dx, bz + dz);
-                        let y = demo_height!(self.server.world, chart, x, z);
+                        let y = demo_height!(self.runtime.local().world, chart, x, z);
                         for h in 1..=9 {
-                            if demo_get!(self.server.world, chart, x, y + h, z) != AIR {
-                                demo_set!(self.server.world, chart, x, y + h, z, AIR);
+                            if demo_get!(self.runtime.local().world, chart, x, y + h, z) != AIR {
+                                demo_set!(self.runtime.local().world, chart, x, y + h, z, AIR);
                             }
                         }
                     }
@@ -1479,17 +1464,17 @@ impl Game {
                 // Torch posts: a 2-log stake with the flame on top.
                 for (px, pz) in [(4i32, 4i32), (-4, 6), (0, 10)] {
                     let (x, z) = (bx + px, bz + pz);
-                    let y = demo_height!(self.server.world, chart, x, z);
-                    demo_set!(self.server.world, chart, x, y + 1, z, log);
-                    demo_set!(self.server.world, chart, x, y + 2, z, log);
-                    demo_set!(self.server.world, chart, x, y + 3, z, torch);
+                    let y = demo_height!(self.runtime.local().world, chart, x, z);
+                    demo_set!(self.runtime.local().world, chart, x, y + 1, z, log);
+                    demo_set!(self.runtime.local().world, chart, x, y + 2, z, log);
+                    demo_set!(self.runtime.local().world, chart, x, y + 3, z, torch);
                 }
             }
             for (name, px, pz) in [("base:chest", 2i32, 7i32), ("base:stone_anvil", -2, 4)] {
                 if let Some(blk) = b(name) {
                     let (x, z) = (bx + px, bz + pz);
-                    let y = demo_height!(self.server.world, chart, x, z);
-                    demo_set!(self.server.world, chart, x, y + 1, z, blk);
+                    let y = demo_height!(self.runtime.local().world, chart, x, z);
+                    demo_set!(self.runtime.local().world, chart, x, y + 1, z, blk);
                 }
             }
             let reg = self.content.reg.clone();
@@ -1515,19 +1500,17 @@ impl Game {
             // writes into missing chunks vanish, leaving open walls.
             for dx in [-8i32, 0, 8] {
                 for dz in [-8i32, 0, 8] {
-                    self.server
-                        .world
-                        .ensure_chunk(chart.chunk(bx + dx, bz + dz));
+                    self.runtime.local_mut().world.ensure_chunk(chart.chunk(bx + dx, bz + dz));
                 }
             }
             let yf = (-7..=7)
                 .flat_map(|dx| (-7..=7).map(move |dz| (dx, dz)))
-                .map(|(dx, dz)| demo_height!(self.server.world, chart, bx + dx, bz + dz))
+                .map(|(dx, dz)| demo_height!(self.runtime.local().world, chart, bx + dx, bz + dz))
                 .max()
                 .unwrap_or(spawn.y as i32);
             for dx in -7..=7i32 {
                 for dz in -7..=7i32 {
-                    demo_set!(self.server.world, chart, bx + dx, yf, bz + dz, stone);
+                    demo_set!(self.runtime.local().world, chart, bx + dx, yf, bz + dz, stone);
                     let wall = dx.abs() == 7 || dz.abs() == 7;
                     for h in 1..=8 {
                         let b = if (wall && h <= 3) || h == 4 {
@@ -1536,29 +1519,29 @@ impl Game {
                             AIR
                         };
                         let b = if h > 4 { AIR } else { b };
-                        demo_set!(self.server.world, chart, bx + dx, yf + h, bz + dz, b);
+                        demo_set!(self.runtime.local().world, chart, bx + dx, yf + h, bz + dz, b);
                     }
                 }
             }
             for px in [-3i32, 3] {
                 for h in 1..=3 {
-                    demo_set!(self.server.world, chart, bx + px, yf + h, bz + 3, stone);
+                    demo_set!(self.runtime.local().world, chart, bx + px, yf + h, bz + 3, stone);
                 }
             }
             for (tx, tz) in [(-6i32, -6i32), (6, -6), (0, 6)] {
-                demo_set!(self.server.world, chart, bx + tx, yf + 1, bz + tz, torch);
+                demo_set!(self.runtime.local().world, chart, bx + tx, yf + 1, bz + tz, torch);
             }
             // A red-glazed alcove: torch sealed behind a stained pane —
             // its pool outside should come out the color of the glass.
             if let Some(rg) = self.content.reg.block_id("base:red_glass") {
                 let (ax, az) = (bx + 4, bz - 4);
-                demo_set!(self.server.world, chart, ax, yf + 1, az, stone);
-                demo_set!(self.server.world, chart, ax, yf + 2, az, torch);
-                demo_set!(self.server.world, chart, ax, yf + 3, az, stone);
-                demo_set!(self.server.world, chart, ax - 1, yf + 2, az, stone);
-                demo_set!(self.server.world, chart, ax + 1, yf + 2, az, stone);
-                demo_set!(self.server.world, chart, ax, yf + 2, az - 1, stone);
-                demo_set!(self.server.world, chart, ax, yf + 2, az + 1, rg);
+                demo_set!(self.runtime.local().world, chart, ax, yf + 1, az, stone);
+                demo_set!(self.runtime.local().world, chart, ax, yf + 2, az, torch);
+                demo_set!(self.runtime.local().world, chart, ax, yf + 3, az, stone);
+                demo_set!(self.runtime.local().world, chart, ax - 1, yf + 2, az, stone);
+                demo_set!(self.runtime.local().world, chart, ax + 1, yf + 2, az, stone);
+                demo_set!(self.runtime.local().world, chart, ax, yf + 2, az - 1, stone);
+                demo_set!(self.runtime.local().world, chart, ax, yf + 2, az + 1, rg);
             }
             // Stand in the room, whatever the terrain wanted.
             let inside = Vec3::new(bx as f32 + 0.5, yf as f32 + 1.2, bz as f32 + 0.5);
@@ -1581,22 +1564,20 @@ impl Game {
             let bz = spawn.z as i32;
             for dx in [-8i32, 0, 8] {
                 for dz in [-8i32, 0, 8] {
-                    self.server
-                        .world
-                        .ensure_chunk(chart.chunk(bx + dx, bz + dz));
+                    self.runtime.local_mut().world.ensure_chunk(chart.chunk(bx + dx, bz + dz));
                 }
             }
             let yf = (-10..=10)
                 .flat_map(|dx| (-10..=10).map(move |dz| (dx, dz)))
-                .map(|(dx, dz)| demo_height!(self.server.world, chart, bx + dx, bz + dz))
+                .map(|(dx, dz)| demo_height!(self.runtime.local().world, chart, bx + dx, bz + dz))
                 .max()
                 .unwrap_or(spawn.y as i32);
             for dx in -10..=10i32 {
                 for dz in -10..=10i32 {
-                    demo_set!(self.server.world, chart, bx + dx, yf, bz + dz, ice);
+                    demo_set!(self.runtime.local().world, chart, bx + dx, yf, bz + dz, ice);
                 }
-                demo_set!(self.server.world, chart, bx + dx, yf + 1, bz + 10, ice);
-                demo_set!(self.server.world, chart, bx + dx, yf + 2, bz + 10, ice);
+                demo_set!(self.runtime.local().world, chart, bx + dx, yf + 1, bz + 10, ice);
+                demo_set!(self.runtime.local().world, chart, bx + dx, yf + 2, bz + 10, ice);
             }
             let strafe: f32 = std::env::var("WILDFORGE_DEMO_STRAFE")
                 .ok()
@@ -1620,14 +1601,12 @@ impl Game {
             let (bx, bz) = (spawn.x as i32, spawn.z as i32 + 8);
             for dx in [-8i32, 0, 8] {
                 for dz in [-8i32, 0, 8] {
-                    self.server
-                        .world
-                        .ensure_chunk(chart.chunk(bx + dx, bz + dz));
+                    self.runtime.local_mut().world.ensure_chunk(chart.chunk(bx + dx, bz + dz));
                 }
             }
             let yf = (-5..=5)
                 .flat_map(|dx| (-4..=4).map(move |dz| (dx, dz)))
-                .map(|(dx, dz)| demo_height!(self.server.world, chart, bx + dx, bz + dz))
+                .map(|(dx, dz)| demo_height!(self.runtime.local().world, chart, bx + dx, bz + dz))
                 .max()
                 .unwrap_or(spawn.y as i32);
             for dx in -4..=4i32 {
@@ -1635,18 +1614,18 @@ impl Game {
                     for dy in 0..=4i32 {
                         let edge = dx.abs() == 4 || dz.abs() == 3 || dy == 0 || dy == 4;
                         let b = if edge { stone } else { AIR };
-                        demo_set!(self.server.world, chart, bx + dx, yf + 1 + dy, bz + dz, b);
+                        demo_set!(self.runtime.local().world, chart, bx + dx, yf + 1 + dy, bz + dz, b);
                     }
                 }
             }
             // The window in the far wall, glowing green.
             for dx in -2..=2i32 {
                 for dy in 2..=3i32 {
-                    demo_set!(self.server.world, chart, bx + dx, yf + 1 + dy, bz + 3, glow);
+                    demo_set!(self.runtime.local().world, chart, bx + dx, yf + 1 + dy, bz + 3, glow);
                 }
             }
             // A torch on the outside sill: its beam crosses the pane.
-            demo_set!(self.server.world, chart, bx, yf + 2, bz + 5, torch);
+            demo_set!(self.runtime.local().world, chart, bx, yf + 2, bz + 5, torch);
             let stand = Vec3::new(bx as f32 + 0.5, yf as f32 + 1.2, bz as f32 - 1.5);
             self.player.pos = self.player.pos.relocated_local(stand).unwrap();
             self.survival.spawn_point = self.player.pos;
@@ -1663,26 +1642,24 @@ impl Game {
             let bz = spawn.z as i32;
             for dx in [-8i32, 0, 8] {
                 for dz in [-8i32, 0, 8] {
-                    self.server
-                        .world
-                        .ensure_chunk(chart.chunk(bx + dx, bz + dz));
+                    self.runtime.local_mut().world.ensure_chunk(chart.chunk(bx + dx, bz + dz));
                 }
             }
             let yf = (-10..=10)
                 .flat_map(|dx| (-10..=10).map(move |dz| (dx, dz)))
-                .map(|(dx, dz)| demo_height!(self.server.world, chart, bx + dx, bz + dz))
+                .map(|(dx, dz)| demo_height!(self.runtime.local().world, chart, bx + dx, bz + dz))
                 .max()
                 .unwrap_or(spawn.y as i32);
             for dx in -10..=10i32 {
                 for dz in -10..=10i32 {
-                    demo_set!(self.server.world, chart, bx + dx, yf, bz + dz, stone);
+                    demo_set!(self.runtime.local().world, chart, bx + dx, yf, bz + dz, stone);
                 }
                 for dy in 1..=6i32 {
-                    demo_set!(self.server.world, chart, bx + dx, yf + dy, bz - 8, stone);
+                    demo_set!(self.runtime.local().world, chart, bx + dx, yf + dy, bz - 8, stone);
                 }
             }
             for dy in 1..=3i32 {
-                demo_set!(self.server.world, chart, bx + 3, yf + dy, bz - 4, stone);
+                demo_set!(self.runtime.local().world, chart, bx + 3, yf + dy, bz - 4, stone);
             }
             let dist: f32 = std::env::var("WILDFORGE_DEMO_DIST")
                 .ok()
@@ -1702,14 +1679,14 @@ impl Game {
         {
             let bx = spawn.x as i32;
             let bz = spawn.z as i32 + 6;
-            let y = demo_height!(self.server.world, chart, bx, bz);
+            let y = demo_height!(self.runtime.local().world, chart, bx, bz);
             // Carve a clean flat arena: cobblestone floor, air above, so
             // grass and trees don't intrude on the shadow.
             for dx in -11..=11 {
                 for dz in -9..=15 {
-                    demo_set!(self.server.world, chart, bx + dx, y, bz + dz, stone);
+                    demo_set!(self.runtime.local().world, chart, bx + dx, y, bz + dz, stone);
                     for h in 1..=9 {
-                        demo_set!(self.server.world, chart, bx + dx, y + h, bz + dz, AIR);
+                        demo_set!(self.runtime.local().world, chart, bx + dx, y + h, bz + dz, AIR);
                     }
                 }
             }
@@ -1719,7 +1696,7 @@ impl Game {
                     continue;
                 }
                 for h in 1..=5 {
-                    demo_set!(self.server.world, chart, bx + dx, y + h, bz, stone);
+                    demo_set!(self.runtime.local().world, chart, bx + dx, y + h, bz, stone);
                 }
             }
             // Warm light on the far side of the wall — it blares through the
@@ -1743,10 +1720,10 @@ impl Game {
         {
             let cx = spawn.x as i32;
             let cz = spawn.z as i32 + 10;
-            let y = demo_height!(self.server.world, chart, cx, cz);
+            let y = demo_height!(self.runtime.local().world, chart, cx, cz);
             for dx in -8..=8 {
                 for dz in -8..=8 {
-                    demo_set!(self.server.world, chart, cx + dx, y, cz + dz, water);
+                    demo_set!(self.runtime.local().world, chart, cx + dx, y, cz + dz, water);
                 }
             }
         }
@@ -1760,8 +1737,8 @@ impl Game {
                     demo_set!(w, chart, x, y + 1, z, b);
                 }
             };
-            place(&mut self.server.world, "base:torch", -2, 5);
-            place(&mut self.server.world, "gems:ruby_block", 2, 5);
+            place(&mut self.runtime.local_mut().world, "base:torch", -2, 5);
+            place(&mut self.runtime.local_mut().world, "gems:ruby_block", 2, 5);
         }
         // Dev: a few tall pillars near spawn (shadow-casting verification).
         if std::env::var("WILDFORGE_DEMO_PILLARS").is_ok()
@@ -1769,9 +1746,9 @@ impl Game {
         {
             for (dx, dz, h) in [(4, 2, 6), (7, -3, 8), (-2, 6, 5), (10, 4, 7)] {
                 let (x, z) = (spawn.x as i32 + dx, spawn.z as i32 + dz);
-                let base = demo_height!(self.server.world, chart, x, z);
+                let base = demo_height!(self.runtime.local().world, chart, x, z);
                 for i in 1..=h {
-                    demo_set!(self.server.world, chart, x, base + i, z, stone);
+                    demo_set!(self.runtime.local().world, chart, x, base + i, z, stone);
                 }
             }
         }
@@ -1795,10 +1772,10 @@ impl Game {
                 for x in (spawn.x as i32 + 1)..=(spawn.x as i32 + 9) {
                     for z in (spawn.z as i32 + 1)..=(spawn.z as i32 + 15) {
                         for y in (floor_y - 2)..=floor_y {
-                            demo_set!(self.server.world, chart, x, y, z, floor);
+                            demo_set!(self.runtime.local().world, chart, x, y, z, floor);
                         }
                         for y in (floor_y + 1)..=(floor_y + 14) {
-                            demo_set!(self.server.world, chart, x, y, z, AIR);
+                            demo_set!(self.runtime.local().world, chart, x, y, z, AIR);
                         }
                     }
                 }
@@ -1810,11 +1787,11 @@ impl Game {
                             if rx == 0 && rz == 0 {
                                 continue;
                             }
-                            demo_set!(self.server.world, chart, sx + rx, sy + ly, sz + rz, fb);
+                            demo_set!(self.runtime.local().world, chart, sx + rx, sy + ly, sz + rz, fb);
                         }
                     }
                     demo_set!(
-                        self.server.world,
+                        self.runtime.local().world,
                         chart,
                         sx,
                         sy + ly,
@@ -1822,8 +1799,8 @@ impl Game {
                         crate::registry::AIR
                     );
                 }
-                demo_set!(self.server.world, chart, sx - 1, sy, sz, mouth);
-                demo_set!(self.server.world, chart, sx - 3, sy, sz + 2, anvil);
+                demo_set!(self.runtime.local().world, chart, sx - 1, sy, sz, mouth);
+                demo_set!(self.runtime.local().world, chart, sx - 3, sy, sz + 2, anvil);
                 // A second stack, already charged and burning.
                 let (lx, lz) = (sx, sz + 8);
                 let ly = floor_y + 1;
@@ -1833,11 +1810,11 @@ impl Game {
                             if rx == 0 && rz == 0 {
                                 continue;
                             }
-                            demo_set!(self.server.world, chart, lx + rx, ly + dy, lz + rz, fb);
+                            demo_set!(self.runtime.local().world, chart, lx + rx, ly + dy, lz + rz, fb);
                         }
                     }
                     demo_set!(
-                        self.server.world,
+                        self.runtime.local().world,
                         chart,
                         lx,
                         ly + dy,
@@ -1845,7 +1822,7 @@ impl Game {
                         crate::registry::AIR
                     );
                 }
-                demo_set!(self.server.world, chart, lx - 1, ly, lz, mouth);
+                demo_set!(self.runtime.local().world, chart, lx - 1, ly, lz, mouth);
                 let reg2 = self.content.reg.clone();
                 if let (Some(iron), Some(coal)) = (
                     reg2.item_id("base:iron_ingot"),
@@ -1860,20 +1837,17 @@ impl Game {
                         st.fuel[i] = Some(ItemStack::new(&reg2, coal, 2));
                     }
                     demo_insert!(
-                        self.server.world,
+                        self.runtime.local().world,
                         chart,
                         (lx - 1, ly, lz),
                         world::BlockEntity::Multiblock(st)
                     );
-                    let _ = self
-                        .server
-                        .world
-                        .light_bloomery_at(chart.block(lx - 1, ly, lz));
+                    let _ = self.runtime.local_mut().world.light_bloomery_at(chart.block(lx - 1, ly, lz));
                 }
                 // A bloom resting on the anvil, ready for the hammer.
                 if let Some(bl) = reg2.item_id("base:steel_bloom") {
                     demo_anvil_put!(
-                        self.server.world,
+                        self.runtime.local().world,
                         chart,
                         (sx - 3, sy, sz + 2),
                         ItemStack::new(&reg2, bl, 1),
@@ -1903,18 +1877,16 @@ impl Game {
             let b = |n: &str| self.content.reg.block_id(n);
             if let (Some(layer), Some(dirt)) = (b("base:snow_layer"), b("base:dirt")) {
                 let (sx, sz) = (spawn.x as i32 + 4, spawn.z as i32 - 2);
-                let sy = demo_height!(self.server.world, chart, sx, sz);
+                let sy = demo_height!(self.runtime.local().world, chart, sx, sz);
                 for rx in 0..6i32 {
                     for rz in -2..=2i32 {
-                        demo_set!(self.server.world, chart, sx + rx, sy, sz + rz, dirt);
-                        demo_set!(self.server.world, chart, sx + rx, sy + 1, sz + rz, layer);
+                        demo_set!(self.runtime.local().world, chart, sx + rx, sy, sz + rz, dirt);
+                        demo_set!(self.runtime.local().world, chart, sx + rx, sy + 1, sz + rz, layer);
                     }
                 }
                 // A walker crossed the field on the diagonal.
                 for i in 0..5i32 {
-                    self.server
-                        .world
-                        .tread_at(chart.block(sx + i, sy + 1, sz - 2 + i));
+                    self.runtime.local_mut().world.tread_at(chart.block(sx + i, sy + 1, sz - 2 + i));
                 }
                 // A break mid-burst, sparks and all; the tick re-stamps
                 // the moment so any capture frame lands mid-effect.
@@ -1936,18 +1908,18 @@ impl Game {
                 (b("base:firebrick"), b("base:kiln"), b("base:quern"))
             {
                 let (sx, sz) = (spawn.x as i32 + 6, spawn.z as i32 - 6);
-                let sy = demo_height!(self.server.world, chart, sx, sz) + 1;
+                let sy = demo_height!(self.runtime.local().world, chart, sx, sz) + 1;
                 for ly in 0..3 {
                     for rx in -1..=1i32 {
                         for rz in -1..=1i32 {
                             if rx == 0 && rz == 0 {
                                 continue;
                             }
-                            demo_set!(self.server.world, chart, sx + rx, sy + ly, sz + rz, fb);
+                            demo_set!(self.runtime.local().world, chart, sx + rx, sy + ly, sz + rz, fb);
                         }
                     }
                     demo_set!(
-                        self.server.world,
+                        self.runtime.local().world,
                         chart,
                         sx,
                         sy + ly,
@@ -1955,8 +1927,8 @@ impl Game {
                         crate::registry::AIR
                     );
                 }
-                demo_set!(self.server.world, chart, sx - 1, sy, sz, kiln);
-                demo_set!(self.server.world, chart, sx - 3, sy, sz + 2, quern);
+                demo_set!(self.runtime.local().world, chart, sx - 1, sy, sz, kiln);
+                demo_set!(self.runtime.local().world, chart, sx - 3, sy, sz + 2, quern);
                 if let (Some(sand), Some(coal), Some(pow)) = (
                     reg.item_id("base:sand"),
                     reg.item_id("base:charcoal"),
@@ -1972,12 +1944,12 @@ impl Game {
                     }
                     st.reagent = Some(ItemStack::new(&reg, pow, 1));
                     demo_insert!(
-                        self.server.world,
+                        self.runtime.local().world,
                         chart,
                         (sx - 1, sy, sz),
                         world::BlockEntity::Multiblock(st)
                     );
-                    let _ = self.server.world.light_kiln_at(chart.block(sx - 1, sy, sz));
+                    let _ = self.runtime.local_mut().world.light_kiln_at(chart.block(sx - 1, sy, sz));
                 }
                 for (name, n) in [
                     ("base:sand", 16),
@@ -1995,7 +1967,7 @@ impl Game {
                 // Torches behind stained panes: the light comes out
                 // the color of the glass (stage 5's proof).
                 let (tx2, tz2) = (spawn.x as i32 - 8, spawn.z as i32 + 2);
-                let ty2 = demo_height!(self.server.world, chart, tx2, tz2) + 1;
+                let ty2 = demo_height!(self.runtime.local().world, chart, tx2, tz2) + 1;
                 if let (Some(stone), Some(torch), Some(rg), Some(bg)) = (
                     b("base:stone"),
                     b("base:torch"),
@@ -2008,7 +1980,7 @@ impl Game {
                         for dy in -1..=1i32 {
                             for dz in -1..=1i32 {
                                 demo_set!(
-                                    self.server.world,
+                                    self.runtime.local().world,
                                     chart,
                                     tx2 - 1,
                                     ty2 + dy,
@@ -2017,7 +1989,7 @@ impl Game {
                                 );
                                 if dy != 0 || dz != 0 {
                                     demo_set!(
-                                        self.server.world,
+                                        self.runtime.local().world,
                                         chart,
                                         tx2,
                                         ty2 + dy,
@@ -2027,13 +1999,13 @@ impl Game {
                                 }
                             }
                         }
-                        demo_set!(self.server.world, chart, tx2, ty2, z, torch);
-                        demo_set!(self.server.world, chart, tx2 + 1, ty2, z, *pane);
+                        demo_set!(self.runtime.local().world, chart, tx2, ty2, z, torch);
+                        demo_set!(self.runtime.local().world, chart, tx2 + 1, ty2, z, *pane);
                     }
                 }
                 // A stained window row so the tint shows in shots.
                 let (wx, wz) = (spawn.x as i32 - 5, spawn.z as i32);
-                let wy = demo_height!(self.server.world, chart, wx, wz) + 1;
+                let wy = demo_height!(self.runtime.local().world, chart, wx, wz) + 1;
                 for (i, g) in [
                     "base:glass",
                     "base:teal_glass",
@@ -2046,8 +2018,8 @@ impl Game {
                 .enumerate()
                 {
                     if let Some(gb) = b(g) {
-                        demo_set!(self.server.world, chart, wx, wy, wz + i as i32, gb);
-                        demo_set!(self.server.world, chart, wx, wy + 1, wz + i as i32, gb);
+                        demo_set!(self.runtime.local().world, chart, wx, wy, wz + i as i32, gb);
+                        demo_set!(self.runtime.local().world, chart, wx, wy + 1, wz + i as i32, gb);
                     }
                 }
             }
@@ -2056,28 +2028,28 @@ impl Game {
         if let Ok(v) = std::env::var("WILDFORGE_IRE")
             && let Ok(v) = v.parse::<f32>()
         {
-            self.server.world.ire = v.clamp(0.0, 100.0);
-            self.server.sync_tier();
+            self.runtime.local_mut().world.ire = v.clamp(0.0, 100.0);
+            self.runtime.local_mut().sync_tier();
         }
         // Dev: force the calendar and the sky.
         if let Ok(v) = std::env::var("WILDFORGE_DAY")
             && let Ok(v) = v.parse::<u32>()
         {
-            self.server.world.day = v;
+            self.runtime.local_mut().world.day = v;
         }
         if let Ok(v) = std::env::var("WILDFORGE_SEASON")
             && let Ok(v) = v.parse::<u32>()
         {
-            self.server.world.day = (v % 4) * world::SEASON_DAYS;
+            self.runtime.local_mut().world.day = (v % 4) * world::SEASON_DAYS;
         }
         // Calendar overrides must move the authoritative simulation clock too.
         // Local astronomy and climate sample `World::clock`; leaving it at the
         // pre-override value makes a capture's sky disagree with its weather.
-        self.server.world.clock = (f64::from(self.server.world.day)
-            + f64::from(self.server.time_of_day.rem_euclid(1.0)))
+        self.runtime.local_mut().world.clock = (f64::from(self.runtime.view().day())
+            + f64::from(self.runtime.time_of_day().rem_euclid(1.0)))
             * f64::from(crate::server::DAY_LENGTH);
         if let Ok(v) = std::env::var("WILDFORGE_WEATHER") {
-            self.server.world.force_local_weather(&v);
+            self.runtime.local_mut().world.force_local_weather(&v);
             self.presentation.weather_vis = match v.as_str() {
                 "overcast" => 0.4,
                 "precip" | "rain" | "snow" => 0.55,
@@ -2100,7 +2072,7 @@ impl Game {
                 if let Some(si) = self.content.reg.animal_id(name) {
                     let x = spawn.x as i32 - 4 + i as i32 * 3;
                     let z = spawn.z as i32 - 7;
-                    let y = demo_height!(self.server.world, chart, x, z) + 1;
+                    let y = demo_height!(self.runtime.local().world, chart, x, z) + 1;
                     let mut m = demo_mob!(
                         chart,
                         si,
@@ -2108,7 +2080,7 @@ impl Game {
                         0.0,
                     );
                     m.health = self.content.reg.animals[si].health;
-                    self.server.world.spawn_mob(m);
+                    self.runtime.local_mut().world.spawn_mob(m);
                 }
             }
         }
@@ -2118,27 +2090,25 @@ impl Game {
             let reg = self.content.reg.clone();
             let (sx, sz) = (spawn.x as i32, spawn.z as i32);
             if let Some(os) = reg.block_id("base:offering_stone") {
-                let y = demo_height!(self.server.world, chart, sx - 3, sz - 5) + 1;
-                demo_set!(self.server.world, chart, sx - 3, y, sz - 5, os);
+                let y = demo_height!(self.runtime.local().world, chart, sx - 3, sz - 5) + 1;
+                demo_set!(self.runtime.local().world, chart, sx - 3, y, sz - 5, os);
                 let mut st = world::OfferingState::default();
                 if let Some(hw) = reg.item_id("base:heartwood") {
                     st.slots[0] = Some(ItemStack::new(&reg, hw, 2));
                 }
                 demo_insert!(
-                    self.server.world,
+                    self.runtime.local().world,
                     chart,
                     (sx - 3, y, sz - 5),
                     world::BlockEntity::Offering(st)
                 );
             }
             if let Some(sap) = reg.block_id("base:oak_sapling") {
-                let y = demo_height!(self.server.world, chart, sx + 2, sz - 6) + 1;
-                demo_set!(self.server.world, chart, sx + 2, y, sz - 6, sap);
+                let y = demo_height!(self.runtime.local().world, chart, sx + 2, sz - 6) + 1;
+                demo_set!(self.runtime.local().world, chart, sx + 2, y, sz - 6, sap);
             }
-            let ty = demo_height!(self.server.world, chart, sx + 6, sz - 8) + 1;
-            self.server
-                .world
-                .grow_tree_at(chart.block(sx + 6, ty, sz - 8), "oak", 3);
+            let ty = demo_height!(self.runtime.local().world, chart, sx + 6, sz - 8) + 1;
+            self.runtime.local_mut().world.grow_tree_at(chart.block(sx + 6, ty, sz - 8), "oak", 3);
             for name in ["base:bedroll", "base:oak_sapling"] {
                 if let Some(item) = reg.item_id(name) {
                     self.give_dev_item(&reg, item, 1);
@@ -2150,7 +2120,7 @@ impl Game {
             let p = (spawn.x as i32 - 2, spawn.y as i32, spawn.z as i32);
             let reg = self.content.reg.clone();
             if let Some(cb) = reg.block_id("base:chest") {
-                demo_set!(self.server.world, chart, p.0, p.1, p.2, cb);
+                demo_set!(self.runtime.local().world, chart, p.0, p.1, p.2, cb);
                 let mut st = world::ChestState::default();
                 for (i, (name, n)) in [
                     ("base:bread", 5),
@@ -2164,7 +2134,7 @@ impl Game {
                         st.slots[i * 4] = Some(ItemStack::new(&reg, item, *n));
                     }
                 }
-                demo_insert!(self.server.world, chart, p, world::BlockEntity::Chest(st));
+                demo_insert!(self.runtime.local().world, chart, p, world::BlockEntity::Chest(st));
                 self.set_screen(Screen::Chest(chart.block_tuple(p)));
             }
         }
@@ -2188,7 +2158,7 @@ impl Game {
                 if let Some(si) = self.content.reg.animal_id(name) {
                     let x = spawn.x as i32 - 3 + i as i32 * 2;
                     let z = spawn.z as i32 - 6;
-                    let y = demo_height!(self.server.world, chart, x, z) + 1;
+                    let y = demo_height!(self.runtime.local().world, chart, x, z) + 1;
                     let mut m = demo_mob!(
                         chart,
                         si,
@@ -2196,7 +2166,7 @@ impl Game {
                         i as f32 * 1.3,
                     );
                     m.health = self.content.reg.animals[si].health;
-                    self.server.world.spawn_mob(m);
+                    self.runtime.local_mut().world.spawn_mob(m);
                 }
             }
         }
@@ -2211,7 +2181,7 @@ impl Game {
                 if let Some(si) = self.content.reg.animal_id(name) {
                     let x = spawn.x as i32 - 4 + i as i32 * 3;
                     let z = spawn.z as i32 - 9;
-                    let y = demo_height!(self.server.world, chart, x, z) + 4;
+                    let y = demo_height!(self.runtime.local().world, chart, x, z) + 4;
                     let mut m = demo_mob!(
                         chart,
                         si,
@@ -2221,7 +2191,7 @@ impl Game {
                     m.health = self.content.reg.animals[si].health;
                     // Staggered so one still shows the whole stroke.
                     m.anim_phase = i as f32 * 0.9;
-                    self.server.world.spawn_mob(m);
+                    self.runtime.local_mut().world.spawn_mob(m);
                 }
             }
         }
@@ -2230,7 +2200,7 @@ impl Game {
         // through neighbouring provinces, so each family can be seen.
         if let Ok(which) = std::env::var("WILDFORGE_DEMO_EDIFICE") {
             let skip: usize = which.parse().unwrap_or(0);
-            let g = &self.server.world.generator;
+            let g = &self.runtime.local().world.generator;
             let home = g.province_at(spawn.surface()).key;
             let sites: Vec<SurfacePos> = (0..6)
                 .flat_map(|r: i32| {
@@ -2248,14 +2218,14 @@ impl Game {
                     acc
                 });
             if let Some(&site) = sites.get(skip) {
-                let ed = crate::edifice::edifice_of(self.server.world.generator.biome_at(site));
+                let ed = crate::edifice::edifice_of(self.runtime.local().world.generator.biome_at(site));
                 let center = ChunkPos::from_surface(site);
                 for cx in -3..=3 {
                     for cz in -3..=3 {
-                        self.server.world.ensure_chunk(center.offset(cx, cz));
+                        self.runtime.local_mut().world.ensure_chunk(center.offset(cx, cz));
                     }
                 }
-                let base = self.server.world.surface_height_at(site);
+                let base = self.runtime.view().surface_height_at(site);
                 // Stand well back and a little above the crest.
                 let back = std::env::var("WILDFORGE_DEMO_BACK")
                     .ok()
@@ -2277,7 +2247,7 @@ impl Game {
                 self.flying = true;
                 eprintln!(
                     "edifice demo: {:?} {:?} at {:?} {},{base},{}",
-                    self.server.world.generator.biome_at(site),
+                    self.runtime.local().world.generator.biome_at(site),
                     ed.family,
                     site.face(),
                     site.u(),
@@ -2292,11 +2262,11 @@ impl Game {
         if let Ok(who) = std::env::var("WILDFORGE_DEMO_FIRE") {
             let b = |n: &str| self.content.reg.block_id(n);
             let (bx, bz) = (spawn.x as i32 + 10, spawn.z as i32);
-            let g = demo_height!(self.server.world, chart, bx, bz);
+            let g = demo_height!(self.runtime.local().world, chart, bx, bz);
             if let (Some(grass), Some(log), Some(leaves)) =
                 (b("base:grass"), b("base:log"), b("base:leaves"))
             {
-                let w = &mut self.server.world;
+                let w = &mut self.runtime.local_mut().world;
                 // The footprint spans several chunks, and any that are
                 // not loaded yet will be GENERATED over the top of
                 // whatever we build here.
@@ -2357,12 +2327,12 @@ impl Game {
         if std::env::var("WILDFORGE_DEMO_LAVA").is_ok() {
             let bx = spawn.x as i32 + 6;
             let bz = spawn.z as i32;
-            let y0 = demo_height!(self.server.world, chart, bx, bz) + 14;
+            let y0 = demo_height!(self.runtime.local().world, chart, bx, bz) + 14;
             let b = |n: &str| self.content.reg.block_id(n);
             let Some(stone) = b("base:basalt").or_else(|| b("base:stone")) else {
                 return;
             };
-            let w = &mut self.server.world;
+            let w = &mut self.runtime.local_mut().world;
             for step in 0..14i32 {
                 let top = y0 - step;
                 for x in (step * 2)..(step * 2 + 2) {
@@ -2405,9 +2375,9 @@ impl Game {
                 reg.item_id("base:raw_copper"),
                 reg.item_id("base:log"),
             ) {
-                demo_set!(self.server.world, chart, p.0, p.1, p.2, fb);
+                demo_set!(self.runtime.local().world, chart, p.0, p.1, p.2, fb);
                 demo_insert!(
-                    self.server.world,
+                    self.runtime.local().world,
                     chart,
                     p,
                     world::BlockEntity::Furnace(world::FurnaceState {
@@ -2446,9 +2416,9 @@ impl Game {
         let bx = spawn.x.round() as i32;
         let bz = spawn.z.round() as i32 - 8;
         let y = (-3..=3)
-            .map(|dx| demo_height!(self.server.world, chart, bx + dx, bz))
+            .map(|dx| demo_height!(self.runtime.local().world, chart, bx + dx, bz))
             .max()
-            .unwrap_or_else(|| demo_height!(self.server.world, chart, bx, bz))
+            .unwrap_or_else(|| demo_height!(self.runtime.local().world, chart, bx, bz))
             + 1;
         let stone = reg
             .block_id("base:stone")
@@ -2456,10 +2426,10 @@ impl Game {
         for dx in -6..=6 {
             for dz in -2..=6 {
                 if dz <= 2 {
-                    demo_set!(self.server.world, chart, bx + dx, y - 1, bz + dz, stone);
+                    demo_set!(self.runtime.local().world, chart, bx + dx, y - 1, bz + dz, stone);
                 }
                 for dy in 0..=6 {
-                    demo_set!(self.server.world, chart, bx + dx, y + dy, bz + dz, AIR);
+                    demo_set!(self.runtime.local().world, chart, bx + dx, y + dy, bz + dz, AIR);
                 }
             }
         }
@@ -2474,7 +2444,7 @@ impl Game {
             let block = reg
                 .block_id(name)
                 .ok_or_else(|| format!("capture registry lacks {name}"))?;
-            self.server.world.set_block_authored_at(
+            self.runtime.local_mut().world.set_block_authored_at(
                 pos,
                 block,
                 "development alchemy qualification scene",
@@ -2482,7 +2452,7 @@ impl Game {
             let conductor = reg
                 .block_id("base:arcane_conductor")
                 .ok_or("capture registry lacks arcane conductor")?;
-            self.server.world.set_block_authored_at(
+            self.runtime.local_mut().world.set_block_authored_at(
                 chart.block(bx + dx, y, bz - 1),
                 conductor,
                 "development alchemy qualification scene",
@@ -2495,26 +2465,26 @@ impl Game {
         let ice = reg
             .block_id("base:ice")
             .ok_or("capture registry lacks ice")?;
-        self.server.world.set_block_authored_at(
+        self.runtime.local_mut().world.set_block_authored_at(
             chart.block(bx, y, bz + 1),
             fire,
             "development alchemy heat source",
         );
-        self.server.world.set_block_authored_at(
+        self.runtime.local_mut().world.set_block_authored_at(
             chart.block(bx + 2, y, bz + 1),
             ice,
             "development alchemy cooling stock",
         );
 
         let actor = identity::local_player_id(
-            &self.server.world.save_dir_for_saving(),
+            &self.runtime.local().world.save_dir_for_saving(),
             self.identity.device_id(),
         )
         .map_err(|error| error.to_string())?;
         let mut work = Inventory::new();
         let mut last = None;
         for pos in stations {
-            last = Some(self.server.world.operate_alchemy(
+            last = Some(self.runtime.local_mut().world.operate_alchemy(
                 pos,
                 &mut work,
                 crate::alchemy::AlchemyRequest {
@@ -2566,7 +2536,7 @@ impl Game {
         let reg = self.content.reg.clone();
         let bx = spawn.x.round() as i32;
         let bz = spawn.z.round() as i32 - 6;
-        let y = demo_height!(self.server.world, chart, bx, bz) + 1;
+        let y = demo_height!(self.runtime.local().world, chart, bx, bz) + 1;
         let frame = chart.block(bx, y, bz);
         let focus = chart.block(bx + 1, y, bz);
         let vessel_pos = chart.block(bx - 1, y, bz);
@@ -2576,11 +2546,11 @@ impl Game {
             for du in -1..=1 {
                 for dv in -1..=1 {
                     if let Some(near) = pos.offset(du, 0, dv) {
-                        self.server.world.ensure_chunk(near.chunk());
+                        self.runtime.local_mut().world.ensure_chunk(near.chunk());
                     }
                 }
             }
-            self.server.world.set_block_at(pos, AIR);
+            self.runtime.local_mut().world.set_block_at(pos, AIR);
         }
         for (pos, name) in [
             (frame, "base:binding_frame"),
@@ -2591,7 +2561,7 @@ impl Game {
             let block = reg
                 .block_id(name)
                 .ok_or_else(|| format!("capture registry lacks {name}"))?;
-            self.server.world.set_block_authored_at(
+            self.runtime.local_mut().world.set_block_authored_at(
                 pos,
                 block,
                 "development implements qualification scene",
@@ -2601,23 +2571,18 @@ impl Game {
             .item_id("base:charge_vessel")
             .ok_or("capture registry lacks the charge vessel item")?;
         let vessel = ItemStack::new(&reg, vessel_item, 1);
-        self.server
-            .world
-            .record_external_stack(vessel, "development implements qualification scene")
+        self.runtime.local_mut().world.record_external_stack(vessel, "development implements qualification scene")
             .map_err(|error| error.to_string())?;
-        if !self.server.world.place_item_block_at(vessel_pos, vessel) {
+        if !self.runtime.local_mut().world.place_item_block_at(vessel_pos, vessel) {
             return Err("the physical charge vessel could not be placed".into());
         }
-        let layout = self.server.world.binding_frame_layout(frame);
+        let layout = self.runtime.local().world.binding_frame_layout(frame);
         if !layout.valid {
             return Err(layout.problems.join(" "));
         }
 
         let mut work = Inventory::new();
-        let mut revision = self
-            .server
-            .world
-            .operate_binding_frame(
+        let mut revision = self.runtime.local_mut().world.operate_binding_frame(
                 frame,
                 &mut work,
                 0,
@@ -2636,15 +2601,10 @@ impl Game {
                 .item_id(name)
                 .ok_or_else(|| format!("capture registry lacks {name}"))?;
             let stack = ItemStack::new(&reg, item, 1);
-            self.server
-                .world
-                .record_external_stack(stack, "development implements qualification scene")
+            self.runtime.local_mut().world.record_external_stack(stack, "development implements qualification scene")
                 .map_err(|error| error.to_string())?;
             work.slots[0] = Some(stack);
-            revision = self
-                .server
-                .world
-                .operate_binding_frame(
+            revision = self.runtime.local_mut().world.operate_binding_frame(
                     frame,
                     &mut work,
                     0,
@@ -2654,10 +2614,7 @@ impl Game {
                 )?
                 .revision;
         }
-        revision = self
-            .server
-            .world
-            .operate_binding_frame(
+        revision = self.runtime.local_mut().world.operate_binding_frame(
                 frame,
                 &mut work,
                 0,
@@ -2666,10 +2623,7 @@ impl Game {
                 "development visual qualification",
             )?
             .revision;
-        revision = self
-            .server
-            .world
-            .operate_binding_frame(
+        revision = self.runtime.local_mut().world.operate_binding_frame(
                 frame,
                 &mut work,
                 0,
@@ -2678,7 +2632,7 @@ impl Game {
                 "development visual qualification",
             )?
             .revision;
-        self.server.world.operate_binding_frame(
+        self.runtime.local_mut().world.operate_binding_frame(
             frame,
             &mut work,
             0,
@@ -2689,9 +2643,7 @@ impl Game {
         let wand = work.slots[0].ok_or("the assembled wand did not leave the frame")?;
         let selected = self.input.hotbar_sel;
         if let Some(previous) = self.inventory.slots[selected] {
-            self.server
-                .world
-                .record_admin_stack_deletion(previous)
+            self.runtime.local_mut().world.record_admin_stack_deletion(previous)
                 .map_err(|error| error.to_string())?;
         }
         self.inventory.slots[selected] = Some(wand);
@@ -2715,11 +2667,11 @@ impl Game {
                 .block()
                 .ok_or("the workings capture player has no physical source cell")?;
             let actor = identity::local_player_id(
-                &self.server.world.save_dir_for_saving(),
+                &self.runtime.local().world.save_dir_for_saving(),
                 self.identity.device_id(),
             )
             .unwrap_or(identity::PlayerId([0; 16]));
-            let result = self.server.world.begin_wand_working(
+            let result = self.runtime.local_mut().world.begin_wand_working(
                 actor.0,
                 &self.config.display_name,
                 source,
@@ -2729,12 +2681,9 @@ impl Game {
                 Some(&self.inventory),
                 false,
             )?;
-            self.server.world.clock += f64::from(crate::workings::MIN_WAND_SETTLE_SECONDS) + 0.01;
-            self.server.world.activate_working(result.stable_id)?;
-            if let Some(cue) = self
-                .server
-                .world
-                .working_cues()
+            self.runtime.local_mut().world.clock += f64::from(crate::workings::MIN_WAND_SETTLE_SECONDS) + 0.01;
+            self.runtime.local_mut().world.activate_working(result.stable_id)?;
+            if let Some(cue) = self.runtime.local().world.working_cues()
                 .into_iter()
                 .find(|cue| cue.stable_id == result.stable_id)
             {
@@ -2748,9 +2697,7 @@ impl Game {
         eprintln!(
             "implements demo: frame {frame:?}, wand id {}, charge {}, layout containment {}",
             wand.arcane_id,
-            self.server
-                .world
-                .arcane_ledger
+            self.runtime.local().world.arcane_ledger
                 .as_ref()
                 .and_then(|ledger| ledger.item_current_total(wand.arcane_id))
                 .unwrap_or_default(),
@@ -2806,7 +2753,7 @@ impl Game {
         let center = chart.chunk(center_x, center_z);
         for du in -radius..=radius {
             for dv in -radius..=radius {
-                self.server.world.ensure_chunk(center.offset(du, dv));
+                self.runtime.local_mut().world.ensure_chunk(center.offset(du, dv));
             }
         }
         self.config.view_dist = 7;
@@ -2919,7 +2866,7 @@ impl Game {
             }
         }
 
-        self.server.world.edit_batch(|world| {
+        self.runtime.local_mut().world.edit_batch(|world| {
             for (pos, block) in edits {
                 world.set_block_authored_at(pos, block, "development qualification scene");
             }
@@ -2945,9 +2892,9 @@ impl Game {
                                 i32::from(v) + dv,
                             )
                             .unwrap();
-                            self.server.world.generator.biome_at(sample)
+                            self.runtime.local().world.generator.biome_at(sample)
                                 == crate::worldgen::Biome::Ocean
-                                && self.server.world.generator.surface_estimate_at(sample)
+                                && self.runtime.local().world.generator.surface_estimate_at(sample)
                                     < SEA_LEVEL - 4
                         });
                     if deep {

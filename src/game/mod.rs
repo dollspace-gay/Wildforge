@@ -1,5 +1,7 @@
 //! Client game-state implementation, split by existing responsibility.
 
+use crate::world::TerrainRead;
+
 mod actions;
 mod app;
 mod browser;
@@ -32,6 +34,7 @@ mod text_input;
 mod menus;
 mod mesh_jobs;
 mod remote;
+mod runtime;
 mod roster_ui;
 mod session;
 mod skills;
@@ -336,7 +339,7 @@ struct Remote {
 struct Game {
     window: Arc<Window>,
     renderer: renderer::Renderer,
-    server: server::Server,
+    runtime: runtime::PlayRuntime,
     player: Player,
     camera: Camera,
 
@@ -435,7 +438,7 @@ impl Game {
             .translated(Vec3::new(0.0, -0.1, 0.0))
             .ok()
             .and_then(|canonical| canonical.pos.block())
-            .map(|block| self.server.world.get_block_at(block))
+            .map(|block| self.runtime.view().get_block_at(block))
             .unwrap_or(crate::registry::AIR);
         audio::step_mat(&self.content.reg.block(b).name, self.break_mat(b))
     }

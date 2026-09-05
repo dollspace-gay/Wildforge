@@ -24,7 +24,7 @@ pub(super) fn equipment_enabled(game: &Game) -> bool {
     {
         return false;
     }
-    game.server.world.ruleset().equipment
+    game.runtime.view().ruleset().equipment
 }
 
 impl Game {

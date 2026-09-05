@@ -79,7 +79,7 @@ impl Game {
         self.renderer.clear_chunks();
         self.gen_pool = Some(jobs);
         self.mesh_pool = Some(meshes);
-        self.server = server::Server::new(world, 0.3, self.rng ^ 0x5ee1);
+        self.runtime.set_local(server::Server::new(world, 0.3, self.rng ^ 0x5ee1));
         self.player = Player::new_at(spawn);
         self.survival.spawn_point = self.player.pos;
         self.combat = combat::CombatState::new();
@@ -91,7 +91,7 @@ impl Game {
         // Guests keep the default first-person view: Tab is the roster there,
         // so a guest could never toggle back out of a host's orbit setting.
         if self.multiplayer.remote.is_none() {
-            self.camera.mode = crate::camera::CameraMode::parse(&self.server.world.camera);
+            self.camera.mode = crate::camera::CameraMode::parse(&self.runtime.local().world.camera);
         }
         self.inventory = Inventory::new();
         self.survival.armor = [None; 5];
@@ -103,7 +103,7 @@ impl Game {
                 if let Some(item) = reg.item_id(name.trim()) {
                     let mut stack = ItemStack::new(&reg, item, 1);
                     if let Some(at) = self.player.pos.block()
-                        && let Err(error) = self.server.world.bind_arcane_stack_at(
+                        && let Err(error) = self.runtime.local_mut().world.bind_arcane_stack_at(
                             at,
                             &mut stack,
                             "development kit",
@@ -114,10 +114,7 @@ impl Game {
                     }
                     let left = self.inventory.add_stack(&reg, stack);
                     if left == 0
-                        && let Err(error) = self
-                            .server
-                            .world
-                            .record_external_stack(stack, "development kit")
+                        && let Err(error) = self.runtime.local_mut().world.record_external_stack(stack, "development kit")
                     {
                         eprintln!("materials: development kit accounting failed: {error}");
                     }
@@ -141,7 +138,7 @@ impl Game {
                     let left = self.inventory.add(&reg, item, n);
                     let added = n - left;
                     if added != 0
-                        && let Some(ledger) = &mut self.server.world.material_ledger
+                        && let Some(ledger) = &mut self.runtime.local_mut().world.material_ledger
                         && let Err(error) = ledger.record_external_stack(
                             &reg,
                             ItemStack::new(&reg, item, added),
@@ -158,7 +155,7 @@ impl Game {
                     && let Some((slot, _)) = reg.item(item).armor
                 {
                     self.survival.armor[slot as usize] = Some(ItemStack::new(&reg, item, 1));
-                    if let Some(ledger) = &mut self.server.world.material_ledger
+                    if let Some(ledger) = &mut self.runtime.local_mut().world.material_ledger
                         && let Err(error) = ledger.record_external_stack(
                             &reg,
                             ItemStack::new(&reg, item, 1),
@@ -172,7 +169,7 @@ impl Game {
         }
         self.ui_state.held_stack = None;
         self.interaction.craft_grid = [None; 9];
-        self.server.world.clear_loose_items();
+        self.runtime.local_mut().world.clear_loose_items();
         self.interaction.breaking = None;
         self.survival.health = self.max_health();
         self.survival.killed_by_wild = false;
@@ -186,7 +183,7 @@ impl Game {
         self.survival.since_damage = 100.0;
         self.survival.damage_flash = 0.0;
         self.survival.fall_start = None;
-        self.server.time_of_day = 0.3;
+        *self.runtime.time_of_day_mut() = 0.3;
         self.input.hotbar_sel = 0;
         let (_, mode, _) = world::read_world_meta(&PathBuf::from("saves").join(name));
         self.creative = mode == "creative";
@@ -199,13 +196,13 @@ impl Game {
             // A malformed/development profile below the sealed shell is
             // settled onto valid ground; there is no planetary void mechanic.
             if self.player.pos.y < 1.0 {
-                self.player.pos = self.server.world.settle_spawn_at(self.player.pos);
+                self.player.pos = self.runtime.local_mut().world.settle_spawn_at(self.player.pos);
                 self.player.vel = Vec3::ZERO;
             }
             // And a save whose terrain changed underneath it (built
             // over, regenerated) comes back beside the hill, not in
             // it. Mid-air/mid-swim saves pass through untouched.
-            let freed = self.server.world.free_position_at(self.player.pos);
+            let freed = self.runtime.local_mut().world.free_position_at(self.player.pos);
             if freed != self.player.pos {
                 self.player.pos = freed;
                 self.player.vel = Vec3::ZERO;
@@ -218,14 +215,14 @@ impl Game {
         {
             self.input.hotbar_sel = i.min(HOTBAR_SLOTS - 1);
         }
-        self.server.sync_tier();
+        self.runtime.local_mut().sync_tier();
         self.content
             .scripts
             .load_kv(&PathBuf::from("saves").join(name));
         self.load_loose_items(&PathBuf::from("saves").join(name));
         if self.content.scripts.wants("on_world_start") {
-            self.content.scripts.dispatch(
-                &self.server.world,
+            self.content.scripts.dispatch_view(
+                &self.runtime.view(),
                 "on_world_start",
                 (name.to_string(),),
             );
@@ -254,7 +251,7 @@ impl Game {
     }
 
     pub(super) fn save_player(&self) -> std::io::Result<()> {
-        if !self.in_world || self.multiplayer.remote.is_some() {
+        if !self.in_world || self.runtime.is_guest() || self.multiplayer.remote.is_some() {
             return Ok(());
         }
         use std::fmt::Write as _;
@@ -362,7 +359,7 @@ impl Game {
                 }
             }
         }
-        let world = self.server.world.save_dir_for_saving();
+        let world = self.runtime.local().world.save_dir_for_saving();
         let path = identity::local_profile_path(&world, self.identity.device_id())?;
         identity::atomic_write(&path, out.as_bytes(), false)?;
         identity::finish_local_profile_migration(&world);
@@ -372,19 +369,19 @@ impl Game {
     /// Persist every local-session component and keep enough context for a
     /// player-facing error. A remote guest owns none of this state.
     pub(super) fn save_session(&mut self) -> Result<String, String> {
-        if self.multiplayer.remote.is_some() {
+        if self.runtime.is_guest() || self.multiplayer.remote.is_some() {
             return Ok("remote session has no local world state".into());
         }
         let mut failures = Vec::new();
         if let Err(error) = self.save_player() {
             failures.push(format!("player profile: {error}"));
         }
-        let world_dir = self.server.world.save_dir_for_saving();
+        let world_dir = self.runtime.local().world.save_dir_for_saving();
         if let Err(error) = self.save_loose_items(&world_dir) {
             failures.push(format!("loose items: {error}"));
         }
-        self.server.world.settle_falling();
-        let world_report = self.server.world.save_modified();
+        self.runtime.local_mut().world.settle_falling();
+        let world_report = self.runtime.local_mut().world.save_modified();
         if !world_report.is_ok() {
             failures.push(format!("world: {}", world_report.summary()));
         }
@@ -420,10 +417,7 @@ impl Game {
             version: u32,
             drop: Vec<StoredDrop>,
         }
-        let drop = self
-            .server
-            .world
-            .loose_items()
+        let drop = self.runtime.view().loose_items()
             .iter()
             .map(|entity| StoredDrop {
                 stable_id: entity.stable_id,
@@ -447,7 +441,7 @@ impl Game {
         // World::load_or_create owns the v3 host-authoritative format. This
         // reader remains only as a migration fallback for older session
         // worlds that reached the game before world-side adoption.
-        if !self.server.world.loose_items().is_empty() {
+        if !self.runtime.view().loose_items().is_empty() {
             return;
         }
 
@@ -512,10 +506,7 @@ impl Game {
                     durability: entity.durability,
                     arcane_id: stored.arcane_id,
                 };
-                if self
-                    .server
-                    .world
-                    .ensure_charm_instance_at(
+                if self.runtime.local_mut().world.ensure_charm_instance_at(
                         at,
                         &mut stack,
                         "explicit planetary loose-item charm migration",
@@ -525,7 +516,7 @@ impl Game {
                     entity.arcane_id = stack.arcane_id;
                 }
             }
-            self.server.world.spawn_loose_item(entity);
+            self.runtime.local_mut().world.spawn_loose_item(entity);
         }
     }
 
@@ -720,7 +711,7 @@ impl Game {
                 });
         }
         if let Some(at) = self.player.pos.block() {
-            let migrated = self.server.world.migrate_legacy_player_charms(
+            let migrated = self.runtime.local_mut().world.migrate_legacy_player_charms(
                 at,
                 &mut self.inventory,
                 &mut self.survival.armor,
@@ -736,15 +727,12 @@ impl Game {
             }
         }
         if let Ok(player_id) = identity::local_player_id(dir, self.identity.device_id()) {
-            match self
-                .server
-                .world
-                .resume_pending_inventory_workings(player_id.0, &mut self.inventory)
+            match self.runtime.local_mut().world.resume_pending_inventory_workings(player_id.0, &mut self.inventory)
             {
                 Ok(ids) if !ids.is_empty() => match self.save_player() {
                     Ok(()) => {
                         for id in ids {
-                            if let Err(error) = self.server.world.finish_inventory_working(id) {
+                            if let Err(error) = self.runtime.local_mut().world.finish_inventory_working(id) {
                                 eprintln!("workings: resumed Fieldmend could not finish: {error}");
                             }
                         }
@@ -763,20 +751,19 @@ impl Game {
     }
 
     pub(super) fn quit_to_title(&mut self) {
-        if self.multiplayer.remote.is_some() {
+        if self.runtime.is_guest() || self.multiplayer.remote.is_some() {
             self.multiplayer.remote = None;
             self.multiplayer.host = None;
             self.multiplayer.host_sleeping = false;
-            self.server.world.set_edit_logging(false);
             self.renderer.clear_chunks();
             self.gen_pool = None;
             self.mesh_pool = None;
-            self.server = server::Server::new(
+            self.runtime.set_local(server::Server::new(
                 World::new(0, PathBuf::from("saves/.none"), self.content.reg.clone()),
                 0.3,
                 1,
-            );
-            self.server.world.clear_loose_items();
+            ));
+            self.runtime.local_mut().world.clear_loose_items();
             self.in_world = false;
             self.refresh_worlds();
             self.set_screen(Screen::Title);
@@ -791,16 +778,16 @@ impl Game {
         }
         self.multiplayer.host = None; // closes connections after durable save
         self.multiplayer.host_sleeping = false;
-        self.server.world.set_edit_logging(false);
+        self.runtime.local_mut().world.set_edit_logging(false);
         self.renderer.clear_chunks();
         self.gen_pool = None;
         self.mesh_pool = None;
-        self.server = server::Server::new(
+        self.runtime.set_local(server::Server::new(
             World::new(0, PathBuf::from("saves/.none"), self.content.reg.clone()),
             0.3,
             1,
-        );
-        self.server.world.clear_loose_items();
+        ));
+        self.runtime.local_mut().world.clear_loose_items();
         self.in_world = false;
         self.refresh_worlds();
         self.set_screen(Screen::Title);

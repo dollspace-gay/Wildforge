@@ -934,23 +934,7 @@ impl World {
     /// Remap all in-memory chunks from an old registry to the current one
     /// (used by hot reload). Unknown blocks become the placeholder.
     pub fn remap_from(&mut self, old: &Registry) {
-        let map: Vec<BlockId> = old
-            .blocks
-            .iter()
-            .map(|b| self.reg.block_id(&b.name).unwrap_or(self.reg.unknown_block))
-            .collect();
-        for chunk in self.chunks.values_mut() {
-            for cell in chunk.raw_mut() {
-                *cell = map
-                    .get(*cell as usize)
-                    .copied()
-                    .unwrap_or(self.reg.unknown_block)
-                    .0;
-            }
-            // A remap can collapse many ids onto one placeholder.
-            chunk.compact();
-            chunk.dirty = true;
-        }
+        self.chunks.remap_from(old, &self.reg);
         // Re-resolve gated positions (spec 2.5) against the new registry's
         // gate list by their sealed block; a gate whose def was removed (or
         // whose sealed block changed) stops gating rather than softlocking

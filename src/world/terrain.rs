@@ -7,6 +7,7 @@ use crate::chunk::{CHUNK_X, Chunk, ChunkPos};
 mod edits;
 mod lighting;
 mod network;
+mod remap;
 
 /// Owns resident voxel planes, mesh dirtiness, and derived light. Generation,
 /// persisted palettes, ledgers, and save policy belong to the authoritative

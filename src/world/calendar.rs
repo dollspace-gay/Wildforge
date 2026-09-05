@@ -66,32 +66,7 @@ impl World {
         // by signed latitude: no equatorial season spike, opposite
         // hemispheres, strongest variation toward the poles.
         let temperature_c = self.temperature_at_surface_on_day(pos, f64::from(self.day));
-        if let Some(mut sample) = self.weather_override {
-            sample.temperature_c = temperature_c;
-            if sample.kind.precipitating()
-                && sample.precipitation == crate::planet_atlas::PrecipitationForm::None
-            {
-                sample.precipitation = if temperature_c <= 0.0 {
-                    crate::planet_atlas::PrecipitationForm::Snow
-                } else {
-                    crate::planet_atlas::PrecipitationForm::Rain
-                };
-            }
-            return sample;
-        }
-        let kind = crate::planet_atlas::LocalWeather::Clear;
-        crate::planet_atlas::LocalWeatherSample {
-            kind,
-            precipitation: if !kind.precipitating() {
-                crate::planet_atlas::PrecipitationForm::None
-            } else if temperature_c <= 0.0 {
-                crate::planet_atlas::PrecipitationForm::Snow
-            } else {
-                crate::planet_atlas::PrecipitationForm::Rain
-            },
-            temperature_c,
-            ..crate::planet_atlas::LocalWeatherSample::default()
-        }
+        super::calendar_view::fallback_weather(temperature_c, self.weather_override)
     }
 
     pub fn soil_moisture_at_surface(&self, pos: crate::planet::SurfacePos) -> f32 {
@@ -131,39 +106,10 @@ impl World {
     /// Development/capture override. Water is only moved between vapor and
     /// cloud; even a forced storm cannot mint atmospheric mass.
     pub fn force_local_weather(&mut self, requested: &str) {
-        let (requested, forced_form) = match requested {
-            "overcast" => (
-                crate::planet_atlas::LocalWeather::Overcast,
-                crate::planet_atlas::PrecipitationForm::None,
-            ),
-            "rain" => (
-                crate::planet_atlas::LocalWeather::Precipitation,
-                crate::planet_atlas::PrecipitationForm::Rain,
-            ),
-            "snow" => (
-                crate::planet_atlas::LocalWeather::Precipitation,
-                crate::planet_atlas::PrecipitationForm::Snow,
-            ),
-            "precip" => (
-                crate::planet_atlas::LocalWeather::Precipitation,
-                crate::planet_atlas::PrecipitationForm::None,
-            ),
-            "storm" => (
-                crate::planet_atlas::LocalWeather::Storm,
-                crate::planet_atlas::PrecipitationForm::None,
-            ),
-            _ => (
-                crate::planet_atlas::LocalWeather::Clear,
-                crate::planet_atlas::PrecipitationForm::None,
-            ),
-        };
+        let forced = super::calendar_view::forced_weather(requested);
+        let requested = forced.kind;
         let Some(weather) = &mut self.planetary_weather else {
-            self.weather_override = Some(crate::planet_atlas::LocalWeatherSample {
-                kind: requested,
-                precipitation: forced_form,
-                precipitation_units: u16::from(requested.precipitating()),
-                ..crate::planet_atlas::LocalWeatherSample::default()
-            });
+            self.weather_override = Some(forced);
             return;
         };
         self.weather_override = None;

@@ -86,3 +86,15 @@ pub trait BlockStore: BlockRead {
     /// via `LocalStructure.outbox`).
     fn push_drop_at(&mut self, at: crate::planet::BlockPos, stack: ItemStack);
 }
+
+/// Displacement of canonical cells on one planetary face.
+pub(super) fn planetary_delta(from: BlockPos, to: BlockPos) -> Option<(i32, i32, i32)> {
+        if from.face() != to.face() {
+            return None;
+        }
+        Some((
+            i32::from(to.u()) - i32::from(from.u()),
+            i32::from(to.y()) - i32::from(from.y()),
+            i32::from(to.v()) - i32::from(from.v()),
+        ))
+}

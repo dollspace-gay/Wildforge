@@ -18,6 +18,7 @@ mod geography;
 pub(crate) use geography::Geography;
 mod queries;
 mod hydrology;
+#[cfg(test)]
 mod prospecting;
 mod density;
 mod strata;
@@ -336,7 +337,6 @@ pub struct Generator {
     lava: BlockId,
     quartz_block: BlockId,
     amethyst_block: BlockId,
-    granite3d: Perlin,
     rivernoise: Perlin,
     lakenoise: Perlin,
 }

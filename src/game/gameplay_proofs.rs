@@ -77,28 +77,24 @@ fn depot_case(game: &mut Game, name: &str, item_name: &str, held: u32, staged: u
     assert!(reg.material_errors.is_empty(), "{:?}", reg.material_errors);
     let depot = reg.block_id("proof:depot").expect("fixture depot loaded");
     let item = reg.item_id(item_name).expect("fixture goods exist");
-    game.server = server::Server::new(
+    game.runtime.set_local(server::Server::new(
         World::new(42, PathBuf::from("saves/proof"), reg.clone()),
         0.3,
         5,
-    );
+    ));
     let pos = crate::planet::BlockPos::of_world(8, 201, 10).unwrap();
-    game.server.world.ensure_chunk(pos.chunk());
+    game.runtime.local_mut().world.ensure_chunk(pos.chunk());
     for x in 6..=10 {
         for z in 6..=12 {
             for y in 200..=204 {
-                game.server
-                    .world
-                    .set_block_at(crate::planet::BlockPos::of_world(x, y, z).unwrap(), AIR);
+                game.runtime.local_mut().world.set_block_at(crate::planet::BlockPos::of_world(x, y, z).unwrap(), AIR);
             }
         }
     }
-    assert!(game.server.world.place_block_at(pos, depot));
+    assert!(game.runtime.local_mut().world.place_block_at(pos, depot));
     if staged > 0 {
         assert_eq!(
-            game.server
-                .world
-                .depot_deposit(pos, &ItemStack::new(&reg, item, staged)),
+            game.runtime.local_mut().world.depot_deposit(pos, &ItemStack::new(&reg, item, staged)),
             staged
         );
     }
@@ -110,7 +106,7 @@ fn depot_case(game: &mut Game, name: &str, item_name: &str, held: u32, staged: u
     game.camera.yaw = std::f32::consts::FRAC_PI_2;
     game.camera.pitch = 0.0;
     let hit = raycast::raycast_at(
-        &game.server.world,
+        &game.runtime.local().world,
         game.player.eye(),
         game.camera.local_forward(),
         game.reach(),
@@ -131,7 +127,7 @@ fn depot_case(game: &mut Game, name: &str, item_name: &str, held: u32, staged: u
     // the raycast, food interaction gate, and container routing.
     game.interact(1.0 / 30.0);
     let remaining = game.inventory.count_of(item);
-    let Some(world::BlockEntity::Depot(state)) = game.server.world.block_entity_at(&pos) else {
+    let Some(world::BlockEntity::Depot(state)) = game.runtime.view().block_entity_at(&pos) else {
         panic!("depot remains present");
     };
     let stock: u32 = state

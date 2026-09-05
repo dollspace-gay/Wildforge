@@ -1,5 +1,7 @@
 //! Guest connection setup and remote snapshot application.
 
+use crate::world::TerrainRead;
+
 use crate::atlas;
 use crate::audio;
 use crate::audio::Sfx;
@@ -11,9 +13,8 @@ use crate::inventory::ItemStack;
 use crate::mesher;
 use crate::net;
 use crate::physics::Player;
-use crate::server;
 use crate::world;
-use crate::world::World;
+use crate::world::{ReplicaWorld, ReplicationTarget};
 use glam::Vec3;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -184,7 +185,7 @@ impl Game {
                     if pos.distance(center) > f64::from(vd * CHUNK_X as i32) + 1.0 {
                         continue;
                     }
-                    if self.server.world.has_chunk(pos) || !r.wants.insert(pos) {
+                    if self.runtime.view().has_chunk(pos) || !r.wants.insert(pos) {
                         continue;
                     }
                     r.session.send(&net::C2S::RequestChunk {
@@ -227,11 +228,12 @@ impl Game {
             return;
         }
         for msg in msgs {
-            let Some(msg) = r.session.apply_world_message(
-                msg, &mut self.server.world, &mut self.server.time_of_day,
-            ) else {
-                continue;
+            let message = if let Some((world, time)) = self.runtime.guest_mut() {
+                r.session.apply_world_message(msg, world, time)
+            } else {
+                Some(msg)
             };
+            let Some(msg) = message else { continue; };
             match msg {
                 // Consumed by the shared replica-domain dispatch above.
                 net::S2C::TimeIre { .. } | net::S2C::WeatherCells { .. }
@@ -252,10 +254,7 @@ impl Game {
                         &atlas::pack_chain(&self.active_pack_id()),
                         &self.content.reg.tex_names,
                     );
-                    let season = self
-                        .server
-                        .world
-                        .season_at_surface(self.player.pos.surface());
+                    let season = self.runtime.view().season_at_surface(self.player.pos.surface());
                     atlas::season_tint(&mut atlas.color, atlas.px, season);
                     self.presentation.atlas_season = season;
                     self.content.pack_warnings = atlas.warnings;
@@ -283,12 +282,8 @@ impl Game {
                     world_name,
                     player_state,
                 } => {
-                    let mut world = World::new(
-                        seed,
-                        PathBuf::from("saves/.remote/world-cache"),
-                        self.content.reg.clone(),
-                    );
-                    world.set_remote(true);
+                    let mut world = ReplicaWorld::new(seed, self.content.reg.clone(), ire);
+                    world.configure_entry(mode.clone(), time);
                     self.gen_pool = None; // chunks come by wire
                     self.mesh_pool = match crate::game::mesh_jobs::MeshPool::new() {
                         Ok(meshes) => Some(meshes),
@@ -302,8 +297,6 @@ impl Game {
                             return; // local RemoteSession drops and disconnects
                         }
                     };
-                    world.mode = mode.clone();
-                    world.ire = ire;
                     r.my_id = your_id;
                     r.role = your_role;
                     if roster
@@ -316,7 +309,7 @@ impl Game {
                         );
                     }
                     let content = ContentMap::new(Arc::clone(&self.content.reg), palette, items);
-                    self.server = server::Server::new(world, time, 7);
+                    self.runtime.set_guest(world, time);
                     self.renderer.clear_chunks();
                     self.apply_remote_player_state(&content, player_state, true);
                     self.creative = mode == "creative";
@@ -341,7 +334,7 @@ impl Game {
                     self.multiplayer.join_status = "PREPARING SAFE WORLD ENTRY...".into();
                 }
                 net::S2C::EntryManifest { spawn, required } => {
-                    if let Err(error) = r.session.manifest(spawn, required, &self.server.world) {
+                    if let Err(error) = r.session.manifest(spawn, required, &self.runtime.view()) {
                         self.multiplayer.join_status = format!("FAILED: {error}").to_uppercase();
                         self.multiplayer.remote = None;
                         return;
@@ -393,7 +386,7 @@ impl Game {
                     // of those chunks here froze the UI immediately after
                     // EntryAccepted. The paced adoption stage below is shared
                     // by admission and ordinary view expansion.
-                    if !self.server.world.has_chunk(pos) && !r.session.has_queued_chunk(pos) {
+                    if !self.runtime.view().has_chunk(pos) && !r.session.has_queued_chunk(pos) {
                         // Proactively pushed chunks are pending too; marking
                         // them wanted prevents the repair scan from asking for
                         // duplicates before paced adoption reaches them.
@@ -411,7 +404,7 @@ impl Game {
                     let local = r
                         .session
                         .queue_block(pos, id, meta, salt_mass, soil_salinity);
-                    let old = self.server.world.get_block_at(pos);
+                    let old = self.runtime.view().get_block_at(pos);
                     // Someone broke something: the world crumbles for
                     // everyone watching.
                     if local == crate::registry::AIR
@@ -506,7 +499,9 @@ impl Game {
                         );
                         mob.present_replica_at(cur.1, phase);
                     }
-                    self.server.world.replace_mobs(mobs);
+                    if let Some((world, _)) = self.runtime.guest_mut() {
+                        world.replace_mobs(mobs);
+                    }
                     r.mob_lerp = lerps; // dead mobs' spans fall away
                     r.mob_interval = r.mob_age.clamp(0.03, 0.3);
                     r.mob_age = 0.0;
@@ -516,17 +511,23 @@ impl Game {
                 }
                 net::S2C::Falling(part) => {
                     if let Some(falling) = r.session.falling(part) {
-                        self.server.world.replace_falling_blocks(falling);
+                        if let Some((world, _)) = self.runtime.guest_mut() {
+                            world.replace_falling_blocks(falling);
+                        }
                     }
                 }
                 net::S2C::Bolts(part) => {
                     if let Some(projectiles) = r.session.bolts(part) {
-                        self.server.world.replace_projectiles(projectiles);
+                        if let Some((world, _)) = self.runtime.guest_mut() {
+                            world.replace_projectiles(projectiles);
+                        }
                     }
                 }
                 net::S2C::LooseItems(part) => {
                     if let Some(items) = r.session.loose_items(part) {
-                        self.server.world.replace_loose_items(items);
+                        if let Some((world, _)) = self.runtime.guest_mut() {
+                            world.replace_loose_items(items);
+                        }
                     }
                 }
                 net::S2C::DiscoveryReport(record) => {
@@ -628,7 +629,7 @@ impl Game {
                 net::S2C::MobHit { id, dmg, crit } => {
                     // The host's authoritative damage for the guest's swing;
                     // float the number over the mob the snapshot still shows.
-                    let at = self.server.world.mob_by_id(id).map(|m| m.pos);
+                    let at = self.runtime.view().mob_by_id(id).map(|m| m.pos);
                     if let Some(at) = at {
                         self.spawn_damage_number(at, dmg, crit);
                     }
@@ -647,9 +648,9 @@ impl Game {
                             stack.durability = durability;
                         }
                         stack.arcane_id = arcane_id;
-                        self.server
-                            .world
-                            .set_remote_arcane_item(arcane_id, current_units);
+                        if let Some((world, _)) = self.runtime.guest_mut() {
+                            world.set_remote_arcane_item(arcane_id, current_units);
+                        }
                         let left = self.inventory.add_stack(&reg, stack);
                         if left == 0 {
                             // Guests harvest over the wire; the ramp
@@ -714,7 +715,8 @@ impl Game {
                             arcane_id: sn.arcane_id,
                         });
                     }
-                    if let Some(m) = self.server.world.mob_by_id_mut(id) {
+                    if let Some((world, _)) = self.runtime.guest_mut()
+                        && let Some(m) = world.mob_by_id_mut(id) {
                         m.cargo = Some(cargo);
                     }
                     if matches!(self.ui_state.screen, Screen::Playing) {
@@ -776,7 +778,9 @@ impl Game {
                             world::BlockEntity::Offering(o)
                         }
                     };
-                    self.server.world.insert_block_entity_at(pos, entity);
+                    if let Some((world, _)) = self.runtime.guest_mut() {
+                        world.receive_block_entity(pos, entity);
+                    }
                     if matches!(self.ui_state.screen, Screen::Playing) {
                         self.set_screen(match kind {
                             0 => Screen::Chest(pos),
@@ -834,9 +838,9 @@ impl Game {
                             }
                         }
                     }
-                    self.server
-                        .world
-                        .insert_block_entity_at(pos, world::BlockEntity::Multiblock(m));
+                    if let Some((world, _)) = self.runtime.guest_mut() {
+                        world.receive_block_entity(pos, world::BlockEntity::Multiblock(m));
+                    }
                     if matches!(self.ui_state.screen, Screen::Playing) {
                         self.set_screen(match handler {
                             crate::machines::MachineHandler::Kiln => Screen::Kiln(pos),
@@ -887,21 +891,20 @@ impl Game {
         // before claiming readiness; Welcome by itself never exposes a blank
         // world.
         const REMOTE_CHUNKS_PER_FRAME: usize = 8;
-        for position in r
-            .session
-            .apply_terrain(&mut self.server.world, REMOTE_CHUNKS_PER_FRAME)
-        {
-            r.wants.remove(&position);
+        if let Some((world, _)) = self.runtime.guest_mut() {
+            for position in r.session.apply_terrain(world, REMOTE_CHUNKS_PER_FRAME) {
+                r.wants.remove(&position);
+            }
         }
         if let Some(center) = r.session.admission().frame_needed()
             && [(-1, 0), (1, 0), (0, -1), (0, 1)]
                 .iter()
-                .all(|(du, dv)| self.server.world.has_chunk(center.offset(*du, *dv)))
+                .all(|(du, dv)| self.runtime.view().has_chunk(center.offset(*du, *dv)))
         {
-            let mesh = mesher::mesh_chunk(&self.server.world, center, &self.content.tile_variants);
+            let mesh = mesher::mesh_chunk(&self.runtime.view(), center, &self.content.tile_variants);
             self.renderer.upload_chunk(center, &mesh);
             self.presentation.lights.chunk_meshed(center, mesh.emitters);
-            self.server.world.mark_chunk_meshed(center);
+            self.runtime.mark_chunk_meshed(center);
             if let Err(error) = r.session.frame_ready() {
                 self.multiplayer.join_status = format!("FAILED: {error}").to_uppercase();
                 return;
@@ -923,7 +926,8 @@ impl Game {
             }
         }
         let t = (r.mob_age / r.mob_interval.max(0.001)).clamp(0.0, 1.0);
-        self.server.world.for_each_mob_mut(|m| {
+        if let Some((world, _)) = self.runtime.guest_mut() {
+        world.for_each_mob_mut(|m| {
             if let Some(l) = r.mob_lerp.get_mut(&m.id) {
                 let (_, y) = l.at(t);
                 m.yaw = y;
@@ -934,13 +938,14 @@ impl Game {
                 m.hurt_flash = (m.hurt_flash - dt).max(0.0);
             }
         });
-        self.server.world.for_each_projectile_mut(|p| {
+        world.for_each_projectile_mut(|p| {
             if let Ok(moved) = p.pos.translated(p.vel * dt) {
                 p.pos = moved.pos;
                 p.vel = moved.rotation.rotate_vec3(p.vel);
             }
             p.age += dt;
         });
+        }
         // Our movement upstream at 20 Hz.
         if self.in_world {
             self.multiplayer.move_timer += dt;

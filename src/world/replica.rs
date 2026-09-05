@@ -10,6 +10,8 @@ use crate::mobs::{Mob, Projectile};
 use crate::planet::{BlockPos, SurfacePos};
 use crate::planet_atlas::LocalWeatherSample;
 use crate::registry::{AIR, BlockId, Registry};
+mod scene;
+
 use super::terrain::TerrainStore;
 use super::{BlockEntity, ReplicaObservations, ReplicationTarget, TerrainRead};
 
@@ -25,6 +27,11 @@ pub(crate) struct ReplicaWorld {
     mobs: Vec<Mob>,
     projectiles: Vec<Projectile>,
     loose_items: Vec<ItemEntity>,
+    seed: u32,
+    mode: String,
+    clock: f64,
+    weather_override: Option<LocalWeatherSample>,
+    falling: Vec<super::FallingBlock>,
     day: u32,
     ire: f32,
 }
@@ -40,6 +47,11 @@ impl ReplicaWorld {
             mobs: Vec::new(),
             projectiles: Vec::new(),
             loose_items: Vec::new(),
+            seed,
+            mode: "survival".into(),
+            clock: 0.0,
+            weather_override: None,
+            falling: Vec::new(),
             day: 0,
             ire,
         }
@@ -70,11 +82,11 @@ impl ReplicaWorld {
     }
 
     pub(crate) fn weather_at_surface(&self, position: SurfacePos) -> LocalWeatherSample {
-        self.observations.weather_at(position).unwrap_or_else(|| LocalWeatherSample {
-            temperature_c: crate::climate::seasonal_temperature(
+        self.observations.weather_at(position).unwrap_or_else(|| {
+            let temperature = crate::climate::seasonal_temperature(
                 self.geography.climate_at(position).t, position, f64::from(self.day),
-            ),
-            ..LocalWeatherSample::default()
+            );
+            super::calendar_view::fallback_weather(temperature, self.weather_override)
         })
     }
 

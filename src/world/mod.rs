@@ -39,6 +39,7 @@ mod fire;
 mod fluids;
 mod hearts;
 mod implements;
+mod item_presentation;
 mod lighting;
 mod machine_tick;
 pub(crate) mod machines;
@@ -47,6 +48,9 @@ mod persistence;
 pub(crate) mod pieces;
 mod power;
 mod query;
+mod standing;
+mod view;
+pub(crate) use view::WorldView;
 mod replica;
 mod replication;
 pub(crate) use replica::ReplicaWorld;
@@ -1608,6 +1612,28 @@ impl World {
         self.common_spawn
     }
 
+    pub(crate) fn remap_loose_items(&mut self, old: &Registry, registry: &Registry) {
+        crate::entity::remap_items(&mut self.loose_items, old, registry);
+    }
+
+    /// Publish validated runtime definitions and rebuild immutable generation
+    /// bindings. The content coordinator has already checked live compatibility.
+    pub(crate) fn replace_registry(&mut self, registry: Arc<Registry>) {
+        let old = std::mem::replace(&mut self.reg, registry);
+        self.remap_from(&old);
+        self.generator = self.planet_atlas().map_or_else(
+            || Generator::new(self.seed, &self.reg),
+            |atlas| Generator::with_atlas(self.seed, &self.reg, atlas),
+        );
+        if let (Some(atlas), Some(ledger)) = (self.planet_atlas(), &mut self.material_ledger)
+            && (ledger.reconcile_mod_manifests(&atlas, &self.reg)
+                | ledger.reconcile_saved_definitions(&self.reg))
+            && let Err(error) = ledger.save()
+        {
+            eprintln!("materials: could not persist hot-reload manifest: {error}");
+        }
+    }
+
     /// The survival ruleset this world's mode names (capability E1). A mode
     /// string that no longer resolves falls back to survival.
     pub fn ruleset(&self) -> crate::ruleset::Ruleset {
@@ -2278,6 +2304,15 @@ impl World {
         self.block_entities.get_mut(&pos)
     }
 
+    pub(crate) fn click_container(
+        &mut self, position: BlockPos, cursor: &mut Option<ItemStack>,
+        request: crate::player_ops::container::Click,
+    ) -> Result<crate::player_ops::container::Effect, crate::player_ops::container::Rejected> {
+        let entity = self.block_entities.get_mut(&position)
+            .ok_or(crate::player_ops::container::Rejected::Missing)?;
+        crate::player_ops::container::click(&self.reg, entity, cursor, request)
+    }
+
     pub fn block_entity_at(&self, pos: &crate::planet::BlockPos) -> Option<&BlockEntity> {
         self.block_entities.get(pos)
     }
@@ -2651,11 +2686,7 @@ impl World {
         &self,
         pos: crate::planet::BlockPos,
     ) -> Option<crate::planet_atlas::ReservoirMass> {
-        let volume = self.reg.water_volume(self.get_block_at(pos))?;
-        Some(crate::planet_atlas::ReservoirMass {
-            water_hu: u64::from(volume) * crate::planet_atlas::HYDRO_UNITS_PER_VISIBLE_LEVEL,
-            salt_mass: u64::from(self.get_water_salt_at(pos)),
-        })
+        TerrainRead::water_mass_at(self, pos)
     }
 
     #[cfg(test)]
@@ -3934,19 +3965,7 @@ impl World {
     /// Can a player body stand with its feet in cell y? Feet and
     /// head clear of solids, solid ground directly underfoot.
     fn standable_at(&self, surface: crate::planet::SurfacePos, y: i32) -> bool {
-        // Fluid is not solid, so a seabed column used to read as
-        // "standable" and players were dropped on the ocean floor.
-        // Somewhere to stand means dry air for the body, too.
-        let clear = |b: BlockId| !self.reg.is_solid(b) && !self.reg.is_fluid(b);
-        let at = |height: i32| {
-            crate::planet::BlockPos::new(surface.face(), surface.u(), height as u8, surface.v())
-                .expect("standable height is inside the vertical shell")
-        };
-        let stands = |height: i32| {
-            let pos = at(height);
-            self.reg.is_solid(self.get_block_at(pos)) && !self.is_hidden(pos)
-        };
-        stands(y - 1) && clear(self.get_block_at(at(y))) && clear(self.get_block_at(at(y + 1)))
+        TerrainRead::standable_at(self, surface, y)
     }
 
     /// Somewhere a player can be put down: dry, solid-footed, and
@@ -4082,62 +4101,7 @@ impl World {
     }
 
     pub fn settle_spawn_at(&mut self, want: crate::planet::EntityPos) -> crate::planet::EntityPos {
-        let surface = crate::planet::SurfacePos::new(
-            want.face(),
-            want.u().floor() as u16,
-            want.v().floor() as u16,
-        )
-        .expect("canonical entity has a valid surface cell");
-        self.ensure_chunk(ChunkPos::from_surface(surface));
-        let feet = (want.y.floor() as i32).clamp(1, CHUNK_Y as i32 - 2);
-        if self.standable_at(surface, feet) {
-            return want;
-        }
-        for d in 1..CHUNK_Y as i32 {
-            for y in [feet - d, feet + d] {
-                if y >= 1 && y < CHUNK_Y as i32 - 1 && self.standable_at(surface, y) {
-                    return crate::planet::EntityPos::new(
-                        want.face(),
-                        want.u(),
-                        y as f32 + 0.2,
-                        want.v(),
-                    )
-                    .expect("settled height preserves a canonical surface position");
-                }
-            }
-        }
-        // The column offers nothing (filled sky-to-bedrock): walk
-        // outward for the nearest column with open ground.
-        for r in 1..=8i32 {
-            for dz in -r..=r {
-                for dx in -r..=r {
-                    if dx.abs() != r && dz.abs() != r {
-                        continue;
-                    }
-                    let neighbor = crate::planet::SurfacePos::canonicalized(
-                        surface.face(),
-                        surface.u() as i32 + dx,
-                        surface.v() as i32 + dz,
-                    )
-                    .expect("spawn rescue radius crosses at most one face edge");
-                    self.ensure_chunk(ChunkPos::from_surface(neighbor));
-                    let y = self.surface_height_at(neighbor) + 1;
-                    if y < CHUNK_Y as i32 - 1 && self.standable_at(neighbor, y) {
-                        return crate::planet::EntityPos::new(
-                            neighbor.face(),
-                            neighbor.u() as f32 + 0.5,
-                            y as f32 + 0.2,
-                            neighbor.v() as f32 + 0.5,
-                        )
-                        .expect("neighbor cell center is canonical");
-                    }
-                }
-            }
-        }
-        // Last resort: on top of whatever this column calls surface.
-        let y = self.surface_height_at(surface) + 1;
-        crate::planet::EntityPos::new(want.face(), want.u(), y as f32 + 0.2, want.v())
-            .expect("settled height preserves a canonical surface position")
+        standing::settle(self, want)
     }
 
     /// Free a restored *position* only if it is embedded in solid.
