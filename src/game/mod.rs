@@ -25,6 +25,8 @@ mod startup;
 mod interaction;
 mod inventory_ui;
 mod keymap;
+mod keyboard_events;
+mod text_input;
 mod menus;
 mod mesh_jobs;
 mod remote;
@@ -61,14 +63,9 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use glam::Vec3;
-use winit::application::ApplicationHandler;
-use winit::dpi::{LogicalSize, PhysicalSize};
-use winit::event::{
-    DeviceEvent, DeviceId, ElementState, MouseButton, MouseScrollDelta, WindowEvent,
-};
-use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop};
-use winit::keyboard::{KeyCode, PhysicalKey};
-use winit::window::{Fullscreen, Window, WindowId};
+use winit::event_loop::ActiveEventLoop;
+use winit::keyboard::KeyCode;
+use winit::window::{Fullscreen, Window};
 
 use crate::audio::{Audio, BreakMat, Sfx};
 use crate::camera::Camera;

@@ -61,3 +61,7 @@ and UI navigation state, with an explicit coordinator for container closure,
 held-item return, focus, and capture. `presentation.rs` owns cosmetic variation,
 particle emission, and gait; these operations do not receive simulation state.
 `content_watch.rs` observes reload inputs; publication stays in `content.rs`.
+
+`text_input.rs` edits bounded UI fields and returns explicit create/sign actions.
+`keyboard_events.rs` preserves startup, join, chat, in-world text, then key-repeat
+filtering order. `app.rs` is the platform bridge; text edits have no world access.

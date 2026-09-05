@@ -1383,3 +1383,17 @@ seam, not full client encapsulation. No validation gates ran. The final phase
 must cover input capture/focus/repeat behavior, screen inventory conservation,
 cosmetic RNG isolation, startup and hot-reload behavior, native guest play, and
 fresh hardware GPU qualification before accepting this checkpoint.
+
+
+## Text input and platform bridge (coding checkpoint; unverified)
+
+UI text editing now operates on UiState and returns explicit app actions for
+world creation and sign submission. Startup fields remain before join/chat;
+sign, discovery-label, and search editing remain after chat and before repeated
+game-key filtering. Character policies, length limits, release handling, Escape
+behavior, and key action order are retained. The keyboard adapter handles the
+cross-domain effects, and the platform bridge uses explicit imports.
+
+No new tests or validation commands ran. Final cases must cover each text field,
+repeated text versus game keys, submit/cancel paths, focus changes, and native
+input/session evidence. The full refactor remains in progress.
