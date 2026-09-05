@@ -1854,3 +1854,21 @@ TOML adapters and in-memory publication before fallible save remain unchanged.
 No tests/compiler/format/analyzers ran. Final template capture/stamp, ghost
 completion/cancellation, structure identity/load, rail order and machine cargo
 checks remain pending the end-of-implementation verification phase.
+
+
+## World facade and transaction coordinators (coding checkpoint; unverified)
+
+The 4,000-line world root now declares owners and compatibility exports. Save
+results, block-entity schemas, header/browser adapters, atomic world creation,
+owner initialization, resident access, feature visibility, installation access,
+event publication, spawn rescue, and lunar observations are separate modules.
+Mining, placement, raw edits, material journals, and charged-item custody retain
+one coordinator per existing cross-domain transaction. Public paths, schema
+fields, operation ordering, and error text are preserved by the extraction.
+Private helpers shared between coordinators remain scoped to the world module.
+
+All extracted files are below 500 physical lines before final formatting; this
+is not a final linter result. The long mining transaction still needs the final
+function/exception review. No format/compiler/tests/analyzers ran. Final source
+integration, codec and deterministic fixtures, transaction fault paths, and
+native/GPU/runner qualification remain pending after implementation finishes.

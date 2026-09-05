@@ -92,3 +92,18 @@ block map and outbox. World coordinates ledger effects and block-edit fan-out.
 membership, and the structure ID cursor. Rail stepping temporarily takes and
 returns each structure at its existing index. Persistence adapters keep the
 same TOML codecs and the existing in-memory-before-save failure semantics.
+
+The World facade declares its domain owners and public compatibility types.
+`initialization.rs` opens those owners; `world_metadata.rs` validates save headers
+and supplies cheap browser observations; `creation.rs` publishes complete worlds.
+`save_reports.rs` and `block_entities.rs` define their public result/state schemas.
+No codec field, version, or public type path changes during this decomposition.
+
+Cross-domain operations have explicit coordinators: `mining.rs`, `placement.rs`,
+and `block_edits.rs` retain admission and side-effect order; `material_transactions.rs`
+coordinates durable material journals; `item_custody.rs` binds and retires Current.
+`residency.rs` coordinates saving before eviction. `feature_access.rs` manages
+visibility/gates, and `spawn_rescue.rs` prepares authoritative standing positions.
+Read and installation facades live in `voxel_access.rs`/`installation_access.rs`;
+`world_events.rs` publishes edit/drop/give queues. These remain World coordinators
+where transactions cross owners; moving them does not make them independent domains.
