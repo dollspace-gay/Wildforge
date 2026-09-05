@@ -1936,3 +1936,17 @@ Source review also identified existing local/host mining delivery differences:
 local basic drops reconstruct only item/count, and local mining assumes the
 world cannot refuse after input admission. These need a separate correctness
 checkpoint; no success or full adapter parity is claimed here. No tests ran.
+
+
+## Rejected mining and physical drop identity (corrective checkpoint; unverified)
+
+Local completed mining now handles a refused World operation before hunger,
+wear, XP, or drop presentation instead of assuming admission guarantees success.
+The world can still refuse a busy alchemy installation, a conserved-quantity
+transaction, or a protected ecology site. Accepted basic drops now carry the
+returned durability and arcane identity into the loose entity, matching the
+physical stack the host already delivers. Cosmetic position/RNG remain unchanged.
+
+No tests/compiler/analyzers ran. Final refusal cases must preserve actor state,
+and charged harvest/drop/pickup/reload must retain the original account rather
+than creating a fresh uncharged item or rebinding a second account.

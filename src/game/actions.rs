@@ -1297,10 +1297,10 @@ impl Game {
                             return;
                         }
                         if allow {
-                            self.survival.hunger = (self.survival.hunger - 0.008).max(0.0);
-                            let mined = crate::player_ops::terrain::mine(
+                            let Some(mined) = crate::player_ops::terrain::mine(
                                 &mut self.runtime.local_mut().world, target, held, self.creative,
-                            ).expect("mining target was validated before completion");
+                            ) else { return; };
+                            self.survival.hunger = (self.survival.hunger - 0.008).max(0.0);
                             let (result, sheared) = (mined.result, mined.sheared);
                             let b = result.block;
                             self.sfx(Sfx::Break(self.break_mat(b)));
@@ -1331,9 +1331,10 @@ impl Game {
                                 let center = target.entity_at_height(0.3);
                                 let a = self.rand01() * std::f32::consts::TAU;
                                 let v = Vec3::new(a.cos() * 1.2, 2.2, a.sin() * 1.2);
-                                self.runtime.local_mut().world.spawn_loose_item(ItemEntity::new(
-                                    center, v, drop.item, drop.count,
-                                ));
+                                let mut entity = ItemEntity::new(center, v, drop.item, drop.count);
+                                entity.durability = drop.durability;
+                                entity.arcane_id = drop.arcane_id;
+                                self.runtime.local_mut().world.spawn_loose_item(entity);
                             }
                             // Chance extras (leaves drop saplings).
                             if !self.creative
