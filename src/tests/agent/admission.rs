@@ -171,3 +171,46 @@ fn disconnect_during_preparation_is_reported_once() {
         1
     );
 }
+
+#[test]
+fn dropping_an_agent_drains_queued_messages_and_notifies_the_host() {
+    let (host, agent) = paused_host("client-drop");
+    let id = agent.my_id;
+    agent.send(&C2S::Chat("final queued message".into()));
+    drop(agent);
+    let deadline = Instant::now() + Duration::from_secs(5);
+    let mut received_chat = false;
+    let mut received_bye = false;
+    loop {
+        for event in host.with(|session, _| session.net.poll()) {
+            match event {
+                HostEvent::Msg {
+                    id: sender,
+                    msg: C2S::Chat(text),
+                } if sender == id && text == "final queued message" => {
+                    received_chat = true;
+                }
+                HostEvent::Msg {
+                    id: sender,
+                    msg: C2S::Bye,
+                } if sender == id => {
+                    assert!(received_chat, "Bye overtook the queued message");
+                    received_bye = true;
+                }
+                HostEvent::Left { id: sender } if sender == id => {
+                    assert!(
+                        received_chat && received_bye,
+                        "disconnect discarded the final reliable frames"
+                    );
+                    return;
+                }
+                _ => {}
+            }
+        }
+        assert!(
+            Instant::now() < deadline,
+            "the host did not observe client teardown"
+        );
+        std::thread::sleep(Duration::from_millis(10));
+    }
+}

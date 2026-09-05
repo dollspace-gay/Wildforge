@@ -942,3 +942,43 @@ the existing display-name validator. The fixture name is corrected to letters
 only; production admission rules are unchanged. The failed attempt, exit status,
 and binary hash remain in `target/maintainability/client-session-native/attempt-1`
 and `client-session-native-attempt-1.log`.
+
+
+## Guest transport ownership and ordinary disconnect
+
+The guest endpoint, authentication flow, and stream tasks moved to
+`src/net/client.rs` in `f86f776`, preserving the transport facade. The following
+correction is separate from that move.
+
+Native attempt 2 at `0a94502` passed the four depot cases, graphical entry and
+mesh upload, shared roster/chat with the ordinary agent, movement, host receipt,
+and screenshot capture on NVIDIA/Vulkan. It failed ordinary disconnect: the
+host still retained the viewer after five seconds. Artifacts and exit status
+remain in `target/maintainability/client-session-native/attempt-2` and
+`client-session-native-attempt-2.log`; this attempt is not a passing proof.
+
+Category A (root cause): dropping the client queued Bye then immediately
+stopped the runtime, racing delivery of both queued messages and QUIC closure.
+The client now owns its endpoint and three stream handles, queues a writer
+finish after outstanding messages, drains QUIC with the runtime alive, then
+cancels/joins remaining stream tasks. Each network wait has a two-second
+deadline; failures are reported. Protocol and authentication are unchanged.
+The reconnect scenario now exercises ordinary Drop instead of explicitly
+sending Bye while keeping the client alive. A regression checks ordered chat,
+Bye, and host departure through the real transport.
+
+Before the revised verification schedule below, the new drop scenario, all
+25 multiplayer and 20 serial agent scenarios, net tests, strict Clippy, Rust
+1.95 checking, formatting, advisory analysis, and directory guidance passed.
+Logs use `target/maintainability/client-session-close-*`. Native attempt 3 and
+full source/runtime qualification remain pending.
+
+## Implementation and final verification schedule
+
+The user requested that all remaining refactor coding be completed before
+running tests. Subsequent implementation checkpoints defer test execution,
+format/lint/build gates, native proof, and GPU qualification to the final
+verification stage. A targeted check may be needed to unblock implementation;
+any such exception will be recorded. Existing evidence retains its original
+source scope. Unverified implementation is not an accepted phase or passing
+campaign, and outstanding acceptance criteria stay open.

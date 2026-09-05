@@ -1487,10 +1487,9 @@ fn loopback_reconnect_reopens_the_same_server_profile() {
         .unwrap()
         .inventory
         .slots[0] = Some(ItemStack::new(&reg, torch, 6));
-    // Exercise the protocol's graceful disconnect while the client's writer
-    // runtime is still alive. Relying only on Drop races the queued Bye
-    // against QUIC shutdown under a highly parallel test run.
-    first.send(&crate::net::C2S::Bye);
+    // The owned client shutdown drains Bye before its runtime stops. The
+    // ordinary drop path must persist the same profile as explicit departure.
+    drop(first);
     for _ in 0..1_000 {
         session.pump(&mut sim, None, 0.05);
         if session.guests.is_empty() {
@@ -1499,8 +1498,6 @@ fn loopback_reconnect_reopens_the_same_server_profile() {
         std::thread::sleep(std::time::Duration::from_millis(5));
     }
     assert!(session.guests.is_empty());
-    drop(first);
-
     let mut second =
         crate::net::Client::connect(address, "New Name".into(), 0, 0, &identity, None).unwrap();
     for _ in 0..600 {

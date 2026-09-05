@@ -6,6 +6,11 @@ Read [README.md](README.md) and [the root instructions](../../AGENTS.md).
 
 protocol.rs defines wire values; handshake.rs authenticates admission; transport.rs owns QUIC channels; content.rs owns mod hashes and transfer inventories.
 
+client.rs owns guest endpoint/runtime and stream lifetimes. Finish reliable
+messages before closing the connection, drain the endpoint while its runtime
+is alive, and join every owned stream task. Do not replace completion with a
+fixed sleep or rely on peer idle timeout as ordinary disconnection.
+
 Keep transport separate from gameplay. Preserve protocol compatibility, snapshot bounds, host-key checks, and data/script boundaries.
 
 Aim for cohesive source modules around 400 lines and review those above 500.

@@ -4,8 +4,11 @@ use std::io;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::time::Duration;
 
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender, unbounded_channel};
+use tokio::sync::oneshot;
+use tokio::task::JoinHandle;
 
 use super::{read_frame, read_frame_limited, write_frame};
 use crate::identity::atproto::AtprotoAccount;
@@ -18,12 +21,21 @@ use crate::net::{C2S, PROTOCOL, S2C, decode, encode};
 
 pub struct Client {
     rt: tokio::runtime::Runtime,
+    endpoint: quinn::Endpoint,
+    tasks: Vec<JoinHandle<()>>,
     inbound: UnboundedReceiver<S2C>,
-    reliable: UnboundedSender<Vec<u8>>,
+    reliable: UnboundedSender<Outbound>,
     conn: quinn::Connection,
     pub connected: Arc<AtomicBool>,
     pub identity_policy: IdentityPolicy,
     pub admission_policy: AdmissionPolicy,
+}
+
+const CLOSE_WAIT: Duration = Duration::from_secs(2);
+
+enum Outbound {
+    Frame(Vec<u8>),
+    Finish(oneshot::Sender<io::Result<()>>),
 }
 
 /// Accept any certificate: friends-and-LAN trust model (the transport
@@ -82,7 +94,7 @@ impl Client {
             .enable_all()
             .build()?;
         let (in_tx, inbound) = unbounded_channel();
-        let (rel_tx, rel_rx) = unbounded_channel::<Vec<u8>>();
+        let (rel_tx, rel_rx) = unbounded_channel();
         let connected = Arc::new(AtomicBool::new(false));
 
         let crypto = rustls::ClientConfig::builder()
@@ -93,7 +105,7 @@ impl Client {
             .map_err(std::io::Error::other)?;
         let client_cfg = quinn::ClientConfig::new(Arc::new(crypto));
 
-        let conn = rt.block_on(async {
+        let (endpoint, conn) = rt.block_on(async {
             let mut endpoint = quinn::Endpoint::client(SocketAddr::from(([0, 0, 0, 0], 0)))?;
             endpoint.set_default_client_config(client_cfg);
             let conn = endpoint
@@ -101,7 +113,7 @@ impl Client {
                 .map_err(std::io::Error::other)?
                 .await
                 .map_err(std::io::Error::other)?;
-            Ok::<_, std::io::Error>(conn)
+            Ok::<_, std::io::Error>((endpoint, conn))
         })?;
 
         let server_fingerprint = peer_certificate_fingerprint(&conn)?;
@@ -194,7 +206,8 @@ impl Client {
         rt.block_on(write_frame(&mut send, &auth))?;
 
         // The framed writer takes over only after authentication.
-        rt.spawn(write_loop(send, rel_rx));
+        let mut tasks = Vec::with_capacity(3);
+        tasks.push(rt.spawn(write_loop(send, rel_rx)));
 
         // Reliable reader.
         {
@@ -202,7 +215,7 @@ impl Client {
             let connected = connected.clone();
             connected.store(true, Ordering::Relaxed);
             let conn2 = conn.clone();
-            rt.spawn(async move {
+            tasks.push(rt.spawn(async move {
                 let mut recv = recv;
                 while let Some(frame) = read_frame(&mut recv).await {
                     if let Some(msg) = decode::<S2C>(&frame) {
@@ -211,22 +224,24 @@ impl Client {
                 }
                 connected.store(false, Ordering::Relaxed);
                 drop(conn2);
-            });
+            }));
         }
         // Datagrams (snapshots).
         {
             let in_tx = in_tx.clone();
             let conn2 = conn.clone();
-            rt.spawn(async move {
+            tasks.push(rt.spawn(async move {
                 while let Ok(d) = conn2.read_datagram().await {
                     if let Some(msg) = decode::<S2C>(&d) {
                         let _ = in_tx.send(msg);
                     }
                 }
-            });
+            }));
         }
         Ok(Client {
             rt,
+            endpoint,
+            tasks,
             inbound,
             reliable: rel_tx,
             conn,
@@ -245,7 +260,7 @@ impl Client {
     }
 
     pub fn send(&self, msg: &C2S) {
-        let _ = self.reliable.send(encode(msg));
+        let _ = self.reliable.send(Outbound::Frame(encode(msg)));
     }
 
     pub fn send_datagram(&self, msg: &C2S) {
@@ -259,16 +274,63 @@ impl Client {
 
 impl Drop for Client {
     fn drop(&mut self) {
-        self.send(&C2S::Bye);
-        self.conn.close(0u32.into(), b"bye");
-        let _ = &self.rt;
+        self.connected.store(false, Ordering::Relaxed);
+        let (finished_tx, finished_rx) = oneshot::channel();
+        let finishing = self.reliable.send(Outbound::Finish(finished_tx)).is_ok();
+        let tasks = std::mem::take(&mut self.tasks);
+        self.rt.block_on(async {
+            if finishing && self.conn.close_reason().is_none() {
+                let result = tokio::time::timeout(CLOSE_WAIT, finished_rx).await;
+                if !matches!(result, Ok(Ok(Ok(())))) && self.conn.close_reason().is_none() {
+                    eprintln!("network: client reliable shutdown did not complete: {result:?}");
+                }
+            }
+            self.conn.close(0u32.into(), b"bye");
+            // Quinn needs its endpoint and runtime alive to deliver close
+            // frames. Dropping the runtime here previously stranded the host
+            // until its idle timeout, even after an ordinary quit to title.
+            if tokio::time::timeout(CLOSE_WAIT, self.endpoint.wait_idle())
+                .await
+                .is_err()
+            {
+                eprintln!("network: client endpoint close exceeded its drain deadline");
+            }
+            for task in tasks {
+                task.abort();
+                if let Err(error) = task.await
+                    && !error.is_cancelled()
+                {
+                    eprintln!("network: client stream task failed: {error}");
+                }
+            }
+        });
     }
 }
 
-async fn write_loop(mut send: quinn::SendStream, mut rx: UnboundedReceiver<Vec<u8>>) {
-    while let Some(bytes) = rx.recv().await {
-        if write_frame(&mut send, &bytes).await.is_err() {
-            break;
+async fn write_loop(mut send: quinn::SendStream, mut rx: UnboundedReceiver<Outbound>) {
+    while let Some(command) = rx.recv().await {
+        match command {
+            Outbound::Frame(bytes) => {
+                if let Err(error) = write_frame(&mut send, &bytes).await {
+                    eprintln!("network: client reliable write failed: {error}");
+                    return;
+                }
+            }
+            Outbound::Finish(finished) => {
+                let result = async {
+                    write_frame(&mut send, &encode(&C2S::Bye)).await?;
+                    send.finish().map_err(io::Error::other)?;
+                    if let Some(code) = send.stopped().await.map_err(io::Error::other)?
+                        && code.into_inner() != 0
+                    {
+                        return Err(io::Error::other(format!("host stopped the stream: {code}")));
+                    }
+                    Ok(())
+                }
+                .await;
+                let _ = finished.send(result);
+                return;
+            }
         }
     }
 }
