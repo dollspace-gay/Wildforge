@@ -140,10 +140,11 @@ small modules in `tools/maintainability/` and tests in `tools/tests/`.
   and large files as migration slices are accepted.
 
 The checked-in JSON is a dated observation, not an automatic exemption list
-or a permanently frozen acceptance threshold. Later PR-delta reporting should
-read a pinned base revision and distinguish new, grown, reduced, and removed
-findings, including file renames. Introducing a merge-blocking debt policy is a
-separate decision; the requested size limit remains soft.
+or a permanently frozen acceptance threshold. PR-delta reporting is implemented
+with `--base <git-revision>`: it resolves a pinned commit and distinguishes new,
+grown, reduced, and removed findings, including Git-detected file renames.
+Introducing a merge-blocking debt policy remains a separate decision; the
+requested size limit stays soft.
 
 ### Phase 2 — shared terrain jobs (first architecture slice)
 

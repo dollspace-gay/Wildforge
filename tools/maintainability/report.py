@@ -24,9 +24,14 @@ def source_paths(root: Path) -> list[Path]:
 
 
 def scan(root: Path, warning=400, review=500, min_tokens=100, min_lines=12) -> dict:
+    texts = ((path, (root / path).read_text(encoding='utf-8')) for path in source_paths(root))
+    return scan_texts(texts, warning, review, min_tokens, min_lines)
+
+
+def scan_texts(texts, warning=400, review=500, min_tokens=100, min_lines=12) -> dict:
+    """Measure supplied source texts using the same rules for either revision."""
     files, sources = [], []
-    for path in source_paths(root):
-        text = (root / path).read_text(encoding='utf-8')
+    for path, text in texts:
         count = len(text.splitlines())
         files.append({'path': path.as_posix(), 'lines': count,
                       'level': 'review' if count > review else 'warning' if count > warning else 'ok'})
@@ -86,4 +91,17 @@ def render(report: dict, limit=20) -> str:
         'Renamed/rewritten equivalents and semantic DRY violations require review.',
         'Physical size includes comments, blank lines, inline tests, and embedded data.',
     ])
+    if comparison := report.get('comparison'):
+        lines.extend(['', f"Delta from {comparison['base_revision']} to working tree:"])
+        for category in ['files', 'clones']:
+            counts = comparison['summary'][category]
+            lines.append(f"  {category}: " + ', '.join(
+                f'{count} {status}' for status, count in counts.items()))
+        for finding in comparison['files'][:limit]:
+            previous = finding['previous_path']
+            path = finding['path']
+            label = f'{previous} -> {path}' if previous and previous != path else path
+            lines.append(f"  {finding['status']:7} {finding['before_lines']} -> "
+                         f"{finding['after_lines']} {label}")
+        lines.append('Delta JSON contains all changed findings; thresholds remain advisory.')
     return '\n'.join(lines) + '\n'

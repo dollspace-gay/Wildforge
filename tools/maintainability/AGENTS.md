@@ -4,7 +4,7 @@
 
 Read [README.md](README.md) and [the root instructions](../../AGENTS.md).
 
-lex.py tokenizes source, clones.py verifies repeated spans, and report.py measures repository source and renders findings.
+lex.py tokenizes source, clones.py verifies repeated spans, report.py measures source and renders findings; revisions.py reads pinned Git source and compares findings.
 
 Keep size advisory and distinguish clone candidates from semantic DRY violations. Preserve exact literals and test scanner failure paths.
 
