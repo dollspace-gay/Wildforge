@@ -4,13 +4,17 @@
 //! sparse model owns country composition, heart sites, and traversable
 //! adjacency once per country instead of repeating them in every atlas cell.
 
-use std::cmp::Ordering as CmpOrdering;
-use std::collections::{BTreeMap, BTreeSet, BinaryHeap};
-
+use crate::chunk::{SEA_LEVEL};
+use crate::planet::{Direction4, SurfacePos, geodesic_distance, surface_to_unit};
+use crate::planet_atlas::{ATLAS_FACE_SIDE, AtlasError, AtlasGrid, AtlasPos, BedrockFamily, BiomeCell, ClimateCell, GenerationMode, GeometryCell, GroundCell, HYDRO_DELTA, HYDRO_ESTUARY, HYDRO_FLOODPLAIN, HYDRO_KARST_LOSS, HYDRO_LAKE, HYDRO_OCEAN, HYDRO_PERENNIAL, HYDRO_PLAYA, HYDRO_RIVER, HYDRO_TERMINAL, HYDRO_WETLAND, HydrologyCell, PlanetAtlas, TectonicCell, TerrainCell, WaterBodyKind};
+use crate::planet_atlas::grid::{generate_grid};
+use crate::planet_atlas::identity::{cell_hash};
 use serde::{Deserialize, Serialize};
+use std::cmp::Ordering as CmpOrdering;
+use std::collections::{BTreeMap, BTreeSet, BinaryHeap, VecDeque};
 
-use super::*;
-use crate::chunk::SEA_LEVEL;
+
+
 
 pub const BIOME_SCHEMA_VERSION: u32 = 1;
 

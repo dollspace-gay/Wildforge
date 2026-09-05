@@ -36,7 +36,7 @@ runtime comparisons. Cold/warm runtime measurements remain outstanding.
 | AC-4 common client | Shared admission, mappings, entity reconstruction, terrain ordering, roster, content publication, and domain updates implemented; earlier source has focused/QUIC evidence | Finish request and replica ownership; final transfer/reconnect/native qualification |
 | AC-5 player operations | Shared stall, craft/repair, conservation effects, and armor exchange implemented | Remaining action domains; final rejection/conservation/adapter parity tests |
 | AC-6 world domains | Domain fields/methods inventoried | Encapsulation, explicit transaction coordination |
-| AC-7 generation stages | Explicit chunk stages, intermediate maps, independent queries, and atlas climate/weather/geology/hydrology modules implemented | Remaining atlas decomposition; final pinned output and worker-order checks |
+| AC-7 generation stages | Explicit chunk stages, intermediate maps, independent queries, and atlas climate/weather/geology/hydrology modules implemented | Remaining biome/water/diagnostic decomposition; final pinned output and worker-order checks |
 | AC-8 app/content/render/tools | Registry definitions, schemas, linker, graph validation, runtime publication gate, and script preparation implemented | App/UI/render/tool owners; final publication/runtime/codec checks |
 | AC-9 source size | Advisory 400/500 report and baseline | Reduce migrated debt; explain any real exceptions |
 | AC-10 clone analyzer | 18 tests passed in planning; complete JSON snapshot | Maintain analyzer coverage as tooling evolves |
@@ -44,7 +44,7 @@ runtime comparisons. Cold/warm runtime measurements remain outstanding.
 | AC-12 tests/performance | Baseline suite passed; extraction focused gates passed | Full slice gates and reproducible measurements for affected paths |
 | AC-13 shutdown | Terrain, mesh, encoding, creation, entry, and homeland work have joined owners and failure tests | Dedicated shutdown; graphical close/capture and save-failure runtime proof |
 | AC-14 migration record | This file and separate baseline commits | Add implementation/result entries after each slice |
-| Folder guidance | 64 directories previously verified; new player_ops, worldgen, registry/schema, registry/linking, script, planet_atlas/climate, planet_atlas/geology, and planet_atlas/hydrology directories include guides | Final coverage and content identity checks after coding |
+| Folder guidance | 64 directories previously verified; new player_ops, worldgen, registry/schema, registry/linking, script, planet_atlas/climate, planet_atlas/geology, and planet_atlas/hydrology, planet_atlas/codec, and planet_atlas/storage directories include guides | Final coverage and content identity checks after coding |
 
 ## Compatibility observations requiring explicit treatment
 
@@ -1251,3 +1251,23 @@ This is a local coding checkpoint. Formatting, compilation, all tests, pinned
 atlas/codec comparisons, and GPU/runtime qualification remain deferred until
 coding is finished, following the current requested validation schedule. No old
 CI or qualification result is evidence for this source.
+
+
+## Atlas infrastructure owners (coding checkpoint; unverified)
+
+The atlas facade now separates canonical addressing/dense grids, immutable
+cells, dynamic atmosphere storage, sparse history, generation configuration,
+identity, explicit generation stages, sampling, and validation. Compatibility
+rules live with the manifest schema. Codec modules own checked primitives,
+fixed-width layers, containers, sparse TOML encoding, and fingerprints. Storage
+modules own new bundles, mutable checkpoints, paired backup recovery, and
+arcane checkpoint integration. Public names, persisted field order, versions,
+operation order, and stage evidence expressions are retained. Remaining domain
+parents now use explicit imports. New codec/storage folders include guides.
+
+Atlas-scoped scratch-buffer access remains an internal migration seam; complete
+world-domain encapsulation is still outstanding. Existing mutable checkpoint
+and recovery behavior is retained here, not claimed to provide stronger crash
+atomicity than before. Known bounded-stencil traversal needs a separate bounds
+correction: queued cells can exceed the requested output limit. Validation and
+new regression scenarios remain deferred until the coding phase is complete.

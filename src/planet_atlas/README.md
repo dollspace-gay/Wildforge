@@ -17,6 +17,12 @@ Its parent retains the bounded deterministic attempt-selection coordinator.
 watersheds, river/channel geometry, validation, sampling, and finite placers.
 Its parent keeps the generation sequence and final dense-cell accounting.
 
+`grid.rs` owns canonical addressing and dense storage; `layers.rs`, `dynamic.rs`,
+and `history.rs` define the layer schemas. `generation.rs` coordinates stages,
+`sampling.rs` exposes bounded queries, and `validation.rs` checks complete state.
+`manifest.rs` owns compatibility; `codec/` and `storage/` own serialization and
+committed persistence. The parent retains the public atlas facade.
+
 Start with `biomes.rs`, `climate.rs`, `diagnostics.rs`, `geology.rs`, `hydrology.rs`, `water_cycle.rs`. See the [repository overview](../../README.md) for
 build prerequisites and complete checks. Commands below run from the repository root.
 
