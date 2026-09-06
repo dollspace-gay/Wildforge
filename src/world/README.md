@@ -115,3 +115,8 @@ only geography, its parent ledger, registry, and save location for linked
 biomass/crystal destruction. It commits before representative voxel removal and
 restores the same site/cell/event snapshot on preparation or commit failure.
 Neither helper owns a second conserved-quantity account.
+
+`workings/`, `implements/`, and `alchemy/` group named admission, operation,
+conservation-commit, physical-application, observation, and recovery coordinators.
+Their existing ledger/state types retain ownership; pure helper rules are shared
+without World. Cross-domain transaction order and compatibility APIs remain intact.

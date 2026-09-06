@@ -2079,3 +2079,25 @@ required before accepting the extraction.
 - No tests/builds/GPU runs yet, per the implementation-first schedule. Final
   validation must include strict Rust gates, descriptor/WGSL checks, fresh native
   captures and full GPU timing qualification; historical evidence is insufficient.
+
+
+## Magic transaction coordinator organization checkpoint
+
+- Decomposed the three large World magic integrations into named operation,
+  admission/layout, custody, commit, effect, recovery and observation modules.
+  Pure alchemy material/liquid/inventory/status helpers no longer share the broad
+  transaction file. Existing state/ledger owners and public entry points remain.
+- Replaced inherited production namespaces with selected explicit imports and
+  narrowed moved private methods to their integration domain. Original cfg(test)
+  entry points and unit-test module paths remain available for final migration.
+- Reviewed exceptions: `src/world/workings/settlement.rs` retains one ordered
+  completion/cancellation/interruption coordinator (about 500 body lines). Its
+  Current/material journal, PendingApply replay and profile/world-save boundaries
+  must remain visible together; review at the next settlement protocol change.
+  `src/world/alchemy/preparation_use.rs` retains one atomic dose coordinator
+  (about 700 body lines), including spoilage, target-specific preflight, linked
+  dense-dross rollback, reusable-vessel return and post-commit water/soil effects;
+  review when adding a preparation target or changing custody staging. Both remain
+  reported by the advisory linter; neither is suppressed or claimed below 500.
+- These are unverified source moves. Final compiler, conservation/replay/parity,
+  native and GPU gates remain pending under the implementation-first schedule.
