@@ -1,13 +1,13 @@
 # Wildforge
 
 A Minecraft-alpha-style voxel game written in Rust on a custom engine,
-available under the [MIT license](LICENSE).
+available under the [MIT license](/LICENSE).
 There's no game framework under it: **wgpu** draws, **winit** handles the
 window, **glam** does the maths, **noise** makes the terrain. Collision is
 hand-rolled AABB, because a voxel world doesn't need a general-purpose
 physics engine.
 
-![Wildforge at dusk: a torch-lit camp with hard point-light shadows](docs/camp-hero.png)
+![Wildforge at dusk: a torch-lit camp with hard point-light shadows](/docs/camp-hero.png)
 
 ## Run
 
@@ -54,11 +54,6 @@ cargo +1.95.0 check --locked --all-targets
 cargo test --locked --all-targets
 cargo build --locked --release
 cargo deny check advisories
-python3 -m unittest discover -s tools/tests -v
-python3 tools/check_maintainability.py
-python3 tools/check_folder_guides.py
-python3 tools/check_architecture.py
-python3 tools/report_rust_functions.py
 ```
 
 For quick feedback, CI runs non-agent tests separately:
@@ -114,14 +109,8 @@ platform/app -> client Game -> Server simulation -> World/content
   simulation or a survival-client endpoint.
 
 The rationale, compatibility constraints, and two-pass refactor record live
-in [the modularization plan](docs/modularization-plan.md). A separate reusable
+in [the modularization plan](/docs/modularization-plan.md). A separate reusable
 engine crate is intentionally deferred until there is a second real consumer.
-
-The next [maintainability refactor plan](.design/maintainability-refactor.md)
-covers shared terrain jobs, client sessions, authoritative operations, and
-domain ownership. The [advisory maintainability checker](tools/maintainability/README.md)
-reports files over 400/500 physical lines and exact-token copy/paste candidates.
-These are soft review signals; existing size/duplication findings do not fail CI.
 
 ### WSL2 / WSLg note
 
@@ -219,7 +208,7 @@ there); single-player Tab cycles the camera with a click.
 Wildforge has a built-in mod system — vanilla content itself is the `base`
 mod, registered through the same TOML pipeline external mods use
 (see `base/*.toml` for the reference). **The full guide lives in
-[`mods/README.md`](mods/README.md)** — and it's executable: the guide's
+[`mods/README.md`](/mods/README.md)** — and it's executable: the guide's
 worked example is extracted verbatim by the test suite, loaded, and
 every claim asserted, so the docs can't drift from the code.
 
@@ -304,8 +293,8 @@ Ire only when it causes actual ecological harm.
 Dedicated hosts remain authoritative. Players and agents receive local,
 qualitative signs and physical records—not exact hidden Current, global Dross
 maps, private provenance, or operator audits. The final design and evidence
-live in [the magic sequence](docs/magic-sequence.md) and
-[qualification record](docs/magic-qualification-implementation.md).
+live in [the magic sequence](/docs/magic-sequence.md) and
+[qualification record](/docs/magic-qualification-implementation.md).
 
 ### Magic operator diagnostics
 
@@ -1077,11 +1066,3 @@ One binary, no server jar, ever:
 - Under it all: the **sim/client split** — `server::Server` steps the
   world at a fixed 30 Hz whether one player or eight are in it.
   Singleplayer is just a server with one local player.
-
-Each maintained repository directory includes a local `README.md` and
-`AGENTS.md` describing its purpose, boundaries, and focused checks. The folder
-checker follows Git source inventory, excluding ignored builds and personal
-runtime data. New guides use an explicit HTML marker to avoid changing mod
-content identity; existing unmarked documentation retains its historical hash
-contribution. See [the implementation record](.design/maintainability-progress.md)
-for the architecture migration and [acceptance evidence](.design/maintainability-acceptance.md).

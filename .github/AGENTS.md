@@ -2,7 +2,14 @@
 
 # Working in .github
 
-Read [README.md](README.md) and [the root instructions](../AGENTS.md).
+Read [the repository overview](../README.md), [the workflow guide](workflows/README.md),
+and [the root instructions](../AGENTS.md).
+
+`README.md` links to the canonical root README because GitHub gives this
+directory priority when choosing the repository overview. Keep the game overview
+in the root file and automation guidance here and under `workflows/`.
+Use repository-root link paths in the shared README so its images and links
+resolve correctly from both locations.
 
 GitHub automation is organized under workflows/. Each job should expose a concrete verification result.
 
