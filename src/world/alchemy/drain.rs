@@ -5,7 +5,7 @@ use crate::alchemy::AlchemyCueKind;
 use crate::alchemy::AlchemyRequest;
 use crate::alchemy::AlchemyResult;
 use crate::arcane::ArcaneOwner;
-use crate::world::BlockPos;
+use crate::planet::BlockPos;
 use crate::arcane::Current;
 use crate::alchemy::DisposalRoute;
 use crate::registry::MaterialVector;

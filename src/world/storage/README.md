@@ -40,3 +40,10 @@ alone adopts decoded terrain and commits lighting, ecology, and accounting.
 Run `cargo test --locked tests::world::` and `cargo test --locked terrain_jobs::`
 from the repository root. Read [AGENTS.md](AGENTS.md) before editing and record
 incomplete compatibility/runtime gates in the migration progress document.
+
+`loose_items`, `save_population`, and `load_population` retain the existing entity
+and sidecar encodings. `chunk_access` and `chunk_save` coordinate the established
+reader/palette/region owners. `save_world` owns report aggregation and clears each
+chunk's modified flag only after its write succeeds. `registry_remap` updates
+resident identities and validates gates/hidden tiers, leaving disk palettes stable.
+See [transaction order](../transaction-order.md) for saving and eviction fan-out.

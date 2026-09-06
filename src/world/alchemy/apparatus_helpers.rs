@@ -11,7 +11,7 @@ use crate::arcane::ArcaneOwner;
 use std::collections::BTreeMap;
 use crate::alchemy::BatchFailure;
 use crate::alchemy::BatchOutcome;
-use crate::world::BlockPos;
+use crate::planet::BlockPos;
 use crate::arcane::Current;
 use crate::registry::MaterialVector;
 use crate::alchemy::ProducedStack;

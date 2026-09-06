@@ -1,7 +1,7 @@
 //! Observation implements transaction coordination.
 
 use crate::world::BlockEntity;
-use crate::world::ItemStack;
+use crate::inventory::ItemStack;
 use crate::world::World;
 
 impl World {

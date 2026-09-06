@@ -4,7 +4,7 @@ use crate::alchemy::AlchemyCueKind;
 use crate::alchemy::AlchemyRequest;
 use crate::alchemy::AlchemyResult;
 use crate::alchemy::ApparatusKind;
-use crate::world::BlockPos;
+use crate::planet::BlockPos;
 use crate::planet_atlas::HYDRO_UNITS_PER_BLOCK;
 use crate::inventory::Inventory;
 use crate::registry::MaterialVector;

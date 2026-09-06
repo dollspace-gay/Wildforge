@@ -1,13 +1,13 @@
 //! Frame dispatch implements transaction coordination.
 
 use crate::world::BlockEntity;
-use crate::world::BlockPos;
+use crate::planet::BlockPos;
 use crate::implements::ComponentRole;
 use crate::implements::FrameAction;
 use crate::implements::FrameResult;
 use crate::implements::ImplementCue;
 use crate::implements::ImplementKind;
-use crate::world::ItemStack;
+use crate::inventory::ItemStack;
 use crate::world::World;
 
 impl World {

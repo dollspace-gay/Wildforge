@@ -5,7 +5,7 @@ use crate::alchemy::AlchemyCueKind;
 use crate::alchemy::AlchemyRequest;
 use crate::alchemy::AlchemyResult;
 use crate::arcane::ArcaneOwner;
-use crate::world::BlockPos;
+use crate::planet::BlockPos;
 use crate::arcane::Current;
 use crate::planet_atlas::HYDRO_UNITS_PER_BLOCK;
 use crate::inventory::Inventory;

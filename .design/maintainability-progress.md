@@ -2101,3 +2101,22 @@ required before accepting the extraction.
   reported by the advisory linter; neither is suppressed or claimed below 500.
 - These are unverified source moves. Final compiler, conservation/replay/parity,
   native and GPU gates remain pending under the implementation-first schedule.
+
+
+## Spatial, save, calendar and common-spawn coordinators checkpoint
+
+- Split chunk admission/reconciliation/material/water/structure responsibilities
+  with the same ordered adoption coordinator. Split population/loose-item and
+  chunk/full-world save adapters, retaining codecs, palette-before-chunk ordering,
+  failure aggregation and modified-flag retry semantics.
+- Separated calendar observations/access from weather/water reconciliation,
+  ire/reciprocity, offerings/depots, lightning and renewable growth. Existing
+  CalendarState/WeatherState remain the state owners.
+- Common spawn now has immutable atlas selection and voxel-trial modules plus
+  saved validation, discovery census, position rescue and the owned entry
+  coordinator. Candidate/RNG/adoption/cancellation/save order is unchanged.
+- Added the explicit block-edit, death/drop, adoption and unload fan-out contract
+  in src/world/transaction-order.md. Foundational types in the newly organized
+  world integrations import their actual owners instead of World's namespace.
+- No compiler/tests/format/runtime checks ran. Final fixture/codec/conservation,
+  streaming lifecycle, native/GPU and runner validation remain required.

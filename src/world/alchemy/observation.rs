@@ -1,7 +1,7 @@
 //! Observation alchemy transaction coordination.
 
 use crate::alchemy::BatchOutcome;
-use crate::world::BlockPos;
+use crate::planet::BlockPos;
 use crate::inventory::ItemStack;
 use crate::alchemy::PreparationHandler;
 use crate::alchemy::PreparationModifiers;

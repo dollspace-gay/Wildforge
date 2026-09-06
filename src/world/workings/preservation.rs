@@ -1,6 +1,6 @@
 //! Preservation workings transaction coordination.
 
-use crate::world::BlockPos;
+use crate::planet::BlockPos;
 use crate::workings::PreservationKind;
 use crate::workings::WorkingEffect;
 use crate::workings::WorkingPhase;

@@ -1,6 +1,6 @@
 //! Trace gleam workings transaction coordination.
 
-use crate::world::BlockPos;
+use crate::planet::BlockPos;
 use crate::workings::WorkingEffect;
 use crate::workings::WorkingResult;
 use crate::world::World;

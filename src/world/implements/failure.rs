@@ -1,17 +1,17 @@
 //! Failure implements transaction coordination.
 
-use crate::world::AIR;
+use crate::registry::AIR;
 use crate::arcane::ArcaneOwner;
 use std::collections::BTreeMap;
 use crate::world::BlockEntity;
-use crate::world::BlockPos;
+use crate::planet::BlockPos;
 use crate::arcane::Current;
 use crate::arcane::DrossMedium;
 use crate::implements::FrameResult;
 use crate::implements::ImplementAuditEvent;
 use crate::implements::ImplementCue;
 use crate::implements::ImplementKind;
-use crate::world::ItemStack;
+use crate::inventory::ItemStack;
 use crate::arcane::LinkedFileReplacement;
 use crate::implements::STRUCTURAL_SPARK_UNITS;
 use crate::world::World;

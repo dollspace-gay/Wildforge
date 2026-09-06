@@ -1,7 +1,7 @@
 //! Wand admission workings transaction coordination.
 
 use crate::arcane::ArcaneOwner;
-use crate::world::BlockPos;
+use crate::planet::BlockPos;
 use crate::workings::DeliveryMode;
 use crate::workings::WorkingEffect;
 use crate::workings::WorkingHandler;

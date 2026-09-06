@@ -2,7 +2,7 @@
 
 use std::collections::BTreeSet;
 use crate::world::BlockEntity;
-use crate::world::BlockPos;
+use crate::planet::BlockPos;
 use crate::implements::ImplementKind;
 use std::collections::VecDeque;
 use crate::world::World;

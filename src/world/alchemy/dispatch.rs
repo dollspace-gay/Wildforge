@@ -4,7 +4,7 @@ use crate::alchemy::AlchemyCueKind;
 use crate::alchemy::AlchemyRequest;
 use crate::alchemy::AlchemyResult;
 use crate::alchemy::ApparatusAction;
-use crate::world::BlockPos;
+use crate::planet::BlockPos;
 use crate::inventory::Inventory;
 use crate::world::World;
 use super::ensure_apparatus;

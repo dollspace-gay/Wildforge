@@ -10,7 +10,7 @@ use crate::arcane::ArcaneOwner;
 use crate::alchemy::BatchFailure;
 use crate::alchemy::BatchOutcome;
 use crate::world::BlockEntity;
-use crate::world::BlockPos;
+use crate::planet::BlockPos;
 use crate::alchemy::ProcessObservation;
 use crate::alchemy::ProcessStep;
 use crate::world::World;

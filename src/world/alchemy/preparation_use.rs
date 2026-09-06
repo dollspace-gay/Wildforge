@@ -7,7 +7,7 @@ use crate::alchemy::AlchemyTarget;
 use crate::arcane::ArcaneAuthority;
 use crate::arcane::ArcaneOwner;
 use crate::alchemy::BatchOutcome;
-use crate::world::BlockPos;
+use crate::planet::BlockPos;
 use crate::arcane::Current;
 use crate::inventory::Inventory;
 use crate::inventory::ItemStack;

@@ -1,7 +1,7 @@
 //! Target validation workings transaction coordination.
 
 use crate::world::BlockEntity;
-use crate::world::BlockPos;
+use crate::planet::BlockPos;
 use crate::arcane::Current;
 use crate::workings::NudgeEntityKind;
 use crate::workings::WorkingApparatus;

@@ -2,9 +2,9 @@
 
 use std::collections::BTreeSet;
 use crate::world::BlockEntity;
-use crate::world::BlockPos;
+use crate::planet::BlockPos;
 use crate::implements::FrameLayout;
-use crate::world::ItemStack;
+use crate::inventory::ItemStack;
 use std::collections::VecDeque;
 use crate::world::World;
 use super::apparatus_neighbors;

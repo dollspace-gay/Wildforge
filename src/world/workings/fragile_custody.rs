@@ -1,7 +1,7 @@
 //! Fragile custody workings transaction coordination.
 
 use crate::arcane::ArcaneOwner;
-use crate::world::BlockPos;
+use crate::planet::BlockPos;
 use crate::arcane::Current;
 use crate::arcane::LinkedFileReplacement;
 use crate::workings::PreservationKind;

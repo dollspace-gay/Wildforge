@@ -7,7 +7,7 @@ use crate::arcane::ArcaneMove;
 use crate::arcane::ArcaneOwner;
 use crate::arcane::ArcaneTransaction;
 use std::collections::BTreeMap;
-use crate::world::BlockPos;
+use crate::planet::BlockPos;
 use crate::arcane::Current;
 use crate::arcane::LinkedFileReplacement;
 use crate::world::World;

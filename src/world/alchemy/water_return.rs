@@ -1,6 +1,6 @@
 //! Water return alchemy transaction coordination.
 
-use crate::world::BlockPos;
+use crate::planet::BlockPos;
 use crate::planet_atlas::ReservoirMass;
 use crate::world::World;
 

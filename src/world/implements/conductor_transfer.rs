@@ -6,7 +6,7 @@ use crate::arcane::ArcaneMove;
 use crate::arcane::ArcaneOwner;
 use crate::arcane::ArcaneTransaction;
 use crate::world::BlockEntity;
-use crate::world::BlockPos;
+use crate::planet::BlockPos;
 use crate::arcane::Current;
 use crate::implements::FrameResult;
 use crate::implements::ImplementAuditEvent;

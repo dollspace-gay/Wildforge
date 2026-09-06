@@ -8,7 +8,7 @@ use crate::alchemy::ApparatusKind;
 use crate::arcane::ArcaneOwner;
 use crate::alchemy::BatchIngredientState;
 use crate::alchemy::BatchOutcome;
-use crate::world::BlockPos;
+use crate::planet::BlockPos;
 use crate::arcane::Current;
 use crate::inventory::Inventory;
 use crate::alchemy::ProcessObservation;

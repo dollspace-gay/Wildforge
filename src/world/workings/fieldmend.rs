@@ -1,6 +1,6 @@
 //! Fieldmend workings transaction coordination.
 
-use crate::world::BlockPos;
+use crate::planet::BlockPos;
 use crate::workings::PhysicalDebit;
 use crate::workings::PhysicalDebitKind;
 use crate::workings::WorkingEffect;

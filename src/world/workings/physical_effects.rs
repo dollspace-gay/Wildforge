@@ -1,8 +1,8 @@
 //! Physical effects workings transaction coordination.
 
 use crate::world::BlockEntity;
-use crate::world::BlockId;
-use crate::world::BlockPos;
+use crate::registry::BlockId;
+use crate::planet::BlockPos;
 use crate::workings::NudgeEntityKind;
 use crate::workings::PlantAdvance;
 use crate::workings::WorkingEffect;

@@ -5,7 +5,7 @@ use crate::alchemy::AlchemyCueKind;
 use crate::alchemy::AlchemyRequest;
 use crate::alchemy::AlchemyResult;
 use std::collections::BTreeMap;
-use crate::world::BlockPos;
+use crate::planet::BlockPos;
 use crate::alchemy::CarrierKind;
 use crate::alchemy::ExactLiquid;
 use crate::planet_atlas::HYDRO_UNITS_PER_BLOCK;

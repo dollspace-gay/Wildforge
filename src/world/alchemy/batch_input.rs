@@ -7,7 +7,7 @@ use crate::alchemy::AlchemyRequest;
 use crate::alchemy::AlchemyResult;
 use crate::alchemy::ApparatusKind;
 use crate::alchemy::BatchOutcome;
-use crate::world::BlockPos;
+use crate::planet::BlockPos;
 use crate::alchemy::ExactLiquid;
 use crate::alchemy::ProcessStep;
 use crate::planet_atlas::ReservoirMass;

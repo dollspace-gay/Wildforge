@@ -3,7 +3,7 @@
 use crate::arcane::ArcaneOwner;
 use std::collections::BTreeMap;
 use crate::world::BlockEntity;
-use crate::world::BlockPos;
+use crate::planet::BlockPos;
 use crate::arcane::Current;
 use crate::arcane::DrossMedium;
 use crate::implements::ImplementAuditEvent;

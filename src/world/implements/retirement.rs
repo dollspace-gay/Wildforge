@@ -2,12 +2,12 @@
 
 use crate::arcane::ArcaneOwner;
 use std::collections::BTreeMap;
-use crate::world::BlockPos;
+use crate::planet::BlockPos;
 use crate::arcane::Current;
 use crate::arcane::DrossMedium;
 use crate::implements::ImplementAuditEvent;
 use crate::implements::ImplementKind;
-use crate::world::ItemStack;
+use crate::inventory::ItemStack;
 use crate::arcane::LinkedFileReplacement;
 use crate::world::World;
 use super::add_current;

@@ -120,3 +120,9 @@ Neither helper owns a second conserved-quantity account.
 conservation-commit, physical-application, observation, and recovery coordinators.
 Their existing ledger/state types retain ownership; pure helper rules are shared
 without World. Cross-domain transaction order and compatibility APIs remain intact.
+
+`chunks/` exposes ordered adoption and material/water/ecology reconciliation;
+`calendar/` separates clock/weather queries from environmental transactions.
+`spawn/` separates immutable atlas/voxel qualification from the owned entry/save
+coordinator. [Transaction order](transaction-order.md) documents block edits,
+mob death/drop custody, chunk adoption, and save-before-unload fan-out.

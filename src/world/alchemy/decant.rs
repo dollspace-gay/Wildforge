@@ -7,7 +7,7 @@ use crate::alchemy::AlchemyResult;
 use crate::arcane::ArcaneOwner;
 use crate::alchemy::BatchFailure;
 use crate::alchemy::BatchOutcome;
-use crate::world::BlockPos;
+use crate::planet::BlockPos;
 use crate::arcane::Current;
 use crate::inventory::Inventory;
 use crate::registry::MaterialVector;

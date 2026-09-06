@@ -4,7 +4,7 @@ use crate::alchemy::AlchemyCue;
 use crate::alchemy::AlchemyCueKind;
 use crate::arcane::ArcaneOwner;
 use std::collections::BTreeMap;
-use crate::world::BlockPos;
+use crate::planet::BlockPos;
 use crate::arcane::Current;
 use crate::alchemy::PreparationHandler;
 use crate::alchemy::PreparationModifiers;

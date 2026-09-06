@@ -1,7 +1,7 @@
 //! Settling rite workings transaction coordination.
 
 use crate::arcane::ArcaneOwner;
-use crate::world::BlockPos;
+use crate::planet::BlockPos;
 use crate::arcane::Current;
 use crate::workings::PhysicalDebit;
 use crate::workings::PhysicalDebitKind;
