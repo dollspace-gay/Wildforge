@@ -11,7 +11,9 @@ pub(crate) fn exchange(
     cursor: &mut Option<ItemStack>,
     index: usize,
 ) {
-    let Some(slot) = armor.get_mut(index) else { return };
+    let Some(slot) = armor.get_mut(index) else {
+        return;
+    };
     if let Some(held) = cursor {
         let definition = registry.item(held.item);
         let fits = if index == 4 {

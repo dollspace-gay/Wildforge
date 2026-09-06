@@ -1,10 +1,10 @@
 //! Shared forge ticking over the physical BlockStore contract.
 
-use crate::world::BlockEntity;
-use crate::world::multiblock::BlockStore;
-use crate::world::FORGE_ITEMS_PER_FUEL;
 use crate::inventory::ItemStack;
 use crate::machines::MachineHandler;
+use crate::world::BlockEntity;
+use crate::world::FORGE_ITEMS_PER_FUEL;
+use crate::world::multiblock::BlockStore;
 
 pub(in crate::world) fn tick_forge_machines<B: BlockStore>(store: &mut B, dt: f32) {
     let keys: Vec<B::Pos> = store

@@ -1,5 +1,7 @@
 //! Lifecycle workings transaction coordination.
 
+use super::Settlement;
+use super::effect_path;
 use crate::workings::DeliveryMode;
 use crate::workings::WorkingCue;
 use crate::workings::WorkingCueKind;
@@ -8,8 +10,6 @@ use crate::workings::WorkingHandler;
 use crate::workings::WorkingPhase;
 use crate::workings::WorkingResult;
 use crate::world::World;
-use super::Settlement;
-use super::effect_path;
 
 impl World {
     /// Transition a settled channel from its charge-up presentation into an

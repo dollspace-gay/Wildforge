@@ -1,7 +1,11 @@
 //! Qualification site selection for arid habitats.
 
-use crate::chunk::{SEA_LEVEL};
-use crate::planet_atlas::{AtlasPos, BIOME_BADLANDS, BIOME_DESERT, BIOME_SCRUBLAND, EDAPHIC_STEEP, FREEZE_SEASONAL, HABITAT_AQUATIC_BRACKISH, HABITAT_AQUATIC_FRESH, HABITAT_AQUATIC_SALT, HABITAT_OASIS, HABITAT_RIPARIAN, HABITAT_SPRING, HABITAT_WETLAND, PlanetAtlas};
+use crate::chunk::SEA_LEVEL;
+use crate::planet_atlas::{
+    AtlasPos, BIOME_BADLANDS, BIOME_DESERT, BIOME_SCRUBLAND, EDAPHIC_STEEP, FREEZE_SEASONAL,
+    HABITAT_AQUATIC_BRACKISH, HABITAT_AQUATIC_FRESH, HABITAT_AQUATIC_SALT, HABITAT_OASIS,
+    HABITAT_RIPARIAN, HABITAT_SPRING, HABITAT_WETLAND, PlanetAtlas,
+};
 
 pub(super) fn collect(atlas: &PlanetAtlas, insert: &mut impl FnMut(&str, AtlasPos, String)) {
     if let Some((contrast, discharge, river_pos, overlook, river_biome, overlook_biome)) = atlas

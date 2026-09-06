@@ -44,13 +44,21 @@ pub(crate) fn click(
     match entity {
         BlockEntity::Depot(_) => return Err(Rejected::DepositOnly),
         BlockEntity::Chest(chest) => exchange(
-            registry, chest.slots.get_mut(slot).ok_or(Rejected::InvalidSlot)?, cursor, request.right,
+            registry,
+            chest.slots.get_mut(slot).ok_or(Rejected::InvalidSlot)?,
+            cursor,
+            request.right,
         ),
         BlockEntity::Offering(offering) => exchange(
-            registry, offering.slots.get_mut(slot).ok_or(Rejected::InvalidSlot)?, cursor, request.right,
+            registry,
+            offering.slots.get_mut(slot).ok_or(Rejected::InvalidSlot)?,
+            cursor,
+            request.right,
         ),
         BlockEntity::Stall(stall) => {
-            if request.actor != Some(stall.owner) { return Err(Rejected::NotOwner); }
+            if request.actor != Some(stall.owner) {
+                return Err(Rejected::NotOwner);
+            }
             let target = match slot {
                 0..=5 => &mut stall.goods[slot],
                 6 => &mut stall.price,
@@ -63,12 +71,16 @@ pub(crate) fn click(
             0 => {
                 let previous = furnace.input.map(|stack| stack.item);
                 exchange(registry, &mut furnace.input, cursor, request.right);
-                if previous != furnace.input.map(|stack| stack.item) { furnace.progress = 0.0; }
+                if previous != furnace.input.map(|stack| stack.item) {
+                    furnace.progress = 0.0;
+                }
             }
             1 => exchange(registry, &mut furnace.fuel, cursor, request.right),
             _ => {
                 take_output(registry, &mut furnace.output, cursor)?;
-                return Ok(Effect { took_furnace_output: true });
+                return Ok(Effect {
+                    took_furnace_output: true,
+                });
             }
         },
         BlockEntity::Multiblock(machine) => {
@@ -106,9 +118,14 @@ fn take_output(
     let produced = output.ok_or(Rejected::EmptyOutput)?;
     let next = match *cursor {
         None => produced,
-        Some(held) if held.can_merge(registry, &produced)
-            && held.count + produced.count <= registry.item(held.item).max_stack => {
-            ItemStack { count: held.count + produced.count, ..held }
+        Some(held)
+            if held.can_merge(registry, &produced)
+                && held.count + produced.count <= registry.item(held.item).max_stack =>
+        {
+            ItemStack {
+                count: held.count + produced.count,
+                ..held
+            }
         }
         Some(_) => return Err(Rejected::IncompatibleCursor),
     };
@@ -125,31 +142,62 @@ fn station_slot<'a>(
     slot: usize,
     held: Option<ItemStack>,
 ) -> Result<&'a mut Option<ItemStack>, Rejected> {
-    let handler = machine.kind.handler(registry).ok_or(Rejected::Unsupported)?;
-    if !matches!(handler, MachineHandler::Bloomery | MachineHandler::Forge | MachineHandler::Kiln) {
+    let handler = machine
+        .kind
+        .handler(registry)
+        .ok_or(Rejected::Unsupported)?;
+    if !matches!(
+        handler,
+        MachineHandler::Bloomery | MachineHandler::Forge | MachineHandler::Kiln
+    ) {
         return Err(Rejected::Unsupported);
     }
-    if machine.lit { return Err(Rejected::Sealed); }
-    let limit = if handler == MachineHandler::Kiln { 9 } else { 8 };
-    if slot >= limit { return Err(Rejected::InvalidSlot); }
+    if machine.lit {
+        return Err(Rejected::Sealed);
+    }
+    let limit = if handler == MachineHandler::Kiln {
+        9
+    } else {
+        8
+    };
+    if slot >= limit {
+        return Err(Rejected::InvalidSlot);
+    }
     let eligible = match (handler, held) {
         (_, None) => true,
-        (MachineHandler::Bloomery, Some(held)) => registry.bloomery.first()
+        (MachineHandler::Bloomery, Some(held)) => registry
+            .bloomery
+            .first()
             .is_some_and(|chain| held.item == if slot < 4 { chain.charge } else { chain.fuel }),
         (MachineHandler::Forge, Some(held)) if slot < 4 => {
-            registry.smelts.iter().any(|smelt| smelt.input.matches(held.item))
-                || registry.forge_salvage.iter().any(|salvage| salvage.input == held.item)
+            registry
+                .smelts
+                .iter()
+                .any(|smelt| smelt.input.matches(held.item))
+                || registry
+                    .forge_salvage
+                    .iter()
+                    .any(|salvage| salvage.input == held.item)
                 || crate::materials::is_reclaimable_stock(registry, held.item)
         }
         (MachineHandler::Forge, Some(held)) => registry.fuel_value(held.item).is_some(),
         (MachineHandler::Kiln, Some(held)) => match slot {
-            0..=3 => registry.kiln_base.is_some_and(|(sand, _, _)| sand == held.item),
-            4 => registry.kiln.iter().any(|recipe| recipe.powder == held.item),
-            _ => registry.kiln_base.is_some_and(|(_, fuel, _)| fuel == held.item),
+            0..=3 => registry
+                .kiln_base
+                .is_some_and(|(sand, _, _)| sand == held.item),
+            4 => registry
+                .kiln
+                .iter()
+                .any(|recipe| recipe.powder == held.item),
+            _ => registry
+                .kiln_base
+                .is_some_and(|(_, fuel, _)| fuel == held.item),
         },
         _ => return Err(Rejected::Unsupported),
     };
-    if !eligible { return Err(Rejected::IneligibleItem); }
+    if !eligible {
+        return Err(Rejected::IneligibleItem);
+    }
     match (handler, slot) {
         (_, 0..=3) => Ok(&mut machine.charge[slot]),
         (MachineHandler::Kiln, 4) => Ok(&mut machine.reagent),

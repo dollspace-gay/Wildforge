@@ -1,7 +1,7 @@
 //! Serializable atlas census and diagnostic export report schemas.
 
 use serde::{Deserialize, Serialize};
-use std::collections::{BTreeMap};
+use std::collections::BTreeMap;
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct AtlasCensus {

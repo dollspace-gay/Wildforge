@@ -1,6 +1,10 @@
 //! Block edits coordinator for the authoritative world.
 
-use super::{AIR, BlockEntity, BlockId, BlockPos, Chunk, ChunkPos, ItemStack, World, machines};
+use super::{AIR, BlockEntity, BlockId, BlockPos, ItemStack, World, machines};
+#[cfg(test)]
+use crate::chunk::{CHUNK_X, CHUNK_Z};
+#[cfg(test)]
+use crate::chunk::{Chunk, ChunkPos};
 
 impl World {
     #[cfg(test)]
@@ -103,11 +107,16 @@ impl World {
             self.reg.is_water(old) || self.reg.block(old).name == "base:ice";
         let new_holds_water_carrier =
             self.reg.is_water(block) || self.reg.block(block).name == "base:ice";
-        if self.chunks.write_state(pos, block, meta, salt_mass, soil_salinity).is_none() {
+        if self
+            .chunks
+            .write_state(pos, block, meta, salt_mass, soil_salinity)
+            .is_none()
+        {
             return;
         }
         if self.log_edits {
-            self.edit_log.push((pos, block, meta, salt_mass, soil_salinity));
+            self.edit_log
+                .push((pos, block, meta, salt_mass, soil_salinity));
         }
         if old_holds_water_carrier
             && !new_holds_water_carrier
@@ -325,9 +334,6 @@ impl World {
         let starts = std::mem::take(&mut self.pending_relight);
         self.relight_chunks_and_cascade(starts);
     }
-
-
-
 
     #[cfg(test)]
     pub(crate) fn edit_fixture_for_test(&mut self, edit: impl FnOnce(&mut Self)) {

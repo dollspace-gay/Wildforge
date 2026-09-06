@@ -1,17 +1,16 @@
 //! Repair alchemy transaction coordination.
 
+use super::result_for;
 use crate::alchemy::AlchemyAuditEvent;
 use crate::alchemy::AlchemyCue;
 use crate::alchemy::AlchemyCueKind;
 use crate::alchemy::AlchemyRequest;
 use crate::alchemy::AlchemyResult;
 use crate::alchemy::ApparatusKind;
-use crate::planet::BlockPos;
 use crate::alchemy::DisposalRoute;
 use crate::inventory::Inventory;
+use crate::planet::BlockPos;
 use crate::world::World;
-use super::produced;
-use super::result_for;
 
 impl World {
     pub(super) fn alchemy_repair(

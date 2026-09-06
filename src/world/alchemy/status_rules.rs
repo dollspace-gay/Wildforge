@@ -1,8 +1,8 @@
 //! Status rules shared alchemy rules.
 
+use crate::alchemy::PreparationHandler;
 use crate::arcane::ArcaneOwner;
 use crate::arcane::Current;
-use crate::alchemy::PreparationHandler;
 
 pub(super) fn incompatible_status_groups(left: &str, right: &str) -> bool {
     matches!(
@@ -49,4 +49,3 @@ pub(super) fn debit_nutrition(nutrition: &mut [f32; 5], mut amount: f32) {
         amount -= debit;
     }
 }
-

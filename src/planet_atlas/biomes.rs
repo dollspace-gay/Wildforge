@@ -4,30 +4,33 @@
 //! sparse model owns country composition, heart sites, and traversable
 //! adjacency once per country instead of repeating them in every atlas cell.
 
-use std::collections::BTreeMap;
-use serde::{Deserialize, Serialize};
-use crate::planet::Direction4;
-use super::{AtlasError, AtlasGrid, AtlasPos, BiomeCell, ClimateCell, GenerationMode, GeometryCell, GroundCell, HydrologyCell, TectonicCell, TerrainCell};
 use super::grid::generate_grid;
 use super::identity::cell_hash;
+use super::{
+    AtlasError, AtlasGrid, AtlasPos, BiomeCell, ClimateCell, GenerationMode, GeometryCell,
+    GroundCell, HydrologyCell, TectonicCell, TerrainCell,
+};
+use crate::planet::Direction4;
+use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
 
 mod records;
-pub use records::{CountrySoilComposition, CountryRoute, CountryRecord};
+pub use records::{CountryRecord, CountryRoute, CountrySoilComposition};
 mod classification;
 mod ground;
 pub(super) use ground::generate_ground_layer;
-mod habitats;
-mod country_seeds;
 mod country_partition;
+mod country_seeds;
+mod habitats;
 mod hearts;
-mod validation;
 mod sampling;
-pub use sampling::{AtlasBiomeSample, GraftCompatibility};
+mod validation;
 use classification::biome_name;
-use habitats::derive_biome_cell;
-use country_seeds::choose_country_seeds;
 use country_partition::{crossing_cost, partition_countries};
+use country_seeds::choose_country_seeds;
+use habitats::derive_biome_cell;
 use hearts::heart_score;
+pub use sampling::{AtlasBiomeSample, GraftCompatibility};
 
 pub const BIOME_SCHEMA_VERSION: u32 = 1;
 

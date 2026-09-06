@@ -1,15 +1,16 @@
 //! Connection graphical guest adapter.
 
+use crate::client_session::ContentMap;
+use crate::client_session::GuestSession;
+use crate::client_session::PresentationRequirement;
+use crate::game::Game;
+use crate::game::Remote;
 use crate::identity;
 use crate::inventory::HOTBAR_SLOTS;
 use crate::net;
 use crate::physics::Player;
 use glam::Vec3;
 use std::sync::Arc;
-use crate::game::Remote;
-use crate::client_session::ContentMap;
-use crate::client_session::GuestSession;
-use crate::client_session::PresentationRequirement;
 
 impl Game {
     /// The name this client will present to a multiplayer host, plus whether
@@ -148,11 +149,4 @@ impl Game {
             }
         }
     }
-
-    /// Ask the host for chunks we should have and do not.
-    ///
-    /// Nearest first, a few per frame, bounded by the granted radius. This is
-    /// what closes the hole a guest used to leave behind by walking away and
-    /// coming back: the host remembers what it sent forever, so without this
-    /// the ground never returned.
 }

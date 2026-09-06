@@ -1,37 +1,13 @@
 //! Per-frame client update, scene assembly, and renderer submission.
 
-use crate::world::TerrainRead;
-
-use crate::atlas;
-use crate::audio;
-use crate::audio::Sfx;
-use crate::chunk::CHUNK_X;
-use crate::entity;
-use crate::entity::ItemEntity;
-use crate::lights;
-use crate::mesher;
-use crate::mobs;
-use crate::mp;
-use crate::net;
-use crate::physics;
-use crate::raycast;
-use crate::registry::ItemId;
-use crate::renderer::FrameInput;
-use crate::server;
-use crate::style;
-use crate::visual_capture;
-use crate::world;
-use glam::Vec3;
-use std::time::Instant;
 use super::Game;
-use super::advance_capture_clock;
 use super::SHOT_FIXED_DT;
-use super::SHOT_MAX_FRAMES;
-use super::SHOT_SETTLE_FRAMES;
-use super::combat;
-use super::content_watch::content_tree_stamp;
 use super::input::KeysDown;
 use super::navigation::Screen;
+use crate::mesher;
+use crate::mobs;
+use glam::Vec3;
+use std::time::Instant;
 
 /// Local authority pauses for solo play, but a windowed host keeps serving
 /// guests. Remote guests never enter this path at all.
@@ -93,7 +69,6 @@ fn sun_scale() -> f32 {
     })
 }
 
-
 pub(super) struct LightingFrame {
     daylight: f32,
     sun_dir: Vec3,
@@ -119,7 +94,6 @@ pub(super) struct Geometry {
 }
 
 impl Game {
-
     /// Dev: WILDFORGE_LOOK pins yaw,pitch (applied at spawn, and every
     /// frame during WILDFORGE_SHOT runs — synthetic WSLg mouse events
     /// drift the camera over long headless warmups otherwise).
@@ -331,20 +305,20 @@ mod portrait_tests {
     }
 }
 
-mod viewmodel;
-mod feedback;
+mod adaptation;
 mod authority;
 mod content_refresh;
-mod player_motion;
+mod feedback;
 mod lighting;
-mod selection;
-mod scene_members;
-mod scene_stations;
-mod scene_precipitation;
-mod scene_overlay;
-mod scene_hand;
-mod ui_effects;
+mod player_motion;
 mod point_lights;
-mod adaptation;
 mod post_render;
 mod render;
+mod scene_hand;
+mod scene_members;
+mod scene_overlay;
+mod scene_precipitation;
+mod scene_stations;
+mod selection;
+mod ui_effects;
+mod viewmodel;

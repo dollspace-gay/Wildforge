@@ -2,8 +2,8 @@
 
 mod admission;
 mod assembly;
-mod events;
 mod connection;
+mod events;
 mod palette;
 mod replica;
 mod session;

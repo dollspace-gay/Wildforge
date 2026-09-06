@@ -50,28 +50,32 @@ impl World {
         let day = self.calendar_state.clock() / f64::from(crate::server::DAY_LENGTH);
         let global_ire = self.ire;
         let regional_ire = &self.regional_ire;
-        let report = self.weather_state.advance(&atlas, day, budget, dross_completed, |pos| {
-            let center = pos.center(atlas.side());
-            let surface = crate::planet::SurfacePos::new(
-                center.face,
-                center
-                    .u
-                    .floor()
-                    .clamp(0.0, f64::from(crate::planet::FACE_BLOCKS - 1)) as u16,
-                center
-                    .v
-                    .floor()
-                    .clamp(0.0, f64::from(crate::planet::FACE_BLOCKS - 1)) as u16,
-            )
-            .expect("atlas center is a canonical surface position");
-            (global_ire
-                + regional_ire
-                    .get(&RegionCell::from_surface(surface))
-                    .copied()
-                    .unwrap_or(0.0)
-                    * 3.0)
-                .clamp(0.0, 100.0)
-        });
+        let report = self
+            .weather_state
+            .advance(&atlas, day, budget, dross_completed, |pos| {
+                let center = pos.center(atlas.side());
+                let surface = crate::planet::SurfacePos::new(
+                    center.face,
+                    center
+                        .u
+                        .floor()
+                        .clamp(0.0, f64::from(crate::planet::FACE_BLOCKS - 1))
+                        as u16,
+                    center
+                        .v
+                        .floor()
+                        .clamp(0.0, f64::from(crate::planet::FACE_BLOCKS - 1))
+                        as u16,
+                )
+                .expect("atlas center is a canonical surface position");
+                (global_ire
+                    + regional_ire
+                        .get(&RegionCell::from_surface(surface))
+                        .copied()
+                        .unwrap_or(0.0)
+                        * 3.0)
+                    .clamp(0.0, 100.0)
+            });
         let report = report?;
         if report.is_some() {
             self.apply_loaded_water_inboxes();
@@ -90,7 +94,8 @@ impl World {
     }
 
     pub(in crate::world) fn apply_loaded_water_inboxes(&mut self) {
-        let (Some(atlas), Some(weather)) = (&self.planet_atlas, self.weather_state.live_mut()) else {
+        let (Some(atlas), Some(weather)) = (&self.planet_atlas, self.weather_state.live_mut())
+        else {
             return;
         };
         // A sliced climate hour owns a second water-cell grid. Moving a flux

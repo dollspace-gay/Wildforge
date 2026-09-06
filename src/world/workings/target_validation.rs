@@ -1,21 +1,23 @@
 //! Target validation workings transaction coordination.
 
-use crate::world::BlockEntity;
+use super::carrier_from_snapshots;
+use super::reservoir_from_snapshots;
+use super::vec3_milli;
 use crate::planet::BlockPos;
-use crate::arcane::Current;
 use crate::workings::NudgeEntityKind;
 use crate::workings::WorkingApparatus;
 use crate::workings::WorkingEffect;
 use crate::workings::WorkingHandler;
 use crate::workings::WorkingTargetSnapshot;
 use crate::workings::WorkingTransaction;
+use crate::world::BlockEntity;
 use crate::world::World;
-use super::carrier_from_snapshots;
-use super::reservoir_from_snapshots;
-use super::vec3_milli;
 
 impl World {
-    pub(super) fn validate_saved_world_targets(&self, transaction: &WorkingTransaction) -> Result<(), String> {
+    pub(super) fn validate_saved_world_targets(
+        &self,
+        transaction: &WorkingTransaction,
+    ) -> Result<(), String> {
         for target in &transaction.targets {
             match target {
                 WorkingTargetSnapshot::Block {
@@ -67,7 +69,10 @@ impl World {
         Ok(())
     }
 
-    pub(super) fn validate_ritual_apparatus(&self, transaction: &WorkingTransaction) -> Result<(), String> {
+    pub(super) fn validate_ritual_apparatus(
+        &self,
+        transaction: &WorkingTransaction,
+    ) -> Result<(), String> {
         let WorkingApparatus::Ritual {
             controller,
             expected_revision,
@@ -122,7 +127,11 @@ impl World {
         Ok(())
     }
 
-    pub(super) fn validate_kindle_target(&self, fuel: BlockPos, fire_cell: BlockPos) -> Result<(), String> {
+    pub(super) fn validate_kindle_target(
+        &self,
+        fuel: BlockPos,
+        fire_cell: BlockPos,
+    ) -> Result<(), String> {
         if !crate::planet::neighbors6(fuel).any(|neighbor| neighbor == fire_cell)
             || self.reg.block(self.get_block_at(fuel)).burns == 0
             || !self.reg.is_replaceable(self.get_block_at(fire_cell))
@@ -201,7 +210,10 @@ impl World {
             .is_ok()
     }
 
-    pub(super) fn validate_working_effect_before(&self, effect: &WorkingEffect) -> Result<(), String> {
+    pub(super) fn validate_working_effect_before(
+        &self,
+        effect: &WorkingEffect,
+    ) -> Result<(), String> {
         match effect {
             WorkingEffect::Observe { .. }
             | WorkingEffect::PointLight { .. }

@@ -1,11 +1,12 @@
 //! Frame graphical guest adapter.
 
 use super::RemoteFlow;
+use crate::game::Game;
+use crate::game::Remote;
 use crate::mesher;
 use crate::net;
-use crate::world;
+use crate::world::TerrainRead;
 use glam::Vec3;
-use crate::game::Remote;
 
 impl Game {
     pub(in crate::game) fn remote_entry_terrain(&mut self, r: &mut Remote) -> RemoteFlow {
@@ -26,7 +27,8 @@ impl Game {
                 .iter()
                 .all(|(du, dv)| self.runtime.view().has_chunk(center.offset(*du, *dv)))
         {
-            let mesh = mesher::mesh_chunk(&self.runtime.view(), center, &self.content.tile_variants);
+            let mesh =
+                mesher::mesh_chunk(&self.runtime.view(), center, &self.content.tile_variants);
             self.renderer.upload_chunk(center, &mesh);
             self.presentation.lights.chunk_meshed(center, mesh.emitters);
             self.runtime.mark_chunk_meshed(center);
@@ -55,24 +57,24 @@ impl Game {
         }
         let t = (r.mob_age / r.mob_interval.max(0.001)).clamp(0.0, 1.0);
         if let Some((world, _)) = self.runtime.guest_mut() {
-        world.for_each_mob_mut(|m| {
-            if let Some(l) = r.mob_lerp.get_mut(&m.id) {
-                let (_, y) = l.at(t);
-                m.yaw = y;
-                let d = l.to - l.from;
-                let hspeed = Vec3::new(d.x, 0.0, d.z).length() / r.mob_interval.max(0.03);
-                l.phase += hspeed * dt * 3.2; // same feel as the local tick
-                m.anim_phase = l.phase;
-                m.hurt_flash = (m.hurt_flash - dt).max(0.0);
-            }
-        });
-        world.for_each_projectile_mut(|p| {
-            if let Ok(moved) = p.pos.translated(p.vel * dt) {
-                p.pos = moved.pos;
-                p.vel = moved.rotation.rotate_vec3(p.vel);
-            }
-            p.age += dt;
-        });
+            world.for_each_mob_mut(|m| {
+                if let Some(l) = r.mob_lerp.get_mut(&m.id) {
+                    let (_, y) = l.at(t);
+                    m.yaw = y;
+                    let d = l.to - l.from;
+                    let hspeed = Vec3::new(d.x, 0.0, d.z).length() / r.mob_interval.max(0.03);
+                    l.phase += hspeed * dt * 3.2; // same feel as the local tick
+                    m.anim_phase = l.phase;
+                    m.hurt_flash = (m.hurt_flash - dt).max(0.0);
+                }
+            });
+            world.for_each_projectile_mut(|p| {
+                if let Ok(moved) = p.pos.translated(p.vel * dt) {
+                    p.pos = moved.pos;
+                    p.vel = moved.rotation.rotate_vec3(p.vel);
+                }
+                p.age += dt;
+            });
         }
     }
     pub(in crate::game) fn remote_upstream(&mut self, r: &mut Remote, dt: f32) {

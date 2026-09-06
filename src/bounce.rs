@@ -48,7 +48,13 @@ struct LocalHit {
     id: BlockId,
 }
 
-fn cast_local(world: &(impl TerrainRead + ?Sized), face: Face, origin: Vec3, dir: Vec3, reach: f32) -> Option<LocalHit> {
+fn cast_local(
+    world: &(impl TerrainRead + ?Sized),
+    face: Face,
+    origin: Vec3,
+    dir: Vec3,
+    reach: f32,
+) -> Option<LocalHit> {
     let ep = EntityPos::from_local(face, origin).ok()?;
     let hit = raycast::raycast_at(world, ep, dir, reach)?;
     let id = world.get_block_at(hit.block);

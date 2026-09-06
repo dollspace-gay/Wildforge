@@ -1,15 +1,16 @@
 //! Block use in the ordered graphical action pipeline.
 
-use crate::game::Game;
-use crate::world::TerrainRead;
+use super::ActionFrame;
 use crate::audio::Sfx;
+use crate::game::Game;
+use crate::game::navigation::Screen;
 use crate::inventory::ItemStack;
+use crate::inventory::TOTAL_SLOTS;
 use crate::net;
 use crate::registry::AIR;
 use crate::registry::ToolKind;
 use crate::world;
-use crate::game::navigation::Screen;
-use super::ActionFrame;
+use crate::world::TerrainRead;
 
 impl Game {
     pub(in crate::game) fn interact_block_use(&mut self, frame: &ActionFrame) -> bool {
@@ -31,11 +32,16 @@ impl Game {
             let tb = self.runtime.view().get_block_at(h.block);
             // Harvestable blocks (berry bushes).
             if let Some((item, n, becomes)) = reg.block(tb).harvest {
-                if self.reject_guest_action() { return true; }
-                self.runtime.local_mut().world.set_block_at(h.block, becomes);
-                let left = self.inventory.add(&reg, item, n);
+                if self.reject_guest_action() {
+                    return true;
+                }
+                self.runtime
+                    .local_mut()
+                    .world
+                    .set_block_at(h.block, becomes);
+                let left = self.inventory.add(reg, item, n);
                 if left > 0 {
-                    self.drop_stack(ItemStack::new(&reg, item, left));
+                    self.drop_stack(ItemStack::new(reg, item, left));
                 }
                 self.sfx(Sfx::Pickup);
                 self.grant_xp("harvest");
@@ -50,7 +56,10 @@ impl Game {
                     self.reject_guest_action();
                     return true;
                 }
-                if v > 0 && !self.runtime.is_guest() && self.runtime.local_mut().world.feed_soil_at(h.block, v) {
+                if v > 0
+                    && !self.runtime.is_guest()
+                    && self.runtime.local_mut().world.feed_soil_at(h.block, v)
+                {
                     self.inventory.take_one(self.input.hotbar_sel);
                     self.sfx(Sfx::Place);
                     self.input.action_cooldown = 0.3;
@@ -62,10 +71,13 @@ impl Game {
             // mark is inherited by everything it spreads to — so a
             // burn cannot change hands halfway down a hillside.
             if held.is_some_and(|i| reg.item(i).striker) {
-                if self.reject_guest_action() { return true; }
+                if self.reject_guest_action() {
+                    return true;
+                }
                 let f = h.adjacent;
-                if reg.block(tb).burns > 0 && self.runtime.local_mut().world.light_fire_at(f, true) {
-                    self.inventory.wear_tool(&reg, self.input.hotbar_sel);
+                if reg.block(tb).burns > 0 && self.runtime.local_mut().world.light_fire_at(f, true)
+                {
+                    self.inventory.wear_tool(reg, self.input.hotbar_sel);
                     self.toast("It catches. It is yours now.".to_string());
                     self.sfx(Sfx::Place);
                     self.input.action_cooldown = 0.4;
@@ -82,13 +94,21 @@ impl Game {
             ) {
                 let name = reg.block(tb).name.as_str();
                 if name == "base:grass" || name == "base:dirt" {
-                    if self.reject_guest_action() { return true; }
+                    if self.reject_guest_action() {
+                        return true;
+                    }
                     // The till reads the ground it came from: grass-fed
                     // loam starts richer than bare dirt (soil.rs).
                     let meta = self.runtime.local().world.till_meta_at(h.block);
-                    self.runtime.local_mut().world.set_block_meta_at(h.block, farm, meta);
-                    self.runtime.local_mut().world.initialize_tilled_soil_at(h.block);
-                    self.inventory.wear_tool(&reg, self.input.hotbar_sel);
+                    self.runtime
+                        .local_mut()
+                        .world
+                        .set_block_meta_at(h.block, farm, meta);
+                    self.runtime
+                        .local_mut()
+                        .world
+                        .initialize_tilled_soil_at(h.block);
+                    self.inventory.wear_tool(reg, self.input.hotbar_sel);
                     self.sfx(Sfx::Place);
                     self.input.action_cooldown = 0.3;
                     return true;
@@ -130,7 +150,10 @@ impl Game {
                     return true;
                 }
                 if let Some(unlocked_block) = definition.unlocked_block {
-                    self.runtime.local_mut().world.set_block_at(h.block, unlocked_block);
+                    self.runtime
+                        .local_mut()
+                        .world
+                        .set_block_at(h.block, unlocked_block);
                     self.runtime.local_mut().world.ungate_at(h.block);
                     self.sfx(Sfx::Place);
                     self.toast("The gate opens.".to_string());
@@ -142,56 +165,170 @@ impl Game {
                 // Pass through to normal behavior below.
             }
             match reg.block(tb).interaction.as_deref() {
-                Some("crafting") => { if self.use_crafting_block() { return true; } }
-                Some("furnace") => { if self.use_furnace_block(h) { return true; } }
-                Some("rail_switch") | Some("belt_switch") if self.input.action_cooldown <= 0.0 => { if self.use_switch_block(h) { return true; } }
+                Some("crafting") => {
+                    if self.use_crafting_block() {
+                        return true;
+                    }
+                }
+                Some("furnace") => {
+                    if self.use_furnace_block(h) {
+                        return true;
+                    }
+                }
+                Some("rail_switch") | Some("belt_switch") if self.input.action_cooldown <= 0.0 => {
+                    if self.use_switch_block(h) {
+                        return true;
+                    }
+                }
                 // Capability E11: a mod screen block. Opening is pure
                 // presentation, so it works identically solo and as a
                 // guest; the screen's buttons carry the authority.
                 // Capability E13: a settlement depot. Depositing held
                 // goods the bound settlement needs pays reputation; the
                 // pay-out lands in the game layer via SimEvent.
-                Some(s) if s.starts_with("depot:") && self.input.action_cooldown <= 0.0 => { if self.use_depot_block(frame, h) { return true; } }
-                Some(s) if s.starts_with("screen:") => { if self.use_mod_screen_block(frame, s) { return true; } }
-                Some(s) if s.starts_with("dungeon_entry:") && self.input.action_cooldown <= 0.0 => { if self.use_dungeon_entry_block(h, s) { return true; } }
-                Some("dungeon_exit") if self.input.action_cooldown <= 0.0 => { if self.use_dungeon_exit_block(h) { return true; } }
-                Some("dungeon_checkpoint") if self.input.action_cooldown <= 0.0 => { if self.use_dungeon_checkpoint_block(h) { return true; } }
-                Some("chest") if self.input.action_cooldown <= 0.0 => { if self.use_chest_block(h) { return true; } }
-                Some("discovery_folio") if self.input.action_cooldown <= 0.0 => { if self.use_folio_block(h) { return true; } }
-                Some("discovery_writing") if self.input.action_cooldown <= 0.0 => { if self.use_writing_block(h) { return true; } }
-                Some("discovery_lab") if self.input.action_cooldown <= 0.0 => { if self.use_laboratory_block(h) { return true; } }
-                Some("lens_assembly") if self.input.action_cooldown <= 0.0 => { if self.use_lens_block(h) { return true; } }
-                Some("binding_frame") if self.input.action_cooldown <= 0.0 => { if self.use_binding_frame_block(h) { return true; } }
+                Some(s) if s.starts_with("depot:") && self.input.action_cooldown <= 0.0 => {
+                    if self.use_depot_block(frame, h) {
+                        return true;
+                    }
+                }
+                Some(s) if s.starts_with("screen:") => {
+                    if self.use_mod_screen_block(frame, s) {
+                        return true;
+                    }
+                }
+                Some(s) if s.starts_with("dungeon_entry:") && self.input.action_cooldown <= 0.0 => {
+                    if self.use_dungeon_entry_block(h, s) {
+                        return true;
+                    }
+                }
+                Some("dungeon_exit") if self.input.action_cooldown <= 0.0 => {
+                    if self.use_dungeon_exit_block(h) {
+                        return true;
+                    }
+                }
+                Some("dungeon_checkpoint") if self.input.action_cooldown <= 0.0 => {
+                    if self.use_dungeon_checkpoint_block(h) {
+                        return true;
+                    }
+                }
+                Some("chest") if self.input.action_cooldown <= 0.0 => {
+                    if self.use_chest_block(h) {
+                        return true;
+                    }
+                }
+                Some("discovery_folio") if self.input.action_cooldown <= 0.0 => {
+                    if self.use_folio_block(h) {
+                        return true;
+                    }
+                }
+                Some("discovery_writing") if self.input.action_cooldown <= 0.0 => {
+                    if self.use_writing_block(h) {
+                        return true;
+                    }
+                }
+                Some("discovery_lab") if self.input.action_cooldown <= 0.0 => {
+                    if self.use_laboratory_block(h) {
+                        return true;
+                    }
+                }
+                Some("lens_assembly") if self.input.action_cooldown <= 0.0 => {
+                    if self.use_lens_block(h) {
+                        return true;
+                    }
+                }
+                Some("binding_frame") if self.input.action_cooldown <= 0.0 => {
+                    if self.use_binding_frame_block(h) {
+                        return true;
+                    }
+                }
                 Some("alchemy_mortar" | "alchemy_basin" | "alchemy_alembic" | "alchemy_filter")
-                    if self.input.action_cooldown <= 0.0 => { if self.use_alchemy_block(h) { return true; } }
-                Some("heart") if self.input.action_cooldown <= 0.0 => { if self.use_heart_block(frame, h) { return true; } }
-                Some("compost") if self.input.action_cooldown <= 0.0 => { if self.use_compost_block(frame, h) { return true; } }
-                Some("offering") if self.input.action_cooldown <= 0.0 => { if self.use_offering_block(h) { return true; } }
-                Some("stall") if self.input.action_cooldown <= 0.0 => { if self.use_stall_block(h) { return true; } }
-                Some("smoker") if self.input.action_cooldown <= 0.0 => { if self.use_smoker_block(frame, h) { return true; } }
-                Some("sign") if self.input.action_cooldown <= 0.0 => { if self.use_sign_block(h) { return true; } }
-                Some("waystone") if self.input.action_cooldown <= 0.0 => { if self.use_waystone_block(h) { return true; } }
-                Some("survey") if self.input.action_cooldown <= 0.0 => { if self.use_survey_block(h) { return true; } }
+                    if self.input.action_cooldown <= 0.0 =>
+                {
+                    if self.use_alchemy_block(h) {
+                        return true;
+                    }
+                }
+                Some("heart") if self.input.action_cooldown <= 0.0 => {
+                    if self.use_heart_block(frame, h) {
+                        return true;
+                    }
+                }
+                Some("compost") if self.input.action_cooldown <= 0.0 => {
+                    if self.use_compost_block(frame, h) {
+                        return true;
+                    }
+                }
+                Some("offering") if self.input.action_cooldown <= 0.0 => {
+                    if self.use_offering_block(h) {
+                        return true;
+                    }
+                }
+                Some("stall") if self.input.action_cooldown <= 0.0 => {
+                    if self.use_stall_block(h) {
+                        return true;
+                    }
+                }
+                Some("smoker") if self.input.action_cooldown <= 0.0 => {
+                    if self.use_smoker_block(frame, h) {
+                        return true;
+                    }
+                }
+                Some("sign") if self.input.action_cooldown <= 0.0 => {
+                    if self.use_sign_block(h) {
+                        return true;
+                    }
+                }
+                Some("waystone") if self.input.action_cooldown <= 0.0 => {
+                    if self.use_waystone_block(h) {
+                        return true;
+                    }
+                }
+                Some("survey") if self.input.action_cooldown <= 0.0 => {
+                    if self.use_survey_block(h) {
+                        return true;
+                    }
+                }
                 Some(
                     st @ ("anvil" | "quern" | "millstone" | "sawmill" | "lathe" | "iron_lathe"
                     | "boring"),
-                ) if self.input.action_cooldown <= 0.0 => { if self.use_worked_station_block(frame, h, st) { return true; } }
+                ) if self.input.action_cooldown <= 0.0 => {
+                    if self.use_worked_station_block(frame, h, st) {
+                        return true;
+                    }
+                }
                 Some(interaction)
                     if self.input.action_cooldown <= 0.0
                         && reg.machine_by_interaction(interaction).is_some_and(|kind| {
                             reg.machine(kind).is_some_and(|def| def.handler.hand_fed())
-                        }) => { if self.use_separator_block(frame, h, interaction) { return true; } }
-                Some("firebox") if self.input.action_cooldown <= 0.0 => { if self.use_firebox_block(frame, h) { return true; } }
+                        }) =>
+                {
+                    if self.use_separator_block(frame, h, interaction) {
+                        return true;
+                    }
+                }
+                Some("firebox") if self.input.action_cooldown <= 0.0 => {
+                    if self.use_firebox_block(frame, h) {
+                        return true;
+                    }
+                }
                 Some(interaction)
                     if self.input.action_cooldown <= 0.0
                         && reg.machine_by_interaction(interaction).is_some_and(|kind| {
                             reg.machine(kind).is_some_and(|def| def.handler.has_fire())
-                        }) => { if self.use_fire_station_block(frame, h, interaction) { return true; } }
+                        }) =>
+                {
+                    if self.use_fire_station_block(frame, h, interaction) {
+                        return true;
+                    }
+                }
                 Some(interaction)
                     if reg.machine_by_interaction(interaction).is_some_and(|kind| {
                         reg.machine(kind)
                             .is_some_and(|def| def.handler.is_station())
-                    }) => { if self.use_recipe_station_block(frame, h, interaction) { return true; } }
+                    }) && self.use_recipe_station_block(frame, h, interaction) =>
+                {
+                    return true;
+                }
                 _ => {}
             }
             // Slot-module swap (spec Part 1.3): right-click an installed
@@ -202,12 +339,14 @@ impl Game {
                 && let Some(category) = self.runtime.view().slot_category_at(h.block)
                 && let Some(replacement) = held.and_then(|i| reg.item(i).places)
                 && self.runtime.view().get_block_at(h.block) != replacement
-                && crate::world::multiblock::modules_in_category(&reg, category)
+                && crate::world::multiblock::modules_in_category(reg, category)
                     .contains(&replacement)
             {
-                if let Ok(()) =
-                    self.runtime.local_mut().world.swap_slot_module_at(h.block, category, replacement)
-                {
+                if let Ok(()) = self.runtime.local_mut().world.swap_slot_module_at(
+                    h.block,
+                    category,
+                    replacement,
+                ) {
                     if !self.creative {
                         self.inventory.take_one(self.input.hotbar_sel);
                     }
@@ -232,7 +371,7 @@ impl Game {
                         self.input.action_cooldown = 0.4;
                         return true;
                     };
-                    self.inventory.wear_tool(&reg, slot);
+                    self.inventory.wear_tool(reg, slot);
                 }
                 let needs_farmland = bd.crop_next.is_some() && !bd.crop_any_soil;
                 let soil = pos
@@ -298,8 +437,10 @@ impl Game {
                         return true;
                     }
                     let placed = crate::player_ops::terrain::Placement::Block(block).apply(
-                        &mut self.runtime.local_mut().world, pos,
-                        self.inventory.slots[self.input.hotbar_sel], self.creative,
+                        &mut self.runtime.local_mut().world,
+                        pos,
+                        self.inventory.slots[self.input.hotbar_sel],
+                        self.creative,
                     );
                     if placed {
                         if !self.creative {
@@ -313,7 +454,10 @@ impl Game {
                         }
                         if bd.crop_next.is_some() {
                             // The wild notices things growing where you walk.
-                            self.runtime.local_mut().world.plant_ire_at_surface(pos.surface(), 0.2);
+                            self.runtime
+                                .local_mut()
+                                .world
+                                .plant_ire_at_surface(pos.surface(), 0.2);
                         }
                         self.input.action_cooldown = 0.22;
                         self.sfx(Sfx::Place);
@@ -321,7 +465,7 @@ impl Game {
                 }
             }
         }
-    
+
         false
     }
 }

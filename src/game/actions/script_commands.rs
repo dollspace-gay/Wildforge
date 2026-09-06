@@ -1,16 +1,14 @@
 //! Script commands in the ordered graphical action pipeline.
 
-use crate::game::Game;
-use crate::world::TerrainRead;
 use crate::audio::Sfx;
+use crate::game::Game;
+use crate::game::navigation::Screen;
 use crate::inventory::ItemStack;
 use crate::mobs;
 use crate::script;
 use crate::world;
-use crate::game::navigation::Screen;
 
 impl Game {
-
     /// Apply world mutations queued by scripts during the last dispatch.
     pub(in crate::game) fn apply_script_cmds(&mut self) {
         let reg = self.content.reg.clone();
@@ -45,7 +43,11 @@ impl Game {
                             );
                             continue;
                         }
-                        self.runtime.local_mut().world.set_block_authored_at(pos, b, "mod script world event");
+                        self.runtime.local_mut().world.set_block_authored_at(
+                            pos,
+                            b,
+                            "mod script world event",
+                        );
                     }
                 }
                 script::Cmd::Give(name, n) => {
@@ -146,7 +148,11 @@ impl Game {
                     units,
                     reason,
                 } => {
-                    let result = self.runtime.local_mut().world.arcane_ledger
+                    let result = self
+                        .runtime
+                        .local_mut()
+                        .world
+                        .arcane_ledger
                         .as_mut()
                         .ok_or_else(|| "world has no arcane ledger".to_string())
                         .and_then(|ledger| {

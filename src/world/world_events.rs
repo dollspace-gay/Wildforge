@@ -29,6 +29,7 @@ impl World {
         &self.pending_drops
     }
 
+    #[cfg(test)]
     pub fn clear_pending_drops(&mut self) {
         let pending = std::mem::take(&mut self.pending_drops);
         for (at, stack) in pending {

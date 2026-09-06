@@ -1,7 +1,7 @@
 //! Resolve named survival modes and diagnose inheritance cycles.
 
-use crate::registry::{Registry, ModeDef, qualify};
 use crate::registry::schema::RawMod;
+use crate::registry::{ModeDef, Registry, qualify};
 
 pub(super) fn resolve(reg: &mut Registry, raws: &[RawMod]) -> Vec<String> {
     // Named rulesets (capability E1): resolve `[[mode]]` base chains so a

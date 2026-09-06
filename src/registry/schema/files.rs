@@ -1,6 +1,9 @@
 //! Top-level block, item, mode, and recipe document envelopes.
 
-use super::{AliasToml, BlockToml, BloomeryToml, FeatureToml, FuelToml, ItemToml, KilnBaseToml, KilnToml, ModeToml, RecipeToml, SmeltToml, TagToml, WorkedToml};
+use super::{
+    AliasToml, BlockToml, BloomeryToml, FeatureToml, FuelToml, ItemToml, KilnBaseToml, KilnToml,
+    ModeToml, RecipeToml, SmeltToml, TagToml, WorkedToml,
+};
 use serde::Deserialize;
 
 #[derive(Deserialize, Default)]

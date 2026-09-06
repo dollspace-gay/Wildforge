@@ -1,8 +1,11 @@
 //! Raw magic content schema; no runtime mutation.
 
-use crate::registry::{ArcaneDisposition, ArcaneEcologyKind, EcologyHarvestClass, EcologyRole, EcologySource, ReproductionMode};
+use crate::registry::{
+    ArcaneDisposition, ArcaneEcologyKind, EcologyHarvestClass, EcologyRole, EcologySource,
+    ReproductionMode,
+};
 use serde::Deserialize;
-use std::collections::{BTreeMap};
+use std::collections::BTreeMap;
 
 #[derive(Debug, Deserialize, Clone)]
 pub(in crate::registry) struct ObservationToml {
@@ -143,4 +146,3 @@ pub(in crate::registry) struct ArcaneFile {
     #[serde(default, rename = "arcane_site")]
     pub(in crate::registry) sites: Vec<ArcaneSiteToml>,
 }
-

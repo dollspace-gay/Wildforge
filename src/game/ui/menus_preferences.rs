@@ -1,14 +1,13 @@
 //! Menus preferences layout and UI composition.
 
-use crate::game::widgets;
 use crate::atlas;
+use crate::game::Game;
+use crate::game::widgets;
 use crate::style;
 use crate::ui::UiBatch;
-use crate::game::Game;
 
 impl Game {
     pub(in crate::game) fn draw_mods_screen(&mut self, ui: &mut UiBatch, w: f32, h: f32) {
-
         ui.rect(0.0, 0.0, w, h, [0.02, 0.05, 0.1, 0.75]);
         let tw = UiBatch::text_width(4.0, "MODS");
         ui.text_shadow((w - tw) / 2.0, h * 0.10, 4.0, "MODS", [1.0; 4]);
@@ -41,7 +40,6 @@ impl Game {
         widgets::button(&mut *ui, br, "BACK", self.hit(br));
     }
     pub(in crate::game) fn draw_packs_screen(&mut self, ui: &mut UiBatch, w: f32, h: f32) {
-
         ui.rect(0.0, 0.0, w, h, [0.02, 0.05, 0.1, 0.75]);
         let tw = UiBatch::text_width(4.0, "TEXTURE PACKS");
         ui.text_shadow((w - tw) / 2.0, h * 0.08, 4.0, "TEXTURE PACKS", [1.0; 4]);
@@ -101,7 +99,6 @@ impl Game {
         widgets::button(&mut *ui, br, "BACK", self.hit(br));
     }
     pub(in crate::game) fn draw_settings_screen(&mut self, ui: &mut UiBatch, w: f32, h: f32) {
-
         ui.rect(0.0, 0.0, w, h, [0.0, 0.0, 0.0, 0.6]);
         let tw = UiBatch::text_width(4.0, "SETTINGS");
         ui.text_shadow((w - tw) / 2.0, h * 0.12, 4.0, "SETTINGS", [1.0; 4]);
@@ -159,7 +156,6 @@ impl Game {
         widgets::button(&mut *ui, br, "BACK", self.hit(br));
     }
     pub(in crate::game) fn draw_appearance_screen(&mut self, ui: &mut UiBatch, w: f32, h: f32) {
-
         ui.rect(0.0, 0.0, w, h, [0.02, 0.04, 0.08, 0.72]);
         let tw = UiBatch::text_width(4.0, "APPEARANCE");
         ui.text_shadow((w - tw) / 2.0, h * 0.10, 4.0, "APPEARANCE", [1.0; 4]);

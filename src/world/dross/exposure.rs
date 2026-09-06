@@ -1,8 +1,8 @@
 //! Exposure dross transaction coordination.
 
-use std::collections::BTreeSet;
 use crate::planet::BlockPos;
 use crate::world::World;
+use std::collections::BTreeSet;
 
 impl World {
     pub(crate) fn environmental_dross_band_at(&self, pos: BlockPos) -> crate::dross::DrossBand {
@@ -83,7 +83,10 @@ impl World {
         }
     }
 
-    pub(super) fn dross_scar_statuses_at(&self, pos: BlockPos) -> BTreeSet<crate::dross::ScarStatusHandler> {
+    pub(super) fn dross_scar_statuses_at(
+        &self,
+        pos: BlockPos,
+    ) -> BTreeSet<crate::dross::ScarStatusHandler> {
         let (Some(atlas), Some(geography)) = (&self.planet_atlas, &self.arcane_geography) else {
             return BTreeSet::new();
         };

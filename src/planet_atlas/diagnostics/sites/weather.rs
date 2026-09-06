@@ -1,6 +1,6 @@
 //! Qualification site selection for weather.
 
-use crate::chunk::{SEA_LEVEL};
+use crate::chunk::SEA_LEVEL;
 use crate::planet::{Direction4, geodesic_distance};
 use crate::planet_atlas::{AtlasPos, PlanetAtlas, PlanetaryWeather};
 

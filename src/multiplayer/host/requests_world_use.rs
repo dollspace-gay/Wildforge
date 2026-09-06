@@ -1,10 +1,20 @@
 //! Authenticated world use request adapter.
 
-use super::{BlockEntity, C2S, HostFx, HostSession, PlayerRuntime, REACH, S2C, Server, refresh_held};
+use super::{
+    BlockEntity, C2S, HostFx, HostSession, PlayerRuntime, REACH, S2C, Server, refresh_held,
+};
 
 impl HostSession {
-    pub(super) fn request_world_use(&mut self, server: &mut Server, id: u32, msg: C2S, fx: &mut Vec<HostFx>) {
-        let Some(guest) = self.guests.get_mut(&id) else { return; };
+    pub(super) fn request_world_use(
+        &mut self,
+        server: &mut Server,
+        id: u32,
+        msg: C2S,
+        fx: &mut Vec<HostFx>,
+    ) {
+        let Some(guest) = self.guests.get_mut(&id) else {
+            return;
+        };
         match msg {
             C2S::StallBuy { pos } => {
                 if guest.pos.distance_to(pos.entity_center()) > REACH
@@ -26,7 +36,9 @@ impl HostSession {
                 if stall.owner == [0; 16] || banned_owner(stall.owner) {
                     return;
                 }
-                let Ok(purchase) = crate::player_ops::trade::purchase(&reg, stall, &mut guest.inventory) else {
+                let Ok(purchase) =
+                    crate::player_ops::trade::purchase(&reg, stall, &mut guest.inventory)
+                else {
                     return;
                 };
                 if let Some(stack) = purchase.overflow

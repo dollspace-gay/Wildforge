@@ -1,7 +1,7 @@
 //! Material class inference and salvage declaration validation.
 
-use crate::registry::{MaterialClass, SalvageDef};
 use crate::registry::schema::SalvageToml;
+use crate::registry::{MaterialClass, SalvageDef};
 
 pub(in crate::registry) fn inferred_material_class(name: &str) -> MaterialClass {
     let local = name.rsplit(':').next().unwrap_or(name);
@@ -58,4 +58,3 @@ pub(in crate::registry) fn salvage_def(
         }
     })
 }
-

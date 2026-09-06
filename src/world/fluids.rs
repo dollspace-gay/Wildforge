@@ -493,7 +493,8 @@ impl World {
         let rejected = mass.salt_mass.saturating_sub(retained);
         let preferred = self.surface_reservoir_at(pos);
         if rejected != 0
-            && let (Some(atlas), Some(weather)) = (&self.planet_atlas, self.weather_state.live_mut())
+            && let (Some(atlas), Some(weather)) =
+                (&self.planet_atlas, self.weather_state.live_mut())
             && !weather.reject_detailed_salt_to_runoff_from(
                 atlas.atlas_pos(pos.surface()),
                 preferred,

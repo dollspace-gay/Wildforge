@@ -4,12 +4,12 @@ use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 use crate::chunk::{Chunk, ChunkPos};
-use crate::worldgen::Geography;
 use crate::entity::ItemEntity;
 use crate::mobs::{Mob, Projectile};
 use crate::planet::{BlockPos, SurfacePos};
 use crate::planet_atlas::LocalWeatherSample;
 use crate::registry::{AIR, BlockId, Registry};
+use crate::worldgen::Geography;
 mod scene;
 
 use super::terrain::TerrainStore;
@@ -57,20 +57,38 @@ impl ReplicaWorld {
         }
     }
 
-    pub(crate) fn day(&self) -> u32 { self.day }
-    pub(crate) fn ire(&self) -> f32 { self.ire }
-    pub(crate) fn mobs(&self) -> &[Mob] { &self.mobs }
-    pub(crate) fn projectiles(&self) -> &[Projectile] { &self.projectiles }
-    pub(crate) fn loose_items(&self) -> &[ItemEntity] { &self.loose_items }
+    pub(crate) fn day(&self) -> u32 {
+        self.day
+    }
+    pub(crate) fn ire(&self) -> f32 {
+        self.ire
+    }
+    pub(crate) fn mobs(&self) -> &[Mob] {
+        &self.mobs
+    }
+    pub(crate) fn projectiles(&self) -> &[Projectile] {
+        &self.projectiles
+    }
+    pub(crate) fn loose_items(&self) -> &[ItemEntity] {
+        &self.loose_items
+    }
 
-    pub(crate) fn replace_mobs(&mut self, mobs: Vec<Mob>) { self.mobs = mobs; }
+    pub(crate) fn replace_mobs(&mut self, mobs: Vec<Mob>) {
+        self.mobs = mobs;
+    }
     pub(crate) fn replace_projectiles(&mut self, projectiles: Vec<Projectile>) {
         self.projectiles = projectiles;
     }
-    pub(crate) fn replace_loose_items(&mut self, items: Vec<ItemEntity>) { self.loose_items = items; }
+    pub(crate) fn replace_loose_items(&mut self, items: Vec<ItemEntity>) {
+        self.loose_items = items;
+    }
 
-    pub(crate) fn remote_arcane_cue(&self) -> [u8; 2] { self.observations.arcane_bands() }
-    pub(crate) fn remote_arcane_dominant(&self) -> u8 { self.observations.arcane_dominant() }
+    pub(crate) fn remote_arcane_cue(&self) -> [u8; 2] {
+        self.observations.arcane_bands()
+    }
+    pub(crate) fn remote_arcane_dominant(&self) -> u8 {
+        self.observations.arcane_dominant()
+    }
     pub(crate) fn arcane_ecology(&self) -> Option<crate::arcane_ecology::EcologyObservation> {
         self.observations.ecology()
     }
@@ -84,7 +102,9 @@ impl ReplicaWorld {
     pub(crate) fn weather_at_surface(&self, position: SurfacePos) -> LocalWeatherSample {
         self.observations.weather_at(position).unwrap_or_else(|| {
             let temperature = crate::climate::seasonal_temperature(
-                self.geography.climate_at(position).t, position, f64::from(self.day),
+                self.geography.climate_at(position).t,
+                position,
+                f64::from(self.day),
             );
             super::calendar_view::fallback_weather(temperature, self.weather_override)
         })
@@ -108,32 +128,52 @@ impl ReplicaWorld {
         soil_salinity: u8,
         relight: &mut HashSet<ChunkPos>,
     ) {
-        let Some(old) = self.terrain.write_state(position, block, metadata, salt_mass, soil_salinity) else {
+        let Some(old) =
+            self.terrain
+                .write_state(position, block, metadata, salt_mass, soil_salinity)
+        else {
             return;
         };
         self.terrain.dirty_edit_neighbors(position);
-        if let Some((above, _)) = self.terrain.unsupported_above(&self.registry, position, block) {
+        if let Some((above, _)) = self
+            .terrain
+            .unsupported_above(&self.registry, position, block)
+        {
             self.apply_block(above, AIR, 0, 0, 0, relight);
         }
         let fluid_level_only = self.registry.is_fluid(old)
             && self.registry.is_fluid(block)
             && self.registry.is_lava(old) == self.registry.is_lava(block);
-        if !fluid_level_only { relight.insert(position.chunk()); }
-        if old != block { self.block_entities.remove(&position); }
+        if !fluid_level_only {
+            relight.insert(position.chunk());
+        }
+        if old != block {
+            self.block_entities.remove(&position);
+        }
     }
 }
 
 impl TerrainRead for ReplicaWorld {
-    fn registry(&self) -> &Arc<Registry> { &self.registry }
-    fn chunk(&self, position: ChunkPos) -> Option<&Chunk> { self.terrain.get(&position) }
+    fn registry(&self) -> &Arc<Registry> {
+        &self.registry
+    }
+    fn chunk(&self, position: ChunkPos) -> Option<&Chunk> {
+        self.terrain.get(&position)
+    }
     // Settlement reveal records are host state and have never been replicated.
     // The guest has no locally authored hidden-cell overlay.
-    fn is_hidden(&self, _position: BlockPos) -> bool { false }
-    fn hidden_in_chunk(&self, _position: ChunkPos) -> Vec<BlockPos> { Vec::new() }
+    fn is_hidden(&self, _position: BlockPos) -> bool {
+        false
+    }
+    fn hidden_in_chunk(&self, _position: ChunkPos) -> Vec<BlockPos> {
+        Vec::new()
+    }
 }
 
 impl ReplicationTarget for ReplicaWorld {
-    fn observations_mut(&mut self) -> &mut ReplicaObservations { &mut self.observations }
+    fn observations_mut(&mut self) -> &mut ReplicaObservations {
+        &mut self.observations
+    }
 
     fn receive_clock(&mut self, ire: f32, day: u32) {
         self.ire = ire;
@@ -149,7 +189,8 @@ impl ReplicationTarget for ReplicaWorld {
         chunks: impl IntoIterator<Item = (ChunkPos, &'a [u8])>,
         remap: &[BlockId],
     ) {
-        self.terrain.insert_remote_chunks(&self.registry, chunks, remap);
+        self.terrain
+            .insert_remote_chunks(&self.registry, chunks, remap);
     }
 
     fn apply_remote_block_states(
@@ -158,8 +199,16 @@ impl ReplicationTarget for ReplicaWorld {
     ) {
         let mut relight = HashSet::new();
         for (position, block, metadata, salt_mass, soil_salinity) in updates {
-            self.apply_block(position, block, metadata, salt_mass, soil_salinity, &mut relight);
+            self.apply_block(
+                position,
+                block,
+                metadata,
+                salt_mass,
+                soil_salinity,
+                &mut relight,
+            );
         }
-        self.terrain.relight_chunks_and_cascade(&self.registry, relight);
+        self.terrain
+            .relight_chunks_and_cascade(&self.registry, relight);
     }
 }

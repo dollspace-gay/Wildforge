@@ -1,6 +1,9 @@
 //! Qualification site selection for countries.
 
-use crate::planet_atlas::{AtlasPos, BIOME_FOREST, BIOME_MOUNTAINS, BIOME_PLAINS, BIOME_TAIGA, HABITAT_ALPINE, HABITAT_BEACH_DUNE, PlanetAtlas};
+use crate::planet_atlas::{
+    AtlasPos, BIOME_FOREST, BIOME_MOUNTAINS, BIOME_PLAINS, BIOME_TAIGA, HABITAT_ALPINE,
+    HABITAT_BEACH_DUNE, PlanetAtlas,
+};
 
 pub(super) fn collect(atlas: &PlanetAtlas, insert: &mut impl FnMut(&str, AtlasPos, String)) {
     if let Some((coast_pos, coast_biome)) = atlas
@@ -127,5 +130,4 @@ pub(super) fn collect(atlas: &PlanetAtlas, insert: &mut impl FnMut(&str, AtlasPo
             ),
         );
     }
-
 }

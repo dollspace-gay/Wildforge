@@ -1,8 +1,8 @@
 //! Raw fauna content schema; no runtime mutation.
 
-use super::{ArcaneContentToml};
+use super::ArcaneContentToml;
 use serde::Deserialize;
-use std::collections::{HashMap};
+use std::collections::HashMap;
 
 #[derive(Deserialize, Clone)]
 pub(in crate::registry) struct BoxToml {
@@ -285,4 +285,3 @@ pub(in crate::registry) struct ShieldToml {
     #[serde(default)]
     pub(in crate::registry) front_deg: Option<f32>,
 }
-

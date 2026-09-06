@@ -21,31 +21,40 @@ mod water_cycle;
 pub use water_cycle::*;
 
 mod grid;
-pub use grid::{AtlasPos, AtlasStep, AtlasCell, AtlasGrid};
 use grid::atlas_count;
+pub use grid::{AtlasCell, AtlasGrid, AtlasPos, AtlasStep};
 mod layers;
-pub use layers::{BoundaryClass, GeometryCell, TectonicCell, TerrainCell, ClimateCell, HydrologyCell, GroundCell, BiomeCell, ResourceCell, GenesisLayers};
+pub use layers::{
+    BiomeCell, BoundaryClass, ClimateCell, GenesisLayers, GeometryCell, GroundCell, HydrologyCell,
+    ResourceCell, TectonicCell, TerrainCell,
+};
 mod dynamic;
 pub use dynamic::{DynamicCell, DynamicLayers, DynamicScan};
 mod history;
-pub use history::{NamedAtlasPlace, HistoryLayers};
+pub use history::{HistoryLayers, NamedAtlasPlace};
 mod manifest;
-pub use manifest::{StageRecord, AtlasManifest};
+pub use manifest::{AtlasManifest, StageRecord};
 mod generation_config;
-pub use generation_config::{GenerationMode, AtlasStage, AtlasProgress, CancellationToken, AtlasConfig};
+pub use generation_config::{
+    AtlasConfig, AtlasProgress, AtlasStage, CancellationToken, GenerationMode,
+};
 mod error;
 pub use error::AtlasError;
 mod identity;
 pub use identity::genesis_content_hash;
-use identity::{mix64, cell_hash, unit_noise};
+use identity::{cell_hash, mix64, unit_noise};
 mod generation;
 mod sampling;
-pub use sampling::{AtlasTerrainSample, AtlasClimateSample, AtlasTectonicSample};
-mod validation;
+pub use sampling::{AtlasClimateSample, AtlasTectonicSample, AtlasTerrainSample};
 mod codec;
 mod storage;
-pub(crate) use storage::arcane::{ArcaneManifestCheckpoint, ArcaneGeographyManifestCheckpoint, update_arcane_manifest, verify_arcane_manifest_checkpoint, update_arcane_geography_manifest, arcane_geography_manifest_payload, verify_arcane_geography_manifest};
-use codec::{FILE_HEADER_BYTES, GENESIS_RECORD_BYTES, DYNAMIC_PREFIX_BYTES, DYNAMIC_RECORD_BYTES};
+mod validation;
+use codec::{DYNAMIC_PREFIX_BYTES, DYNAMIC_RECORD_BYTES, FILE_HEADER_BYTES, GENESIS_RECORD_BYTES};
+pub(crate) use storage::arcane::{
+    ArcaneGeographyManifestCheckpoint, ArcaneManifestCheckpoint, arcane_geography_manifest_payload,
+    update_arcane_geography_manifest, update_arcane_manifest, verify_arcane_geography_manifest,
+    verify_arcane_manifest_checkpoint,
+};
 
 pub const ATLAS_CELL_BLOCKS: u16 = 32;
 pub const ATLAS_FACE_SIDE: u16 = FACE_BLOCKS / ATLAS_CELL_BLOCKS;

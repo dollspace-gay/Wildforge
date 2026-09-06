@@ -1,38 +1,36 @@
 //! Block menus in the ordered graphical action pipeline.
 
-use crate::game::Game;
-use crate::world::TerrainRead;
+use super::ActionFrame;
 use crate::audio::Sfx;
+use crate::game::Game;
+use crate::game::navigation::Screen;
 use crate::net;
 use crate::raycast;
 use crate::world;
-use crate::game::navigation::Screen;
-use super::ActionFrame;
 
 impl Game {
     pub(in crate::game) fn use_crafting_block(&mut self) -> bool {
-
         self.input.right_held = false;
         self.interaction.craft_size = 3;
         self.set_screen(Screen::Inventory);
         true
     }
     pub(in crate::game) fn use_furnace_block(&mut self, h: &raycast::PlanetHit) -> bool {
-
         self.input.right_held = false;
         if let Some(remote) = &self.multiplayer.remote {
-            remote.session.send(&net::C2S::OpenContainer { pos: h.block });
+            remote
+                .session
+                .send(&net::C2S::OpenContainer { pos: h.block });
             return true;
         }
-        self.runtime.local_mut().world.ensure_block_entity_at(
-            h.block,
-            world::BlockEntity::Furnace(Default::default()),
-        );
+        self.runtime
+            .local_mut()
+            .world
+            .ensure_block_entity_at(h.block, world::BlockEntity::Furnace(Default::default()));
         self.set_screen(Screen::Furnace(h.block));
         true
     }
     pub(in crate::game) fn use_switch_block(&mut self, h: &raycast::PlanetHit) -> bool {
-
         self.input.action_cooldown = 0.25;
         self.input.right_held = false;
         if let Some(rc) = &self.multiplayer.remote {
@@ -44,9 +42,12 @@ impl Game {
         self.toast("The switch points differently now.".to_string());
         true
     }
-    pub(in crate::game) fn use_depot_block(&mut self, frame: &ActionFrame, h: &raycast::PlanetHit) -> bool {
+    pub(in crate::game) fn use_depot_block(
+        &mut self,
+        frame: &ActionFrame,
+        h: &raycast::PlanetHit,
+    ) -> bool {
         let reg = &frame.reg;
-        let held = frame.held;
 
         self.input.action_cooldown = 0.3;
         self.input.right_held = false;
@@ -88,8 +89,7 @@ impl Game {
                     .or_default()
                     .entry(rep_key)
                     .and_modify(|current: &mut String| {
-                        *current =
-                            (current.parse::<u32>().unwrap_or(0) + rep).to_string();
+                        *current = (current.parse::<u32>().unwrap_or(0) + rep).to_string();
                     })
                     .or_insert_with(|| rep.to_string());
                 self.toast(format!(

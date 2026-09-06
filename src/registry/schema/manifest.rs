@@ -1,6 +1,6 @@
 //! Raw manifest content schema; no runtime mutation.
 
-use crate::registry::{RetrogenPolicy};
+use crate::registry::RetrogenPolicy;
 use serde::Deserialize;
 
 #[derive(Deserialize)]
@@ -56,4 +56,3 @@ pub(in crate::registry) struct ModeToml {
     #[serde(default)]
     pub(in crate::registry) nest_spawns: Option<bool>,
 }
-

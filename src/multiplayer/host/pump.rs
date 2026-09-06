@@ -3,7 +3,6 @@
 use super::{EntityPos, HostFx, HostSession, ItemStack, Server, Vec3};
 
 impl HostSession {
-
     /// Everything the host does per frame: drain guest messages, apply
     /// them authoritatively, stream state back.
     /// `host`: (pos, yaw, sleeping) for a windowed host; None when

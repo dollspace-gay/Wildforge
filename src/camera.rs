@@ -201,7 +201,11 @@ impl Camera {
     /// terrain. The cast runs in the player's chart so the DDA crosses
     /// cube-face seams cleanly; on a hit the eye sits in the last free cell,
     /// pulled a hair toward the player to clear the near plane.
-    pub fn place_chase(&mut self, eye: crate::planet::EntityPos, world: &(impl crate::world::TerrainRead + ?Sized)) {
+    pub fn place_chase(
+        &mut self,
+        eye: crate::planet::EntityPos,
+        world: &(impl crate::world::TerrainRead + ?Sized),
+    ) {
         let base = eye.render_pos();
         let f = self.forward();
         let r = f.cross(self.up()).normalize_or_zero();

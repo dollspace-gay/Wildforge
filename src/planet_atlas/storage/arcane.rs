@@ -1,8 +1,10 @@
 //! Arcane ledger and geography manifest checkpoint adapters.
 
+use crate::planet_atlas::storage::{
+    MANIFEST_FILE, MAX_MANIFEST_BYTES, read_bounded, write_manifest,
+};
 use crate::planet_atlas::{AtlasError, AtlasManifest, PlanetAtlas};
-use crate::planet_atlas::storage::{MANIFEST_FILE, MAX_MANIFEST_BYTES, read_bounded, write_manifest};
-use std::path::{Path};
+use std::path::Path;
 
 pub(crate) struct ArcaneManifestCheckpoint {
     pub schema_version: u32,

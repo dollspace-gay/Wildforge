@@ -1,21 +1,21 @@
 //! Charms implements transaction coordination.
 
-use crate::arcane::ArcaneOwner;
-use std::collections::BTreeMap;
-use crate::planet::BlockPos;
-use crate::arcane::Current;
-use crate::arcane::DrossMedium;
-use crate::implements::ImplementAuditEvent;
-use crate::implements::ImplementInstance;
-use crate::implements::ImplementKind;
-use crate::inventory::ItemStack;
-use crate::arcane::LinkedFileReplacement;
-use crate::implements::STRUCTURAL_SPARK_UNITS;
-use crate::world::World;
 use super::add_current;
 use super::charm_resonance_preference;
 use super::physical_component;
 use super::transaction_from_maps;
+use crate::arcane::ArcaneOwner;
+use crate::arcane::Current;
+use crate::arcane::DrossMedium;
+use crate::arcane::LinkedFileReplacement;
+use crate::implements::ImplementAuditEvent;
+use crate::implements::ImplementInstance;
+use crate::implements::ImplementKind;
+use crate::implements::STRUCTURAL_SPARK_UNITS;
+use crate::inventory::ItemStack;
+use crate::planet::BlockPos;
+use crate::world::World;
+use std::collections::BTreeMap;
 
 impl World {
     /// Adopt a generated/legacy charm into durable implement metadata. Old
@@ -172,7 +172,10 @@ impl World {
 
     pub fn charm_can_pay(&self, stack: ItemStack, kind: &str) -> bool {
         crate::world::item_presentation::charm_can_pay(
-            &self.reg, stack, kind, self.inspectable_item_current(stack.arcane_id),
+            &self.reg,
+            stack,
+            kind,
+            self.inspectable_item_current(stack.arcane_id),
         )
     }
 

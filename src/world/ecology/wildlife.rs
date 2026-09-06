@@ -1,16 +1,16 @@
 //! Deterministic wildlife admission and detailed placement.
 
-use crate::world::World;
-use crate::mobs::Mob;
-use crate::chunk::ChunkPos;
 use crate::chunk::CHUNK_X;
 use crate::chunk::CHUNK_Z;
+use crate::chunk::ChunkPos;
 use crate::chunk::SEA_LEVEL;
+use crate::mobs::Mob;
 use crate::planet::BlockPos;
 use crate::planet::EntityPos;
 use crate::planet::SurfacePos;
 use crate::registry::AIR;
 use crate::world::MOB_CAP;
+use crate::world::World;
 
 impl World {
     /// Deterministic per-chunk wildlife roll: at most one species' group.
@@ -170,7 +170,12 @@ impl World {
 
     /// Spawn on dry solid ground at the surface — or, for swimmers,
     /// submerged in a water column at least two deep. Skips bad spots.
-    pub(in crate::world) fn try_spawn_at(&mut self, species: usize, surface: SurfacePos, yaw01: f32) -> bool {
+    pub(in crate::world) fn try_spawn_at(
+        &mut self,
+        species: usize,
+        surface: SurfacePos,
+        yaw01: f32,
+    ) -> bool {
         if self.population.mobs().len() >= MOB_CAP {
             return false;
         }
@@ -199,7 +204,9 @@ impl World {
         // Category budget: a full lake never starves the land spawns.
         if swim {
             let reg = self.reg.clone();
-            let fish = self.population.mobs()
+            let fish = self
+                .population
+                .mobs()
                 .iter()
                 .filter(|m| reg.animals.get(m.species).is_some_and(|d| d.movement_swim))
                 .count();

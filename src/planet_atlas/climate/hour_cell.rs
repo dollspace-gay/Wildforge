@@ -1,13 +1,18 @@
 //! Prepare one cell against the unchanged previous weather grid.
 
-use glam::DVec3;
-use crate::chunk::SEA_LEVEL;
-use crate::planet::Direction4;
-use crate::planet_atlas::{AtlasPos, PlanetAtlas, AtlasError, ReservoirMass, FluxInbox, SurfaceReservoirKind, HYDRO_UNITS_PER_VISIBLE_LEVEL, surface_reservoir_id};
-use super::{PlanetaryWeather, RunoffTransport, seasonal_scalar, seasonal_vector};
 use super::basins::{hydrology_surface_id, take_river_baseflow};
 use super::circulation::downstream_neighbor;
-use super::transport::{chart_vector, transport_stencil, distribute_u32, spill_vapor, spill_cloud, add_i16};
+use super::transport::{
+    add_i16, chart_vector, distribute_u32, spill_cloud, spill_vapor, transport_stencil,
+};
+use super::{PlanetaryWeather, RunoffTransport, seasonal_scalar, seasonal_vector};
+use crate::chunk::SEA_LEVEL;
+use crate::planet::Direction4;
+use crate::planet_atlas::{
+    AtlasError, AtlasPos, FluxInbox, HYDRO_UNITS_PER_VISIBLE_LEVEL, PlanetAtlas, ReservoirMass,
+    SurfaceReservoirKind, surface_reservoir_id,
+};
+use glam::DVec3;
 
 impl PlanetaryWeather {
     pub(super) fn advance_cell(
@@ -32,8 +37,7 @@ impl PlanetaryWeather {
             .saturating_mul(HYDRO_UNITS_PER_VISIBLE_LEVEL as u32);
 
         let evaporation = if source.atmospheric_vapor < target_vapor {
-            ((target_vapor - source.atmospheric_vapor) / 12
-                + HYDRO_UNITS_PER_VISIBLE_LEVEL as u32)
+            ((target_vapor - source.atmospheric_vapor) / 12 + HYDRO_UNITS_PER_VISIBLE_LEVEL as u32)
                 .min(96 * HYDRO_UNITS_PER_VISIBLE_LEVEL as u32)
         } else {
             0
@@ -149,8 +153,7 @@ impl PlanetaryWeather {
         let frozen_divisor = if temperature <= 0.0 { 8 } else { 1 };
         let recharge_request = permeability_rate / frozen_divisor;
         let recharge = water.soil.take(
-            recharge_request
-                .min(groundwater_capacity.saturating_sub(water.groundwater.water_hu)),
+            recharge_request.min(groundwater_capacity.saturating_sub(water.groundwater.water_hu)),
         );
         water.groundwater.add_assign(recharge)?;
         water.last_recharge_hu = recharge.water_hu.min(u64::from(u32::MAX)) as u32;
@@ -170,8 +173,7 @@ impl PlanetaryWeather {
         if let Some((spring_index, spring)) = spring_active {
             let pressure = water
                 .groundwater_head_milliblocks
-                .saturating_sub(spring.outlet_milliblocks)
-                as u64;
+                .saturating_sub(spring.outlet_milliblocks) as u64;
             let discharge = water.groundwater.take((pressure / 250).clamp(1, 256));
             water.runoff.add_assign(discharge)?;
             water.last_spring_hu = discharge.water_hu.min(u64::from(u32::MAX)) as u32;
@@ -203,8 +205,8 @@ impl PlanetaryWeather {
                 self.plan_surface_credit(id, routed);
             } else if hydro.drainage_receiver != u32::MAX {
                 let receiver = hydro.drainage_receiver as usize;
-                let receiver_pos = AtlasPos::from_index(receiver, side)
-                    .expect("drainage receiver is validated");
+                let receiver_pos =
+                    AtlasPos::from_index(receiver, side).expect("drainage receiver is validated");
                 self.active_runoff_routes.push(RunoffTransport {
                     from: pos,
                     to: receiver_pos,
@@ -212,8 +214,7 @@ impl PlanetaryWeather {
                     source_water_before_hu: runoff_before,
                 });
                 let materialized = self.water.commitments.iter().any(|commitment| {
-                    AtlasPos::from_surface(commitment.chunk.block_origin(), side)
-                        == receiver_pos
+                    AtlasPos::from_surface(commitment.chunk.block_origin(), side) == receiver_pos
                 });
                 if materialized {
                     if let Some(inbox) = self

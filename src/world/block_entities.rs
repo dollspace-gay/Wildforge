@@ -280,4 +280,3 @@ pub struct FurnaceState {
     /// Smelt-speed multiplier of the currently burning fuel (embers 2x).
     pub burn_speed: f32,
 }
-

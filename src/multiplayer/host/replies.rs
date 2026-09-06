@@ -1,9 +1,11 @@
 //! Replies for the authoritative host session.
 
-use super::{BlockEntity, BlockPos, HostSession, ItemStack, MachineHandler, PlayerRuntime, S2C, Server, StackSnap};
+use super::{
+    BlockEntity, BlockPos, HostSession, ItemStack, MachineHandler, PlayerRuntime, S2C, Server,
+    StackSnap,
+};
 
 impl HostSession {
-
     /// Gameplay broadcasts exclude authenticated connections that are still
     /// decoding their entry terrain. They do not yet have a coherent world
     /// mirror and are not members of the active roster.
@@ -54,19 +56,33 @@ impl HostSession {
         right: bool,
     ) {
         let reg = server.world.reg.clone();
-        let Some(guest) = self.guests.get(&id).filter(|guest| guest.container == Some(pos)) else {
+        let Some(guest) = self
+            .guests
+            .get(&id)
+            .filter(|guest| guest.container == Some(pos))
+        else {
             return;
         };
         let actor = guest.player_id.0;
         let mut held = guest.cursor;
-        let Some(entity) = server.world.block_entity_mut_at(&pos) else { return; };
+        let Some(entity) = server.world.block_entity_mut_at(&pos) else {
+            return;
+        };
         let result = crate::player_ops::container::click(
-            &reg, entity, &mut held,
-            crate::player_ops::container::Click { slot, right, actor: Some(actor) },
+            &reg,
+            entity,
+            &mut held,
+            crate::player_ops::container::Click {
+                slot,
+                right,
+                actor: Some(actor),
+            },
         );
         // Depots retain their deposit-only request path. Other rejected clicks
         // still receive the unchanged cursor/container echo, as before.
-        if result == Err(crate::player_ops::container::Rejected::DepositOnly) { return; }
+        if result == Err(crate::player_ops::container::Rejected::DepositOnly) {
+            return;
+        }
         let snap = held.map(|s| StackSnap {
             item: s.item.0,
             count: s.count,

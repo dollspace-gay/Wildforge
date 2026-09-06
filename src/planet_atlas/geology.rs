@@ -1,31 +1,37 @@
 //! Deterministic whole-planet geological genesis and its persisted model.
 
+use super::{
+    AtlasError, AtlasGrid, AtlasPos, CancellationToken, GEOLOGY_SCHEMA_VERSION, GeometryCell,
+    ResourceCell, TectonicCell, TerrainCell, mix64,
+};
 use glam::Vec2;
 use serde::{Deserialize, Serialize};
-use super::{AtlasGrid, AtlasPos, GeometryCell, TectonicCell, TerrainCell, ResourceCell, CancellationToken, AtlasError, GEOLOGY_SCHEMA_VERSION, mix64};
 
 mod kinds;
-pub use kinds::{DetailedBoundary, BasinKind, BedrockFamily};
+pub use kinds::{BasinKind, BedrockFamily, DetailedBoundary};
 mod minerals;
-pub use minerals::{MineralKind, VolcanoSource, MagmaChemistry, IntrusionKind};
+pub use minerals::{IntrusionKind, MagmaChemistry, MineralKind, VolcanoSource};
 mod records;
-pub use records::{PlateRecord, CratonRecord, VolcanoRecord, IntrusionRecord, DepositRecord, StratigraphicStackRecord, GeologicalProvinceRecord, ContinentRecord, GeologyAttemptRecord};
+pub use records::{
+    ContinentRecord, CratonRecord, DepositRecord, GeologicalProvinceRecord, GeologyAttemptRecord,
+    IntrusionRecord, PlateRecord, StratigraphicStackRecord, VolcanoRecord,
+};
 mod geometry;
 mod plates;
 #[cfg(test)]
 pub(crate) use plates::classify_pair_rotation_probe;
-mod tectonics;
-mod volcanism;
-mod relief;
-mod strata;
-mod provinces;
-mod deposits;
 mod attempt;
-mod validation;
+mod deposits;
+mod provinces;
+mod relief;
 mod sampling;
-use plates::{plate_sites, plate_assignments};
-use strata::default_stacks;
+mod strata;
+mod tectonics;
+mod validation;
+mod volcanism;
 use attempt::build_attempt;
+use plates::{plate_assignments, plate_sites};
+use strata::default_stacks;
 
 const MAX_GEOLOGY_ATTEMPTS: u8 = 8;
 const LLOYD_PASSES: usize = 2;
@@ -191,4 +197,3 @@ pub(super) fn generate_geology(
         model,
     })
 }
-

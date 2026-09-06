@@ -1,10 +1,10 @@
 //! Script screen graphical containers adapter.
 
 use crate::audio::Sfx;
-use crate::inventory::TOTAL_SLOTS;
-use crate::net;
 use crate::game::Game;
 use crate::game::navigation::Screen;
+use crate::inventory::TOTAL_SLOTS;
+use crate::net;
 
 impl Game {
     /// The def behind the open mod screen, if any.

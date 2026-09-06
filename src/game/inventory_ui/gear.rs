@@ -1,10 +1,10 @@
 //! Gear graphical inventory ui adapter.
 
-use crate::game::widgets;
 use crate::crafting;
+use crate::game::Game;
+use crate::game::widgets;
 use crate::inventory::ItemStack;
 use crate::ui::UiBatch;
-use crate::game::Game;
 
 impl Game {
     pub(super) fn draw_inventory_gear(&self, ui: &mut UiBatch) {

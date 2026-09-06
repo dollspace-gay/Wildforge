@@ -1,5 +1,9 @@
 //! Entry graphical session adapter.
 
+use crate::game::Game;
+use crate::game::MAX_AIR;
+use crate::game::combat;
+use crate::game::navigation::Screen;
 use crate::inventory::HOTBAR_SLOTS;
 use crate::inventory::Inventory;
 use crate::inventory::ItemStack;
@@ -9,10 +13,6 @@ use crate::world;
 use crate::world::World;
 use glam::Vec3;
 use std::path::PathBuf;
-use crate::game::Game;
-use crate::game::MAX_AIR;
-use crate::game::combat;
-use crate::game::navigation::Screen;
 
 impl Game {
     pub(in crate::game) fn finish_world_entry(
@@ -52,7 +52,8 @@ impl Game {
         self.renderer.clear_chunks();
         self.gen_pool = Some(jobs);
         self.mesh_pool = Some(meshes);
-        self.runtime.set_local(server::Server::new(world, 0.3, self.rng ^ 0x5ee1));
+        self.runtime
+            .set_local(server::Server::new(world, 0.3, self.rng ^ 0x5ee1));
         self.player = Player::new_at(spawn);
         self.survival.spawn_point = self.player.pos;
         self.combat = combat::CombatState::new();
@@ -87,7 +88,11 @@ impl Game {
                     }
                     let left = self.inventory.add_stack(&reg, stack);
                     if left == 0
-                        && let Err(error) = self.runtime.local_mut().world.record_external_stack(stack, "development kit")
+                        && let Err(error) = self
+                            .runtime
+                            .local_mut()
+                            .world
+                            .record_external_stack(stack, "development kit")
                     {
                         eprintln!("materials: development kit accounting failed: {error}");
                     }
@@ -169,13 +174,21 @@ impl Game {
             // A malformed/development profile below the sealed shell is
             // settled onto valid ground; there is no planetary void mechanic.
             if self.player.pos.y < 1.0 {
-                self.player.pos = self.runtime.local_mut().world.settle_spawn_at(self.player.pos);
+                self.player.pos = self
+                    .runtime
+                    .local_mut()
+                    .world
+                    .settle_spawn_at(self.player.pos);
                 self.player.vel = Vec3::ZERO;
             }
             // And a save whose terrain changed underneath it (built
             // over, regenerated) comes back beside the hill, not in
             // it. Mid-air/mid-swim saves pass through untouched.
-            let freed = self.runtime.local_mut().world.free_position_at(self.player.pos);
+            let freed = self
+                .runtime
+                .local_mut()
+                .world
+                .free_position_at(self.player.pos);
             if freed != self.player.pos {
                 self.player.pos = freed;
                 self.player.vel = Vec3::ZERO;

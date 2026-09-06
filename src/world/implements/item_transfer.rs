@@ -1,20 +1,20 @@
 //! Item transfer implements transaction coordination.
 
+use super::add_current;
+use super::implement_transfer_properties;
+use super::transaction_from_maps;
 use crate::arcane::ArcaneOwner;
-use std::collections::BTreeMap;
-use crate::world::BlockEntity;
-use crate::planet::BlockPos;
 use crate::arcane::Current;
+use crate::arcane::LinkedFileReplacement;
 use crate::implements::FrameResult;
 use crate::implements::ImplementAuditEvent;
 use crate::implements::ImplementCue;
 use crate::implements::ImplementKind;
-use crate::arcane::LinkedFileReplacement;
 use crate::implements::STRUCTURAL_SPARK_UNITS;
+use crate::planet::BlockPos;
+use crate::world::BlockEntity;
 use crate::world::World;
-use super::add_current;
-use super::implement_transfer_properties;
-use super::transaction_from_maps;
+use std::collections::BTreeMap;
 
 impl World {
     pub(super) fn transfer_at_frame_with_limit(
@@ -298,7 +298,8 @@ impl World {
             self.save_entities().map_err(|error| error.to_string())?;
             return Ok(FrameResult {
                 success: false,
-                revision: self.installations
+                revision: self
+                    .installations
                     .get(&pos)
                     .and_then(|entity| match entity {
                         BlockEntity::BindingFrame(frame) => Some(frame.revision),

@@ -444,7 +444,9 @@ fn save_machine(reg: &Registry, offset: (i32, i32, i32), m: &MachineInstance) ->
 impl World {
     /// Persist the spawned local structures to `local_structures.toml`.
     pub(super) fn save_local_structures(&self) -> std::io::Result<()> {
-        let structures: Vec<SavedStructure> = self.construction.structures()
+        let structures: Vec<SavedStructure> = self
+            .construction
+            .structures()
             .iter()
             .map(|structure| {
                 let mut cells: Vec<super::template::TemplateCell> = structure
@@ -633,7 +635,9 @@ impl World {
         anchor: BlockPos,
         rot: Rotation,
     ) -> Result<LocalStructureId, String> {
-        let id = self.construction.spawn_structure(&self.reg, template, anchor, rot)?;
+        let id = self
+            .construction
+            .spawn_structure(&self.reg, template, anchor, rot)?;
         self.save_local_structures()
             .map_err(|error| format!("saved in memory but not to disk: {error}"))?;
         Ok(id)

@@ -1,14 +1,5 @@
 //! Observation discovery transaction coordination.
 
-use crate::world::BlockEntity;
-use crate::discovery::CalibrationGrade;
-use crate::discovery::DiscoveryError;
-use crate::discovery::ExperimentKind;
-use crate::discovery::NewObservation;
-use crate::discovery::ObservationSummary;
-use crate::discovery::PlanetaryProvenance;
-use crate::discovery::QualitativeReading;
-use crate::world::World;
 use super::ObservationTarget;
 use super::band_of;
 use super::conductivity_of;
@@ -18,6 +9,15 @@ use super::map_survey_strength;
 use super::reading_uncertainty;
 use super::stability_of;
 use super::strength_of;
+use crate::discovery::CalibrationGrade;
+use crate::discovery::DiscoveryError;
+use crate::discovery::ExperimentKind;
+use crate::discovery::NewObservation;
+use crate::discovery::ObservationSummary;
+use crate::discovery::PlanetaryProvenance;
+use crate::discovery::QualitativeReading;
+use crate::world::BlockEntity;
+use crate::world::World;
 
 impl World {
     /// Make one host-authored measurement and put it in a physically present
@@ -350,8 +350,9 @@ impl World {
                 place,
             },
             day: self.calendar_state.day(),
-            time_permille: ((self.calendar_state.clock() / f64::from(crate::server::DAY_LENGTH)).fract() * 1_000.0)
-                as u16,
+            time_permille: ((self.calendar_state.clock() / f64::from(crate::server::DAY_LENGTH))
+                .fract()
+                * 1_000.0) as u16,
             season: crate::world::SEASONS[self.season_at_surface(at.surface())].to_lowercase(),
             calibration,
             reading: QualitativeReading {

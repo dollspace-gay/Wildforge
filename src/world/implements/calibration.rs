@@ -1,26 +1,25 @@
 //! Calibration implements transaction coordination.
 
+use super::VESSEL_INITIAL_CHARGE;
+use super::horizontal_neighbors;
+use super::physical_component;
 use crate::arcane::AccountRead;
 use crate::arcane::ArcaneAuthority;
 use crate::arcane::ArcaneMove;
 use crate::arcane::ArcaneOwner;
 use crate::arcane::ArcaneTransaction;
-use crate::world::BlockEntity;
-use crate::planet::BlockPos;
-use crate::arcane::Current;
+use crate::arcane::LinkedFileReplacement;
 use crate::implements::FrameResult;
 use crate::implements::ImplementAuditEvent;
 use crate::implements::ImplementCue;
 use crate::implements::ImplementInstance;
 use crate::implements::ImplementKind;
-use crate::arcane::LinkedFileReplacement;
 use crate::implements::STRUCTURAL_SPARK_UNITS;
 use crate::implements::VESSEL_CAPACITY;
 use crate::implements::VESSEL_SAFE_TRANSFER;
+use crate::planet::BlockPos;
+use crate::world::BlockEntity;
 use crate::world::World;
-use super::VESSEL_INITIAL_CHARGE;
-use super::horizontal_neighbors;
-use super::physical_component;
 
 impl World {
     pub(super) fn calibrate_frame_or_vessel(
@@ -207,7 +206,11 @@ impl World {
         })
     }
 
-    pub(super) fn calibration_pulse(&mut self, pos: BlockPos, actor: &str) -> Result<FrameResult, String> {
+    pub(super) fn calibration_pulse(
+        &mut self,
+        pos: BlockPos,
+        actor: &str,
+    ) -> Result<FrameResult, String> {
         self.transfer_at_frame_with_limit(pos, actor, Some(2), true)
     }
 }

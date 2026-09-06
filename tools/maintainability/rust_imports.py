@@ -115,6 +115,14 @@ def inspect(path: str, module: tuple[str, ...], text: str) -> list[Unit]:
         index = start
         while index < end:
             token = tokens[index]
+            if token.value == 'pub' and index + 1 < end and tokens[index + 1].value == '(':
+                close = index + 2
+                while close < end and tokens[close].value != ')':
+                    close += 1
+                if close == end:
+                    raise ValueError(f'unterminated visibility at line {token.line}')
+                index = close + 1
+                continue
             if token.value == 'use' and index + 1 < end:
                 # Precise-capture `impl Trait + use<T>` is not an import.
                 if tokens[index + 1].value != '<':
@@ -148,10 +156,12 @@ def inspect(path: str, module: tuple[str, ...], text: str) -> list[Unit]:
                         continue
             if identifier(token.value):
                 mention, after = written_path(tokens, index)
-                if len(mention) > 1:
+                # A single identifier may name a type imported by a glob.
+                # Resolution filters local names; ignoring them hides aliases.
+                if len(mention) > 1 or mention[0] not in {"crate", "self", "super", "Self"}:
                     mentions.append((mention, token.line))
-                    index = after
-                    continue
+                index = after
+                continue
             index += 1
         units.append(Unit(path, name, imports, mentions, children, names))
 

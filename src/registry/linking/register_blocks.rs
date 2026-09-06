@@ -1,11 +1,15 @@
 //! Register blocks in provider order with owned deferred references.
 
+use super::super::pending::PendingDrop;
+use super::super::{
+    arcane_def, arcane_ecology_def, discovery_fixture_def, inferred_material_class, observation_def,
+};
 use super::Registration;
-use crate::registry::{BlockDef, BlockId, DiscoveryItemDef, ItemDef, ItemId, ObservationDef, Registry, qualify};
-use crate::registry::schema::{RawMod, TexSpec};
-use super::super::{arcane_def, arcane_ecology_def, discovery_fixture_def, inferred_material_class, observation_def};
 use crate::registry::blocks::resolve_light_rgb;
-use super::super::pending::{PendingDrop};
+use crate::registry::schema::{RawMod, TexSpec};
+use crate::registry::{
+    BlockDef, BlockId, DiscoveryItemDef, ItemDef, ItemId, ObservationDef, Registry, qualify,
+};
 
 impl Registration {
     pub(super) fn blocks(&mut self, reg: &mut Registry, raw: &RawMod, errs: &mut Vec<String>) {
@@ -208,10 +212,14 @@ impl Registration {
             }
             reg.block_by_name.insert(full.clone(), id);
             if let Some(bd) = &b.bonus_drop {
-                self.pending.bonus.push((raw.info.id.clone(), id.0 as usize, bd.clone()));
+                self.pending
+                    .bonus
+                    .push((raw.info.id.clone(), id.0 as usize, bd.clone()));
             }
             if let Some(br) = &b.brush {
-                self.pending.brush.push((raw.info.id.clone(), id.0 as usize, br.clone()));
+                self.pending
+                    .brush
+                    .push((raw.info.id.clone(), id.0 as usize, br.clone()));
             }
             self.pending.drops.push(PendingDrop {
                 modid: raw.info.id.clone(),
@@ -252,7 +260,9 @@ impl Registration {
                 // itself when it has no stages).
                 let target = BlockId(reg.blocks.len() as u16 - 1);
                 let target = if b.crop.is_some() { target } else { id };
-                self.pending.harvests.push((raw.info.id.clone(), target, h.clone()));
+                self.pending
+                    .harvests
+                    .push((raw.info.id.clone(), target, h.clone()));
             }
             if b.water == Some(0) || b.lava == Some(0) {
                 // Auto-register the 7 flowing variants (either fluid).

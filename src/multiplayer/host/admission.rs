@@ -1,9 +1,11 @@
 //! Admission for the authoritative host session.
 
-use super::{C2S, CHUNK_REQUESTS_PER_SECOND, ChunkPos, HostFx, HostSession, MAX_GUEST_VIEW_DIST, S2C, Server, roster};
+use super::{
+    C2S, CHUNK_REQUESTS_PER_SECOND, ChunkPos, HostFx, HostSession, MAX_GUEST_VIEW_DIST, S2C,
+    Server, roster,
+};
 
 impl HostSession {
-
     pub(super) fn on_msg(&mut self, server: &mut Server, id: u32, msg: C2S, fx: &mut Vec<HostFx>) {
         if matches!(&msg, C2S::EntryReady) {
             let accepted = {
@@ -145,19 +147,33 @@ impl HostSession {
             request @ C2S::ToggleSwitch { .. } => self.request_world_use(server, id, request, fx),
             request @ C2S::DungeonUse { .. } => self.request_world_use(server, id, request, fx),
             request @ C2S::BrushBlock { .. } => self.request_field_observation(server, id, request),
-            request @ C2S::BeginObserve { .. } => self.request_field_observation(server, id, request),
+            request @ C2S::BeginObserve { .. } => {
+                self.request_field_observation(server, id, request)
+            }
             request @ C2S::Observe { .. } => self.request_field_observation(server, id, request),
             request @ C2S::ReadKnowledge { .. } => self.request_knowledge(server, id, request),
             request @ C2S::OpenDiscovery { .. } => self.request_knowledge(server, id, request),
             request @ C2S::CopyObservation { .. } => self.request_knowledge(server, id, request),
             request @ C2S::BeginExperiment { .. } => self.request_experiments(server, id, request),
-            request @ C2S::SetExperimentItem { .. } => self.request_experiments(server, id, request),
+            request @ C2S::SetExperimentItem { .. } => {
+                self.request_experiments(server, id, request)
+            }
             request @ C2S::RunExperiment { .. } => self.request_experiments(server, id, request),
-            request @ C2S::AssembleTuningLens { .. } => self.request_experiments(server, id, request),
-            request @ C2S::OperateBindingFrame { .. } => self.request_implements(server, id, request, fx, implement_observers),
-            request @ C2S::OperateAlchemy { .. } => self.request_alchemy(server, id, request, fx, implement_observers),
-            request @ C2S::UsePreparation { .. } => self.request_alchemy(server, id, request, fx, implement_observers),
-            request @ C2S::OperateWorking { .. } => self.request_implements(server, id, request, fx, implement_observers),
+            request @ C2S::AssembleTuningLens { .. } => {
+                self.request_experiments(server, id, request)
+            }
+            request @ C2S::OperateBindingFrame { .. } => {
+                self.request_implements(server, id, request, fx, implement_observers)
+            }
+            request @ C2S::OperateAlchemy { .. } => {
+                self.request_alchemy(server, id, request, fx, implement_observers)
+            }
+            request @ C2S::UsePreparation { .. } => {
+                self.request_alchemy(server, id, request, fx, implement_observers)
+            }
+            request @ C2S::OperateWorking { .. } => {
+                self.request_implements(server, id, request, fx, implement_observers)
+            }
             request @ C2S::FireProjectile { .. } => self.request_projectiles(server, id, request),
             request @ C2S::OpenContainer { .. } => self.request_containers(server, id, request),
             request @ C2S::ContainerClick { .. } => self.request_containers(server, id, request),

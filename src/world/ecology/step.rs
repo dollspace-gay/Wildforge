@@ -1,15 +1,15 @@
 //! Ordered mob/NPC simulation, event application, and repopulation.
 
-use crate::world::World;
-use std::collections::HashMap;
+use crate::chunk::CHUNK_Y;
+use crate::chunk::ChunkPos;
 use crate::inventory::ItemStack;
 use crate::mobs::Mob;
 use crate::mobs::MobEvent;
-use crate::chunk::ChunkPos;
-use crate::chunk::CHUNK_Y;
 use crate::planet::BlockPos;
 use crate::planet::EntityPos;
 use crate::world::MOB_CAP;
+use crate::world::World;
+use std::collections::HashMap;
 
 impl World {
     /// Tick AI/physics for all mobs, plus the slow repopulation roll.
@@ -32,7 +32,9 @@ impl World {
         // Herd pulls are averaged in each animal's local tangent frame.
         // This costs little at the mob cap and lets a herd straddle a face
         // seam without splitting into two coordinate buckets.
-        let herd_members: Vec<(usize, EntityPos)> = self.population.mobs()
+        let herd_members: Vec<(usize, EntityPos)> = self
+            .population
+            .mobs()
             .iter()
             .filter_map(|m| {
                 let d = reg.animals.get(m.species)?;
@@ -40,7 +42,9 @@ impl World {
                     .then_some((m.species, m.pos))
             })
             .collect();
-        let local_conditions: HashMap<u32, (usize, f32)> = self.population.mobs()
+        let local_conditions: HashMap<u32, (usize, f32)> = self
+            .population
+            .mobs()
             .iter()
             .map(|mob| {
                 let surface = mob.pos.surface();
@@ -56,8 +60,12 @@ impl World {
         // The trophic pre-pass: hungry predators pick their quarry,
         // desperation is graded (deep hunger plus night or winter),
         // and prey with a stalker on top of it bolts.
-        let snapshot: Vec<(u32, usize, crate::planet::EntityPos)> =
-            self.population.mobs().iter().map(|m| (m.id, m.species, m.pos)).collect();
+        let snapshot: Vec<(u32, usize, crate::planet::EntityPos)> = self
+            .population
+            .mobs()
+            .iter()
+            .map(|m| (m.id, m.species, m.pos))
+            .collect();
         let mut spooked: Vec<(u32, crate::planet::EntityPos)> = Vec::new();
         // Capability E12: the global tier once per pass — a region's
         // industrial temper is shared by every animal in it.
@@ -419,7 +427,9 @@ impl World {
             if player.face().is_deep() {
                 return events;
             }
-            let near = self.population.mobs()
+            let near = self
+                .population
+                .mobs()
                 .iter()
                 .filter(|m| m.pos.distance_to(player) < 96.0)
                 .count();

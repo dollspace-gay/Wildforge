@@ -1,7 +1,7 @@
 //! Resolve optional skills, machines, nests, and screen capabilities.
 
-use crate::registry::{Registry, NestDef, qualify};
 use crate::registry::schema::RawMod;
+use crate::registry::{NestDef, Registry, qualify};
 
 pub(super) fn skills(reg: &mut Registry, raws: &[RawMod]) -> Vec<String> {
     // Capability E5: merge every mod's skill tree into the registry.

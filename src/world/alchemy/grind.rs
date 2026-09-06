@@ -1,24 +1,24 @@
 //! Grind alchemy transaction coordination.
 
+use super::add_materials;
+use super::result_for;
+use super::split_materials;
+use super::take_exact_slot;
 use crate::alchemy::AlchemyAuditEvent;
 use crate::alchemy::AlchemyCueKind;
 use crate::alchemy::AlchemyRequest;
 use crate::alchemy::AlchemyResult;
 use crate::alchemy::ApparatusKind;
-use crate::arcane::ArcaneOwner;
 use crate::alchemy::BatchIngredientState;
 use crate::alchemy::BatchOutcome;
-use crate::planet::BlockPos;
-use crate::arcane::Current;
-use crate::inventory::Inventory;
 use crate::alchemy::ProcessObservation;
 use crate::alchemy::ProcessStep;
+use crate::arcane::ArcaneOwner;
+use crate::arcane::Current;
+use crate::inventory::Inventory;
+use crate::planet::BlockPos;
 use crate::planet_atlas::ReservoirMass;
 use crate::world::World;
-use super::add_materials;
-use super::result_for;
-use super::split_materials;
-use super::take_exact_slot;
 
 impl World {
     pub(super) fn alchemy_grind(
@@ -102,7 +102,9 @@ impl World {
         let (retained_materials, residue_materials) =
             split_materials(&materials, ingredient_definition.retention_permille);
         let ingredient_water = if item_name == "base:rainbell_dew" {
-            let weather = self.weather_state.live()
+            let weather = self
+                .weather_state
+                .live()
                 .ok_or("Rainbell Dew needs the authoritative water ledger.")?;
             let mut available = weather.water.ledger.industrial;
             let parcel = available.take(crate::planet_atlas::HYDRO_UNITS_PER_VISIBLE_LEVEL);

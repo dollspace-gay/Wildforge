@@ -10,7 +10,8 @@ use crate::world::World;
 impl World {
     pub(super) fn commit_fresh_chunk_water(&mut self, pos: ChunkPos, chunk: &mut Chunk) {
         let reg = self.reg.clone();
-        let (Some(atlas), Some(weather)) = (&self.planet_atlas, self.weather_state.live_mut()) else {
+        let (Some(atlas), Some(weather)) = (&self.planet_atlas, self.weather_state.live_mut())
+        else {
             return;
         };
         let existing = weather

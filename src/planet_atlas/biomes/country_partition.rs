@@ -1,10 +1,12 @@
 //! Country border costs and ordered traversal across landmasses.
 
-use crate::chunk::{SEA_LEVEL};
-use crate::planet::{geodesic_distance};
-use crate::planet_atlas::{AtlasGrid, AtlasPos, GroundCell, HYDRO_RIVER, HydrologyCell, TerrainCell};
-use std::collections::{BTreeMap, BTreeSet, BinaryHeap};
+use crate::chunk::SEA_LEVEL;
+use crate::planet::geodesic_distance;
+use crate::planet_atlas::{
+    AtlasGrid, AtlasPos, GroundCell, HYDRO_RIVER, HydrologyCell, TerrainCell,
+};
 use std::cmp::Ordering as CmpOrdering;
+use std::collections::{BTreeMap, BTreeSet, BinaryHeap};
 #[derive(Clone, Copy, Debug)]
 struct QueueEntry {
     cost: f32,

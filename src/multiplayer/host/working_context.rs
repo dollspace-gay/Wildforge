@@ -2,7 +2,6 @@
 
 use super::{Guest, World, discovery_reachable};
 
-
 pub(super) fn operate_guest_working(
     world: &mut World,
     guest: &mut Guest,

@@ -1,21 +1,19 @@
 //! Alchemy capture scene construction.
 
-use crate::world::TerrainRead;
+use super::DemoChart;
+use crate::game::Game;
 use crate::identity;
 use crate::inventory::Inventory;
+use crate::planet::EntityPos;
 use crate::registry::AIR;
-use crate::world;
 use glam::Vec3;
-use crate::game::Game;
-use crate::planet::{BlockPos, EntityPos, Face, SurfacePos};
-use super::DemoChart;
 
 impl Game {
     /// A compact physical apothecary used by the GPU capture gate. Every
     /// station is a real authored block with an authoritative installation
     /// record, adjacent conductor, heat source, cooling stock, and reusable
     /// vessels/inputs in the ordinary player inventory.
-    pub(in crate::game) fn stage_alchemy_demo(&mut self, spawn: EntityPos) -> Result<(), String> {
+    pub(super) fn stage_alchemy_demo(&mut self, spawn: EntityPos) -> Result<(), String> {
         let chart = DemoChart::new(spawn.face());
         let reg = self.content.reg.clone();
         let bx = spawn.x.round() as i32;
@@ -31,10 +29,24 @@ impl Game {
         for dx in -6..=6 {
             for dz in -2..=6 {
                 if dz <= 2 {
-                    demo_set!(self.runtime.local_mut().world, chart, bx + dx, y - 1, bz + dz, stone);
+                    demo_set!(
+                        self.runtime.local_mut().world,
+                        chart,
+                        bx + dx,
+                        y - 1,
+                        bz + dz,
+                        stone
+                    );
                 }
                 for dy in 0..=6 {
-                    demo_set!(self.runtime.local_mut().world, chart, bx + dx, y + dy, bz + dz, AIR);
+                    demo_set!(
+                        self.runtime.local_mut().world,
+                        chart,
+                        bx + dx,
+                        y + dy,
+                        bz + dz,
+                        AIR
+                    );
                 }
             }
         }
@@ -129,5 +141,4 @@ impl Game {
         self.camera.pitch = -0.28;
         Ok(())
     }
-
 }

@@ -4,6 +4,7 @@
 use super::fixtures::TestHost;
 use super::*;
 use crate::agent::{Agent, Behavior};
+use crate::world::TerrainRead;
 
 mod admission;
 mod replication;
@@ -735,7 +736,7 @@ fn the_agent_runs_an_ordinary_alchemy_job_through_the_host() {
     host.with(|_, sim| {
         let due = sim.world.alchemy_state().unwrap().ordinary_jobs[&mortar].due_tick;
         sim.freeze_clock = true;
-        sim.world.clock = (due + 1) as f64 / 20.0;
+        sim.world.set_simulation_clock((due + 1) as f64 / 20.0);
     });
     let collected = agent
         .operate_alchemy(mortar, ApparatusAction::PressOil { seed_slot: 0 }, None)

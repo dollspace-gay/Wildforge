@@ -1,32 +1,32 @@
 //! Stable, headless atlas maps and qualification census.
+use super::{AtlasError, PlanetAtlas};
 use std::fs;
 use std::path::Path;
 use std::time::Instant;
-use super::{AtlasError, PlanetAtlas};
 
 mod records;
 pub use records::{AtlasCensus, AtlasExportReport};
-mod census_cells;
-mod census;
-mod census_csv;
 mod catalog;
-mod values;
-mod maps;
-mod images;
-mod memory;
-mod transects;
-mod weather_examples;
+mod census;
+mod census_cells;
+mod census_csv;
 mod country_routes;
+mod images;
+mod maps;
+mod memory;
 mod sites;
-use catalog::{layers, layer_count};
-use maps::export_layer;
+mod transects;
+mod values;
+mod weather_examples;
+use catalog::{layer_count, layers};
+use census_csv::write_census_csv;
+use country_routes::export_country_adjacency;
 use images::export_globe_preview;
+use maps::export_layer;
 use memory::{estimated_loaded_bytes, peak_resident_bytes};
+use sites::qualification_sites;
 use transects::{export_climate_transects, export_river_profiles};
 use weather_examples::export_weather_examples;
-use country_routes::export_country_adjacency;
-use census_csv::write_census_csv;
-use sites::qualification_sites;
 
 const FACE_LAYOUT: &str =
     "3x2: pos_x,neg_x,pos_y / neg_y,pos_z,neg_z; u left-to-right, v top-to-bottom";

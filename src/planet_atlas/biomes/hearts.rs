@@ -1,9 +1,16 @@
 //! Habitat-aware selection of accessible country heart sites.
 
-use crate::chunk::{SEA_LEVEL};
-use crate::planet::{geodesic_distance};
-use crate::planet_atlas::{AtlasGrid, AtlasPos, BiomeCell, GeometryCell, GroundCell, HydrologyCell, TerrainCell};
-use super::{BIOME_ARCTIC, BIOME_BADLANDS, BIOME_DESERT, BIOME_FOREST, BIOME_JUNGLE, BIOME_MOUNTAINS, BIOME_PLAINS, BIOME_SAVANNA, BIOME_SCRUBLAND, BIOME_TAIGA, BIOME_TUNDRA, HABITAT_AQUATIC_BRACKISH, HABITAT_AQUATIC_FRESH, HABITAT_AQUATIC_SALT, HABITAT_FLOODPLAIN, HABITAT_OASIS, HABITAT_PERMAFROST, HABITAT_RIPARIAN, HABITAT_SPRING, HABITAT_WETLAND};
+use super::{
+    BIOME_ARCTIC, BIOME_BADLANDS, BIOME_DESERT, BIOME_FOREST, BIOME_JUNGLE, BIOME_MOUNTAINS,
+    BIOME_PLAINS, BIOME_SAVANNA, BIOME_SCRUBLAND, BIOME_TAIGA, BIOME_TUNDRA,
+    HABITAT_AQUATIC_BRACKISH, HABITAT_AQUATIC_FRESH, HABITAT_AQUATIC_SALT, HABITAT_FLOODPLAIN,
+    HABITAT_OASIS, HABITAT_PERMAFROST, HABITAT_RIPARIAN, HABITAT_SPRING, HABITAT_WETLAND,
+};
+use crate::chunk::SEA_LEVEL;
+use crate::planet::geodesic_distance;
+use crate::planet_atlas::{
+    AtlasGrid, AtlasPos, BiomeCell, GeometryCell, GroundCell, HydrologyCell, TerrainCell,
+};
 
 #[allow(clippy::too_many_arguments)]
 pub(super) fn heart_score(

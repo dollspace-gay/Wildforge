@@ -1,9 +1,9 @@
 //! Graphical discovery, alchemy, waystone, and sleep adapters.
 
-mod catalogue;
-mod reading;
-mod apparatus;
-mod preparations;
 mod alchemy_context;
-mod waystones;
+mod apparatus;
+mod catalogue;
+mod preparations;
+mod reading;
 mod sleep;
+mod waystones;

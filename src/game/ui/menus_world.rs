@@ -1,13 +1,12 @@
 //! Menus world layout and UI composition.
 
+use super::wrap_ui_status;
+use crate::game::Game;
 use crate::game::widgets;
 use crate::ui::UiBatch;
-use crate::game::Game;
-use super::{wrap_ui_status};
 
 impl Game {
     pub(in crate::game) fn draw_title_screen(&mut self, ui: &mut UiBatch, w: f32, h: f32) {
-
         ui.rect(0.0, 0.0, w, h, [0.05, 0.08, 0.15, 0.55]);
         let tw = UiBatch::text_width(8.0, "WILDFORGE");
         ui.text_shadow(
@@ -96,7 +95,6 @@ impl Game {
         }
     }
     pub(in crate::game) fn draw_new_world_screen(&mut self, ui: &mut UiBatch, w: f32, h: f32) {
-
         ui.rect(0.0, 0.0, w, h, [0.02, 0.04, 0.08, 0.88]);
         let title = format!("NEW {} PLANET", self.ui_state.new_world_mode.to_uppercase());
         let title_width = UiBatch::text_width(4.0, &title);
@@ -129,7 +127,8 @@ impl Game {
             &seed,
             [0.92, 0.96, 0.88, 1.0],
         );
-        let hint = "ENTER A SEED OR ROLL ONE. THE SAME SEED + CONTENT + VERSION MAKES THE SAME PLANET.";
+        let hint =
+            "ENTER A SEED OR ROLL ONE. THE SAME SEED + CONTENT + VERSION MAKES THE SAME PLANET.";
         let hint_width = UiBatch::text_width(1.1, hint);
         ui.text_shadow(
             (w - hint_width) / 2.0,
@@ -139,10 +138,9 @@ impl Game {
             [0.66, 0.72, 0.68, 1.0],
         );
         if !self.ui_state.new_world_status.is_empty() {
-            for (line, status) in
-                wrap_ui_status(&self.ui_state.new_world_status, w - 80.0, 1.2, 4)
-                    .iter()
-                    .enumerate()
+            for (line, status) in wrap_ui_status(&self.ui_state.new_world_status, w - 80.0, 1.2, 4)
+                .iter()
+                .enumerate()
             {
                 let status_width = UiBatch::text_width(1.2, status);
                 ui.text_shadow(
@@ -194,7 +192,6 @@ impl Game {
         }
     }
     pub(in crate::game) fn draw_creating_world_screen(&mut self, ui: &mut UiBatch, w: f32, h: f32) {
-
         ui.rect(0.0, 0.0, w, h, [0.02, 0.04, 0.08, 0.88]);
         let title = "A WORLD IS BECOMING";
         let title_width = UiBatch::text_width(4.0, title);
@@ -233,7 +230,6 @@ impl Game {
         widgets::button(&mut *ui, cancel, "CANCEL", self.hit(cancel));
     }
     pub(in crate::game) fn draw_confirm_delete_screen(&mut self, ui: &mut UiBatch, w: f32, h: f32) {
-
         ui.rect(0.0, 0.0, w, h, [0.1, 0.02, 0.02, 0.7]);
         let name = self
             .ui_state

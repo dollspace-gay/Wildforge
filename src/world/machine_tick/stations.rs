@@ -1,11 +1,11 @@
 //! Stations machine_tick transaction coordination.
 
+use crate::inventory::ItemStack;
+use crate::planet::BlockPos;
 use crate::registry::AIR;
 use crate::world::BlockEntity;
-use crate::planet::BlockPos;
 use crate::world::ELEC_RADIUS;
 use crate::world::HELVE_STRIKE_SECS;
-use crate::inventory::ItemStack;
 use crate::world::PUMP_REACH;
 use crate::world::PUMP_STROKE_SECS;
 use crate::world::STATION_STRIKE_SECS;
@@ -21,7 +21,8 @@ impl World {
     /// and a sail in wind swap to their _run variants, and back.
     pub(in crate::world) fn tick_stations(&mut self, dt: f32) {
         let reg = self.reg.clone();
-        let keys: Vec<BlockPos> = self.installations
+        let keys: Vec<BlockPos> = self
+            .installations
             .iter()
             .filter(|(_, e)| matches!(e, BlockEntity::Anvil(_)))
             .map(|(k, _)| *k)
@@ -84,7 +85,12 @@ impl World {
                     // Momentum: a wheel spins down over seconds, not
                     // the instant one cell of its race goes still.
                     let wet = self.wheel_live_at(pos) > 0.0;
-                    self.installations.wheel_momentum(pos, wet, dt, crate::world::power::WHEEL_SPINDOWN_SECS)
+                    self.installations.wheel_momentum(
+                        pos,
+                        wet,
+                        dt,
+                        crate::world::power::WHEEL_SPINDOWN_SECS,
+                    )
                 } else {
                     self.sail_live_at(pos)
                 };

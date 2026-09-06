@@ -1,12 +1,17 @@
 //! Channel geometry, habitats, sediment, and downstream salinity.
 
-use crate::chunk::SEA_LEVEL;
-use crate::planet_atlas::{AtlasError, AtlasGrid, BedrockFamily, ClimateCell, GeometryCell, HydrologyCell, TectonicCell};
-use super::{OceanBasinRecord, RiverRecord, WaterBodyKind, HYDRO_DELTA, HYDRO_ESTUARY, HYDRO_FLOODPLAIN, HYDRO_INTERMITTENT, HYDRO_KARST_LOSS, HYDRO_PERENNIAL, HYDRO_RIVER, HYDRO_WATERFALL};
 use super::flow::{FlowAccumulation, edge_distance, stream_orders};
 use super::lakes::LakeSolution;
 use super::rivers::{RiverInput, river_records};
 use super::runoff::{bedrock_resistance, local_runoff, normalized_fractions};
+use super::{
+    HYDRO_DELTA, HYDRO_ESTUARY, HYDRO_FLOODPLAIN, HYDRO_INTERMITTENT, HYDRO_KARST_LOSS,
+    HYDRO_PERENNIAL, HYDRO_RIVER, HYDRO_WATERFALL, OceanBasinRecord, RiverRecord, WaterBodyKind,
+};
+use crate::chunk::SEA_LEVEL;
+use crate::planet_atlas::{
+    AtlasError, AtlasGrid, BedrockFamily, ClimateCell, GeometryCell, HydrologyCell, TectonicCell,
+};
 
 pub(super) struct ChannelInput<'a> {
     pub(super) seed: u32,

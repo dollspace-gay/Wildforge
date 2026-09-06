@@ -1,23 +1,22 @@
 //! Decant alchemy transaction coordination.
 
-use crate::alchemy::AlchemyAuditEvent;
-use crate::alchemy::AlchemyCueKind;
-use crate::alchemy::AlchemyRequest;
-use crate::alchemy::AlchemyResult;
-use crate::arcane::ArcaneOwner;
-use crate::alchemy::BatchFailure;
-use crate::alchemy::BatchOutcome;
-use crate::planet::BlockPos;
-use crate::arcane::Current;
-use crate::inventory::Inventory;
-use crate::registry::MaterialVector;
-use crate::world::World;
 use super::add_materials;
 use super::produced;
 use super::proportional_units;
 use super::result_for;
 use super::take_exact_slot;
 use super::take_material_fraction;
+use crate::alchemy::AlchemyAuditEvent;
+use crate::alchemy::AlchemyCueKind;
+use crate::alchemy::AlchemyRequest;
+use crate::alchemy::AlchemyResult;
+use crate::alchemy::BatchFailure;
+use crate::alchemy::BatchOutcome;
+use crate::arcane::ArcaneOwner;
+use crate::inventory::Inventory;
+use crate::planet::BlockPos;
+use crate::registry::MaterialVector;
+use crate::world::World;
 
 impl World {
     pub(super) fn alchemy_decant(

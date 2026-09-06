@@ -27,7 +27,7 @@ pub(super) fn run(game: &mut Game) {
     }
     let viewer_id = game.multiplayer.remote.as_ref().unwrap().my_id;
     let center = game.player.pos.chunk().unwrap();
-    assert!(game.server.world.is_remote());
+    assert!(game.runtime.is_guest());
     assert!(
         game.renderer.has_chunk(center),
         "entry requires a real uploaded mesh"

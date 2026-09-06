@@ -13,6 +13,7 @@
 use super::*;
 use crate::world::local_structure::{LocalStructureId, from_template};
 use crate::world::machines::light_machine_at;
+use crate::world::multiblock::BlockRead;
 use crate::world::multiblock::{BlockStore, Rotation};
 use crate::world::template::capture_region;
 use crate::world::{BlockEntity, FORGE_FIRE_SECS, MachineInstance};

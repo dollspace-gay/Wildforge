@@ -31,7 +31,9 @@ pub(super) fn prepared_chunk_digest(
 }
 
 pub(super) fn validate_spawn_ledgers(world: &World) -> std::io::Result<()> {
-    let weather = world.weather_state.live()
+    let weather = world
+        .weather_state
+        .live()
         .ok_or_else(|| std::io::Error::other("planetary spawn requires a water ledger"))?;
     let water = weather
         .water
@@ -62,4 +64,3 @@ pub(super) fn validate_spawn_ledgers(world: &World) -> std::io::Result<()> {
     }
     Ok(())
 }
-

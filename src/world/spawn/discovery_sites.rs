@@ -1,18 +1,18 @@
 //! Discovery sites for the common spawn contract.
 
-use crate::registry::AIR;
-use crate::planet::BlockPos;
+use super::entry_chunks;
 use crate::chunk::CHUNK_X;
 use crate::chunk::CHUNK_Y;
 use crate::chunk::CHUNK_Z;
 use crate::chunk::ChunkPos;
+use crate::chunk::SEA_LEVEL;
+use crate::planet::BlockPos;
+use crate::planet::SurfacePos;
+use crate::registry::AIR;
+use crate::world::World;
 use std::collections::HashMap;
 use std::collections::HashSet;
-use crate::chunk::SEA_LEVEL;
-use crate::planet::SurfacePos;
 use std::collections::VecDeque;
-use crate::world::World;
-use super::entry_chunks;
 
 impl World {
     /// Census-backed discovery sites. New planets receive three independent
@@ -175,9 +175,4 @@ impl World {
         }
         Ok(changed)
     }
-
-    /// Pick one deterministic, naturally viable common spawn for every play
-    /// mode. Voxel-level refinement remains `safe_spawn_at`; unlike the old
-    /// dedicated path, its starting country is already dry, living land.
-    #[cfg(test)]
 }

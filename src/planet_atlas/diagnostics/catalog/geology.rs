@@ -1,6 +1,5 @@
 //! Registered geology diagnostic maps in export order.
 
-
 use super::{LayerKind, LayerSpec, layer};
 pub(super) const LAYERS: &[LayerSpec] = &[
     layer("latitude", "latitude in radians", LayerKind::Scalar),

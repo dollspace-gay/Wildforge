@@ -1,12 +1,17 @@
 //! Script panel layout and UI composition.
 
+use crate::game::Game;
 use crate::game::widgets;
 use crate::ui::UiBatch;
-use crate::game::Game;
 
 impl Game {
-    pub(in crate::game) fn draw_mod_screen(&mut self, ui: &mut UiBatch, w: f32, h: f32, idx: usize) {
-
+    pub(in crate::game) fn draw_mod_screen(
+        &mut self,
+        ui: &mut UiBatch,
+        w: f32,
+        h: f32,
+        idx: usize,
+    ) {
         // Capability E11: a data-driven mod screen. Rows render
         // from the def; clicks route through `mod_screen_click`.
         ui.rect(0.0, 0.0, w, h, [0.0, 0.0, 0.0, 0.55]);
@@ -57,13 +62,7 @@ impl Game {
                             rr.3 - 4.0,
                             [0.15, 0.15, 0.15, 0.95],
                         );
-                        ui.text_shadow(
-                            rr.0 + 12.0,
-                            rr.1 + rr.3 / 2.0 - 10.0,
-                            2.0,
-                            label,
-                            [1.0; 4],
-                        );
+                        ui.text_shadow(rr.0 + 12.0, rr.1 + rr.3 / 2.0 - 10.0, 2.0, label, [1.0; 4]);
                         let state = if on { "ON" } else { "OFF" };
                         let color = if on {
                             [0.5, 1.0, 0.5, 1.0]
@@ -105,6 +104,11 @@ impl Game {
         }
         self.draw_player_inventory(&mut *ui);
         self.draw_browser(&mut *ui);
-        widgets::held_stack(&self.content.reg, &mut *ui, self.input.ui_cursor, self.ui_state.held_stack);
+        widgets::held_stack(
+            &self.content.reg,
+            &mut *ui,
+            self.input.ui_cursor,
+            self.ui_state.held_stack,
+        );
     }
 }

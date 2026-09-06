@@ -1,6 +1,5 @@
 //! Registered weather diagnostic maps in export order.
 
-
 use super::{LayerKind, LayerSpec, layer};
 pub(super) const LAYERS: &[LayerSpec] = &[
     layer(

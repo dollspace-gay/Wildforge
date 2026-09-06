@@ -1,13 +1,13 @@
 //! Player combat depth: stamina, light/light/heavy combo, dodge with
 //! i-frames, block, backstab, and floating damage numbers.
 
-use crate::audio::Sfx;
-use glam::Vec3;
 use super::Game;
 use super::navigation::Screen;
+use crate::audio::Sfx;
 use crate::planet::EntityPos;
 #[cfg(test)]
 use crate::player_ops::combat::mob_facing_away;
+use glam::Vec3;
 
 pub(crate) const STAMINA_MAX: f32 = 10.0;
 pub(crate) const STAMINA_REGEN: f32 = 3.5;

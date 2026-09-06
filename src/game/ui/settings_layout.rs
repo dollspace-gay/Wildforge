@@ -3,7 +3,6 @@
 use crate::game::Game;
 
 impl Game {
-
     pub(in crate::game) fn slider_bar_rect(&self, i: usize) -> (f32, f32, f32, f32) {
         let w = self.renderer.config.width as f32;
         let h = self.renderer.config.height as f32;

@@ -1,6 +1,9 @@
 //! Preparation stage of GPU frame encoding.
 
-use crate::renderer::{Renderer, FrameInput, Uniforms, SHADOW_CASCADES, CASCADE_RADII, MAX_PT_LIGHTS, OCC_GRID, CASCADE_STRIDE};
+use crate::renderer::{
+    CASCADE_RADII, CASCADE_STRIDE, FrameInput, MAX_PT_LIGHTS, OCC_GRID, Renderer, SHADOW_CASCADES,
+    Uniforms,
+};
 use glam::{Mat4, Vec3};
 
 /// Dev shadow-debug viz mode (WILDFORGE_SHADOW_DEBUG), read once. 0 = off;
@@ -32,7 +35,10 @@ fn shadow_debug() -> u32 {
 }
 
 impl Renderer {
-    pub(in crate::renderer) fn frame_uniforms(&self, f: &FrameInput<'_>) -> (Uniforms, [Mat4; SHADOW_CASCADES]) {
+    pub(in crate::renderer) fn frame_uniforms(
+        &self,
+        f: &FrameInput<'_>,
+    ) -> (Uniforms, [Mat4; SHADOW_CASCADES]) {
         // Sun light-space matrix: an orthographic box centered near the camera,
         // looking from the sun toward that center. Covers the near field; beyond
         // its radius the shader treats fragments as lit (shadows fade out).
@@ -145,7 +151,12 @@ impl Renderer {
         };
         (uniforms, light_vp)
     }
-    pub(in crate::renderer) fn upload_frame(&mut self, f: &FrameInput<'_>, uniforms: &Uniforms, light_vp: &[Mat4; SHADOW_CASCADES]) {
+    pub(in crate::renderer) fn upload_frame(
+        &mut self,
+        f: &FrameInput<'_>,
+        uniforms: &Uniforms,
+        light_vp: &[Mat4; SHADOW_CASCADES],
+    ) {
         // Upload a fresh occupancy grid when the camera crossed into a new region.
         if let Some(bytes) = f.occ_update {
             self.queue.write_texture(

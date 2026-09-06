@@ -1,13 +1,13 @@
 //! Preservation workings transaction coordination.
 
+use super::inventory_target_id;
+use super::mounted_target_id;
 use crate::planet::BlockPos;
 use crate::workings::PreservationKind;
 use crate::workings::WorkingEffect;
 use crate::workings::WorkingPhase;
 use crate::workings::WorkingTargetSnapshot;
 use crate::world::World;
-use super::inventory_target_id;
-use super::mounted_target_id;
 
 impl World {
     /// Apply one ordinary aging sweep to a carried target. The caller still

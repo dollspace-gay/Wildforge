@@ -1,21 +1,21 @@
 //! Ordinary carriers alchemy transaction coordination.
 
-use crate::alchemy::AlchemyCueKind;
-use crate::alchemy::AlchemyRequest;
-use crate::alchemy::AlchemyResult;
-use crate::alchemy::ApparatusKind;
-use crate::planet::BlockPos;
-use crate::planet_atlas::HYDRO_UNITS_PER_BLOCK;
-use crate::inventory::Inventory;
-use crate::registry::MaterialVector;
-use crate::planet_atlas::ReservoirMass;
-use crate::planet_atlas::WaterClass;
-use crate::world::World;
 use super::add_materials;
 use super::produced;
 use super::result_for;
 use super::take_count;
 use super::take_exact_slot;
+use crate::alchemy::AlchemyCueKind;
+use crate::alchemy::AlchemyRequest;
+use crate::alchemy::AlchemyResult;
+use crate::alchemy::ApparatusKind;
+use crate::inventory::Inventory;
+use crate::planet::BlockPos;
+use crate::planet_atlas::HYDRO_UNITS_PER_BLOCK;
+use crate::planet_atlas::ReservoirMass;
+use crate::planet_atlas::WaterClass;
+use crate::registry::MaterialVector;
+use crate::world::World;
 
 impl World {
     pub(super) fn alchemy_ferment(
@@ -162,7 +162,9 @@ impl World {
                 if inventory.add(&self.reg, bucket, 1) != 0 {
                     return Err("Make room for the reusable bucket before fermenting.".into());
                 }
-                let mass = self.weather_state.live()
+                let mass = self
+                    .weather_state
+                    .live()
                     .ok_or("Fermentation needs the authoritative planetary water cycle.")?
                     .preview_move_portable_to_industrial(WaterClass::Fresh, HYDRO_UNITS_PER_BLOCK)
                     .ok_or("The portable-water ledger cannot fund fermentation.")?;
@@ -220,7 +222,9 @@ impl World {
         )?;
         state.validate().map_err(|error| error.to_string())?;
         if let Some((class, expected)) = portable_start {
-            let moved = self.weather_state.live_mut()
+            let moved = self
+                .weather_state
+                .live_mut()
                 .and_then(|weather| {
                     weather.move_portable_to_industrial(class, HYDRO_UNITS_PER_BLOCK)
                 })

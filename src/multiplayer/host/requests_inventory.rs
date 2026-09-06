@@ -4,7 +4,9 @@ use super::{C2S, HostSession, ItemStack, Server, click_stack, net, refresh_held}
 
 impl HostSession {
     pub(super) fn request_inventory(&mut self, server: &mut Server, id: u32, msg: C2S) {
-        let Some(guest) = self.guests.get_mut(&id) else { return; };
+        let Some(guest) = self.guests.get_mut(&id) else {
+            return;
+        };
         match msg {
             C2S::InventoryClick { area, slot, right } => {
                 let slot = slot as usize;
@@ -24,7 +26,10 @@ impl HostSession {
                     }
                     net::InventoryArea::Armor if slot < guest.armor.len() => {
                         crate::player_ops::equipment::exchange(
-                            reg, &mut guest.armor, &mut guest.cursor, slot,
+                            reg,
+                            &mut guest.armor,
+                            &mut guest.cursor,
+                            slot,
                         );
                     }
                     _ => return,
@@ -58,7 +63,11 @@ impl HostSession {
                 let Some(food) = server.world.reg.item(stack.item).food.clone() else {
                     return;
                 };
-                if !crate::player_ops::nutrition::eat(&mut guest.hunger, &mut guest.nutrition, &food) {
+                if !crate::player_ops::nutrition::eat(
+                    &mut guest.hunger,
+                    &mut guest.nutrition,
+                    &food,
+                ) {
                     return;
                 }
                 if server.world.mode != "creative" {

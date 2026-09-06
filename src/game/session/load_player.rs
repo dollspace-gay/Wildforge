@@ -1,11 +1,10 @@
 //! Load player graphical session adapter.
 
+use crate::game::Game;
 use crate::identity;
 use crate::inventory::HOTBAR_SLOTS;
 use crate::inventory::ItemStack;
 use crate::inventory::TOTAL_SLOTS;
-use crate::world;
-use crate::game::Game;
 
 impl Game {
     pub(in crate::game) fn load_player(&mut self, dir: &std::path::Path) -> bool {
@@ -215,12 +214,18 @@ impl Game {
             }
         }
         if let Ok(player_id) = identity::local_player_id(dir, self.identity.device_id()) {
-            match self.runtime.local_mut().world.resume_pending_inventory_workings(player_id.0, &mut self.inventory)
+            match self
+                .runtime
+                .local_mut()
+                .world
+                .resume_pending_inventory_workings(player_id.0, &mut self.inventory)
             {
                 Ok(ids) if !ids.is_empty() => match self.save_player() {
                     Ok(()) => {
                         for id in ids {
-                            if let Err(error) = self.runtime.local_mut().world.finish_inventory_working(id) {
+                            if let Err(error) =
+                                self.runtime.local_mut().world.finish_inventory_working(id)
+                            {
                                 eprintln!("workings: resumed Fieldmend could not finish: {error}");
                             }
                         }

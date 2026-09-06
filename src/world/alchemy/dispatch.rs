@@ -1,14 +1,14 @@
 //! Dispatch alchemy transaction coordination.
 
+use super::ensure_apparatus;
+use super::result_for;
 use crate::alchemy::AlchemyCueKind;
 use crate::alchemy::AlchemyRequest;
 use crate::alchemy::AlchemyResult;
 use crate::alchemy::ApparatusAction;
-use crate::planet::BlockPos;
 use crate::inventory::Inventory;
+use crate::planet::BlockPos;
 use crate::world::World;
-use super::ensure_apparatus;
-use super::result_for;
 
 impl World {
     /// The one native dispatch used by local play, hosted guests, automation,

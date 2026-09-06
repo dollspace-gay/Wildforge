@@ -100,5 +100,4 @@ pub(super) fn collect(atlas: &PlanetAtlas, insert: &mut impl FnMut(&str, AtlasPo
             ),
         );
     }
-
 }

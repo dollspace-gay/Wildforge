@@ -6,8 +6,8 @@
 //! F2 screenshot, F11 fullscreen.
 
 mod agent;
-mod app;
 pub mod alchemy;
+mod app;
 mod arcane;
 mod arcane_ecology;
 mod arcane_geography;
@@ -46,9 +46,9 @@ mod npc;
 mod particles;
 mod persist;
 mod physics;
-mod player_ops;
 pub mod planet;
 pub mod planet_atlas;
+mod player_ops;
 mod raycast;
 mod registry;
 mod renderer;

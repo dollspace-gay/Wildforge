@@ -1,11 +1,11 @@
 //! Texture-pack application and hot-reload orchestration.
 
-use std::sync::Arc;
 use super::{ContentRuntime, Game, script_mod_dirs};
-use crate::{atlas, registry, visual_capture, worldgen};
 use crate::audio::Sfx;
 use crate::inventory::ItemStack;
-use crate::registry::{Registry, ItemId};
+use crate::registry::{ItemId, Registry};
+use crate::{atlas, registry, visual_capture};
+use std::sync::Arc;
 
 #[derive(Debug, thiserror::Error)]
 pub(super) enum RuntimeContentError {
@@ -42,7 +42,9 @@ impl Game {
             &self.content.reg.tex_names,
         );
         let season = if self.in_world {
-            self.runtime.view().season_at_surface(self.player.pos.surface())
+            self.runtime
+                .view()
+                .season_at_surface(self.player.pos.surface())
         } else {
             1
         };
@@ -93,7 +95,12 @@ impl Game {
             }
         };
         if self.in_world {
-            let accepted: Vec<String> = self.content.scripts.kv.borrow().values()
+            let accepted: Vec<String> = self
+                .content
+                .scripts
+                .kv
+                .borrow()
+                .values()
                 .flat_map(|values| values.keys())
                 .filter_map(|key| key.strip_prefix("quest_").map(str::to_string))
                 .collect();
@@ -102,7 +109,11 @@ impl Game {
                 return;
             }
         }
-        let prepared_scripts = match self.content.scripts.prepare_mods(&script_mod_dirs(&new_reg)) {
+        let prepared_scripts = match self
+            .content
+            .scripts
+            .prepare_mods(&script_mod_dirs(&new_reg))
+        {
             Ok(scripts) => scripts,
             Err(errors) => {
                 self.report_reload_errors(errors.diagnostics());
@@ -115,7 +126,9 @@ impl Game {
             &new_reg.tex_names,
         );
         let season = if self.in_world {
-            self.runtime.view().season_at_surface(self.player.pos.surface())
+            self.runtime
+                .view()
+                .season_at_surface(self.player.pos.surface())
         } else {
             1
         };
@@ -165,11 +178,15 @@ impl Game {
 
         eprintln!(
             "mods: reloaded ({} blocks, {} items, {} recipes)",
-            new_reg.blocks.len(), new_reg.items.len(), new_reg.recipes.len()
+            new_reg.blocks.len(),
+            new_reg.items.len(),
+            new_reg.recipes.len()
         );
         self.toast(format!(
             "mods reloaded ({} blocks, {} items, {} recipes)",
-            new_reg.blocks.len(), new_reg.items.len(), new_reg.recipes.len()
+            new_reg.blocks.len(),
+            new_reg.items.len(),
+            new_reg.recipes.len()
         ));
         if forced {
             self.sfx(Sfx::Click);

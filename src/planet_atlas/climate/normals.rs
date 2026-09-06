@@ -1,14 +1,17 @@
 //! Generate immutable seasonal climate normals before dynamic weather exists.
 
+use super::circulation::{circulation_wind, direction_to_lower_distance, ocean_distances};
+use super::moisture::{SeasonalMoistureInputs, solve_seasonal_moisture};
+use super::solar::{daily_mean_insolation, geographic_basis, solar_declination};
+use super::transport::{chart_components, chart_vector};
+use super::{AXIAL_TILT_DEGREES, CLIMATE_SEASONS, ClimateSolveReport, SEASON_MID_DAYS};
+use crate::chunk::SEA_LEVEL;
+use crate::planet_atlas::{
+    AtlasError, AtlasGrid, AtlasPos, CancellationToken, ClimateCell, GeometryCell, TerrainCell,
+    unit_noise,
+};
 use glam::DVec3;
 use noise::Perlin;
-use crate::planet_atlas::{AtlasGrid, AtlasPos, GeometryCell, TerrainCell, ClimateCell, CancellationToken, AtlasError, unit_noise};
-use crate::chunk::SEA_LEVEL;
-use super::{CLIMATE_SEASONS, SEASON_MID_DAYS, AXIAL_TILT_DEGREES, ClimateSolveReport};
-use super::solar::{solar_declination, daily_mean_insolation, geographic_basis};
-use super::circulation::{ocean_distances, direction_to_lower_distance, circulation_wind};
-use super::transport::{chart_components, chart_vector};
-use super::moisture::{SeasonalMoistureInputs, solve_seasonal_moisture};
 
 pub(crate) fn generate_climate(
     seed: u32,

@@ -1,11 +1,11 @@
 //! Seeded immutable noise, content bindings, and coordinate sampling.
 
 use super::{Biome, Generator, Spline};
-use std::sync::Arc;
-use noise::Perlin;
 use crate::chunk::{CHUNK_X, CHUNK_Z, ChunkPos};
 use crate::planet::SurfacePos;
 use crate::registry::{AIR, BlockId, Registry};
+use noise::Perlin;
+use std::sync::Arc;
 
 impl Generator {
     #[inline]
@@ -173,5 +173,4 @@ impl Generator {
     pub(super) fn is_rock(&self, b: BlockId) -> bool {
         b != AIR && self.rocks.contains(&b)
     }
-
 }

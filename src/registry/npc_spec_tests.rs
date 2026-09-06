@@ -1,4 +1,5 @@
-use super::{load, ScriptHook};
+use super::QuestReward;
+use super::{ScriptHook, load};
 use std::path::Path;
 
 #[test]
@@ -85,8 +86,7 @@ fn base_quest_definitions_resolve_rewards() {
         assert_eq!(registry.item(*item).name, "base:amethyst_shard");
         assert_eq!(*count, 2);
     }
-    assert!(quest
-        .rewards
-        .iter()
-        .any(|r| matches!(r, QuestReward::SetFlag(flag, v) if flag == "elder_told_tales" && v == "true")));
+    assert!(quest.rewards.iter().any(
+        |r| matches!(r, QuestReward::SetFlag(flag, v) if flag == "elder_told_tales" && v == "true")
+    ));
 }

@@ -1,7 +1,11 @@
 //! Observed process residency and explicit loaded atlas storage estimates.
 
-use crate::planet_atlas::{BiomeCell, ChunkWaterCommitment, ClimateCell, CountryRecord, CountryRoute, DynamicCell, FluxInbox, GeometryCell, GroundCell, HydrologyCell, PlanetAtlas, ResourceCell, SparseAquiferState, SpringState, TectonicCell, TerrainCell, WaterCell};
-use std::{fs};
+use crate::planet_atlas::{
+    BiomeCell, ChunkWaterCommitment, ClimateCell, CountryRecord, CountryRoute, DynamicCell,
+    FluxInbox, GeometryCell, GroundCell, HydrologyCell, PlanetAtlas, ResourceCell,
+    SparseAquiferState, SpringState, TectonicCell, TerrainCell, WaterCell,
+};
+use std::fs;
 
 pub(in crate::planet_atlas::diagnostics) fn estimated_loaded_bytes(atlas: &PlanetAtlas) -> u64 {
     let count = atlas.genesis.geometry.len() as u64;

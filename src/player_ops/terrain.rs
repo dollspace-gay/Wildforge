@@ -12,7 +12,12 @@ pub(crate) struct MinedBlock {
     pub(crate) sheared: bool,
 }
 
-pub(crate) fn mine(world: &mut World, position: BlockPos, held: Option<ItemId>, creative: bool) -> Option<MinedBlock> {
+pub(crate) fn mine(
+    world: &mut World,
+    position: BlockPos,
+    held: Option<ItemId>,
+    creative: bool,
+) -> Option<MinedBlock> {
     let block = world.get_block_at(position);
     let sheared = held.is_some_and(|item| world.reg.item(item).shears)
         && world.reg.block(block).name.contains("leaves");
@@ -39,22 +44,37 @@ impl Placement {
         } else if item == registry.item_id("base:bucket_salt") {
             Some(Self::Water(WaterClass::Salt))
         } else if item == registry.item_id("base:bucket_lava") {
-            Some(Self::Lava(registry.item(stack.item).places.unwrap_or_else(|| registry.lava_for_volume(8))))
+            Some(Self::Lava(
+                registry
+                    .item(stack.item)
+                    .places
+                    .unwrap_or_else(|| registry.lava_for_volume(8)),
+            ))
         } else {
             registry.item(stack.item).places.map(Self::Block)
         }
     }
 
-    pub(crate) fn is_bucket(self) -> bool { matches!(self, Self::Water(_) | Self::Lava(_)) }
+    pub(crate) fn is_bucket(self) -> bool {
+        matches!(self, Self::Water(_) | Self::Lava(_))
+    }
 
     /// Effects occur before the adapter spends inventory. The world remains
     /// the authority for material journals, water custody, and block side effects.
-    pub(crate) fn apply(self, world: &mut World, position: BlockPos, selected: Option<ItemStack>, creative: bool) -> bool {
+    pub(crate) fn apply(
+        self,
+        world: &mut World,
+        position: BlockPos,
+        selected: Option<ItemStack>,
+        creative: bool,
+    ) -> bool {
         match self {
             Self::Water(class) => world.place_portable_water_at(position, class),
             Self::Lava(block) => world.place_block_at(position, block),
             Self::Block(block) if creative => world.place_block_at(position, block),
-            Self::Block(_) => selected.is_some_and(|stack| world.place_item_block_at(position, stack)),
+            Self::Block(_) => {
+                selected.is_some_and(|stack| world.place_item_block_at(position, stack))
+            }
         }
     }
 }

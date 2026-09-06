@@ -1,8 +1,8 @@
 //! Steam machine_tick transaction coordination.
 
+use crate::planet::BlockPos;
 use crate::registry::AIR;
 use crate::world::BlockEntity;
-use crate::planet::BlockPos;
 use crate::world::STEAM_SECS_PER_WATER;
 use crate::world::World;
 
@@ -13,7 +13,8 @@ impl World {
     /// leaves the river (mechanization stage 5).
     pub(in crate::world) fn tick_steam(&mut self, dt: f32) {
         let reg = self.reg.clone();
-        let keys: Vec<BlockPos> = self.installations
+        let keys: Vec<BlockPos> = self
+            .installations
             .iter()
             .filter(|(_, e)| matches!(e, BlockEntity::Steam(_)))
             .map(|(k, _)| *k)
@@ -64,7 +65,8 @@ impl World {
             let running = !s.draft_closed && boiler_here && s.fuel > 0.0 && s.water.water_hu > 0;
             if running {
                 let micros = (f64::from(dt) * 1_000_000.0).round().max(0.0) as u64;
-                let numerator = self.installations
+                let numerator = self
+                    .installations
                     .get(&pos)
                     .and_then(|entity| match entity {
                         BlockEntity::Steam(state) => Some(state.steam_numerator_remainder),

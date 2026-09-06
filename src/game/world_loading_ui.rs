@@ -169,4 +169,3 @@ pub(crate) fn next_world_name(saves: &std::path::Path, worlds: &[(String, u32)])
         n += 1;
     }
 }
-

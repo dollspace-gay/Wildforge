@@ -1,13 +1,10 @@
 //! Sleep interaction adapter.
 
-use crate::world::TerrainRead;
 use crate::audio::Sfx;
-use crate::net;
-use crate::world;
 use crate::game::Game;
+use crate::net;
 
 impl Game {
-
     /// Bedroll: sleep to dawn if it's night and the wild is far enough.
     /// In multiplayer, dawn waits for everyone (the sleep vote).
     pub(in crate::game) fn try_sleep(&mut self) {

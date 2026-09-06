@@ -162,4 +162,3 @@ pub(super) fn validate_arcane_ecology_graph(reg: &mut Registry) {
     }
     reg.arcane_errors.extend(errors);
 }
-

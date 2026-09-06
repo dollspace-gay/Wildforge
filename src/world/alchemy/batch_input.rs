@@ -1,5 +1,8 @@
 //! Batch input alchemy transaction coordination.
 
+use super::ensure_apparatus;
+use super::near;
+use super::result_for;
 use crate::alchemy::AlchemyAuditEvent;
 use crate::alchemy::AlchemyBatch;
 use crate::alchemy::AlchemyCueKind;
@@ -7,14 +10,11 @@ use crate::alchemy::AlchemyRequest;
 use crate::alchemy::AlchemyResult;
 use crate::alchemy::ApparatusKind;
 use crate::alchemy::BatchOutcome;
-use crate::planet::BlockPos;
 use crate::alchemy::ExactLiquid;
 use crate::alchemy::ProcessStep;
+use crate::planet::BlockPos;
 use crate::planet_atlas::ReservoirMass;
 use crate::world::World;
-use super::ensure_apparatus;
-use super::near;
-use super::result_for;
 
 impl World {
     pub(super) fn alchemy_begin(

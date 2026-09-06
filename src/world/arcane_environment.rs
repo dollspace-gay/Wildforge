@@ -1,6 +1,6 @@
 //! Arcane environment coordinator for the authoritative world.
 
-use super::{World};
+use super::World;
 
 impl World {
     fn arcane_environment(&self) -> super::arcane_context::ArcaneEnvironment<'_> {
@@ -48,8 +48,12 @@ impl World {
     /// wakes and dross custody into ward pressure. The ward consumes its own
     /// supply; it neither deletes the environmental load nor edits Ire.
     pub(super) fn pressure_wards_from_arcane_environment(&mut self) {
-        let Some(atlas) = self.planet_atlas.as_ref() else { return; };
-        let pressures = self.arcane_environment().ward_pressures(atlas, self.workings_state.as_ref());
+        let Some(atlas) = self.planet_atlas.as_ref() else {
+            return;
+        };
+        let pressures = self
+            .arcane_environment()
+            .ward_pressures(atlas, self.workings_state.as_ref());
         for pressure in pressures {
             if pressure.wake != 0 {
                 self.resist_supernatural_pressure_at(pressure.controller, "wake", pressure.wake);
@@ -131,7 +135,9 @@ impl World {
         let mut water_available = positions
             .into_iter()
             .map(|pos| {
-                let available = self.weather_state.live()
+                let available = self
+                    .weather_state
+                    .live()
                     .map_or(u64::MAX / 4, |weather| weather.ecology_soil_water_hu(pos));
                 (pos, available)
             })
@@ -222,9 +228,15 @@ impl World {
         &mut self,
         pos: crate::planet::BlockPos,
     ) -> Result<bool, String> {
-        let Some(geography) = self.arcane_geography.as_mut() else { return Ok(false); };
+        let Some(geography) = self.arcane_geography.as_mut() else {
+            return Ok(false);
+        };
         super::ecology_custody::settle_destruction(
-            geography, self.arcane_ledger.as_mut(), &self.reg, &self.save_dir, pos,
+            geography,
+            self.arcane_ledger.as_mut(),
+            &self.reg,
+            &self.save_dir,
+            pos,
         )
     }
 
@@ -235,9 +247,6 @@ impl World {
     ) -> Option<crate::arcane_ecology::EcologyObservation> {
         self.arcane_ecology_observation_at(surface, radius)
     }
-
-
-
 
     pub fn inspectable_item_current(&self, id: u64) -> Option<u64> {
         self.arcane_environment().item_current(id)

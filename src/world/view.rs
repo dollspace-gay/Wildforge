@@ -2,16 +2,16 @@
 
 use std::sync::Arc;
 
+use super::local_structure::LocalStructure;
+use super::{ReplicaWorld, SceneRead, TerrainRead, World};
 use crate::chunk::{Chunk, ChunkPos};
 use crate::planet::BlockPos;
 use crate::registry::Registry;
-use super::{ReplicaWorld, SceneRead, TerrainRead, World};
-use super::local_structure::LocalStructure;
 
-mod environment;
 mod entities;
-mod machines;
+mod environment;
 mod items;
+mod machines;
 
 #[derive(Clone, Copy)]
 enum Source<'a> {
@@ -27,15 +27,25 @@ pub(crate) struct WorldView<'a> {
 }
 
 impl World {
-    pub(crate) fn view(&self) -> WorldView<'_> { WorldView { source: Source::Authority(self) } }
+    pub(crate) fn view(&self) -> WorldView<'_> {
+        WorldView {
+            source: Source::Authority(self),
+        }
+    }
 }
 
 impl ReplicaWorld {
-    pub(crate) fn view(&self) -> WorldView<'_> { WorldView { source: Source::Replica(self) } }
+    pub(crate) fn view(&self) -> WorldView<'_> {
+        WorldView {
+            source: Source::Replica(self),
+        }
+    }
 }
 
 impl WorldView<'_> {
-    pub(crate) fn is_remote(&self) -> bool { matches!(self.source, Source::Replica(_)) }
+    pub(crate) fn is_remote(&self) -> bool {
+        matches!(self.source, Source::Replica(_))
+    }
 
     pub(crate) fn chunk_count(&self) -> usize {
         match self.source {
@@ -87,5 +97,7 @@ impl TerrainRead for WorldView<'_> {
 }
 
 impl SceneRead for WorldView<'_> {
-    fn local_structures(&self) -> &[LocalStructure] { self.structures() }
+    fn local_structures(&self) -> &[LocalStructure] {
+        self.structures()
+    }
 }

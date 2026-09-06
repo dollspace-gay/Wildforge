@@ -1,12 +1,10 @@
 //! Authoritative world integration for physical magical discovery.
-use crate::planet::BlockPos;
 use crate::discovery::CalibrationGrade;
 use crate::discovery::ExperimentKind;
-use crate::inventory::ItemStack;
 use crate::discovery::StabilityBand;
 use crate::discovery::StrengthBand;
-
-
+use crate::inventory::ItemStack;
+use crate::planet::BlockPos;
 
 #[derive(Clone, Copy, Debug)]
 pub enum ObservationTarget {
@@ -137,13 +135,12 @@ fn experiment_result(
     }
 }
 
-
-mod experiments;
-mod persistence;
 mod artifact_custody;
+mod catalogue;
+mod experiments;
 mod lenses;
 mod observation;
-mod catalogue;
+mod persistence;
 
 #[cfg(test)]
 mod tests {

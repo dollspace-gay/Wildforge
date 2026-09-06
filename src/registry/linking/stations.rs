@@ -1,8 +1,10 @@
 //! Link furnace, forge, kiln, anvil, and fuel definitions.
 
-use crate::registry::{Registry, SmeltDef, BloomeryDef, WorkedDef, KilnDef};
-use crate::registry::schema::{SmeltToml, BloomeryToml, WorkedToml, KilnToml, KilnBaseToml, FuelToml};
 use super::lookups::{lookup_item, resolve_ing};
+use crate::registry::schema::{
+    BloomeryToml, FuelToml, KilnBaseToml, KilnToml, SmeltToml, WorkedToml,
+};
+use crate::registry::{BloomeryDef, KilnDef, Registry, SmeltDef, WorkedDef};
 
 pub(super) fn smelts(reg: &mut Registry, pending_smelts: Vec<(String, SmeltToml)>) {
     for (modid, s) in pending_smelts {

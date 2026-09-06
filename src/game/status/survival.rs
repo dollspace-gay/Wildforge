@@ -1,9 +1,10 @@
 //! Survival graphical status adapter.
 
 use crate::audio::Sfx;
-use glam::Vec3;
 use crate::game::Game;
 use crate::game::MAX_AIR;
+use crate::world::TerrainRead;
+use glam::Vec3;
 
 impl Game {
     pub(in crate::game) fn update_survival(&mut self, dt: f32) {
@@ -22,7 +23,8 @@ impl Game {
                         .map(|block| self.runtime.view().get_block_at(block))
                         .unwrap_or(crate::registry::AIR);
                     let tile = self.content.reg.block(under).tiles[2];
-                    self.presentation.puff(self.player.pos.render_pos(), tile, 5);
+                    self.presentation
+                        .puff(self.player.pos.render_pos(), tile, 5);
                     if fall > 3.0 {
                         self.sfx(Sfx::Thud);
                     } else {

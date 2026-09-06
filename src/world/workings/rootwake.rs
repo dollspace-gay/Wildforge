@@ -1,5 +1,8 @@
 //! Rootwake workings transaction coordination.
 
+use super::ROOTWAKE_NUTRIENT_UNITS;
+use super::ROOTWAKE_WATER_HU;
+use super::working_distance;
 use crate::planet::BlockPos;
 use crate::workings::PhysicalDebit;
 use crate::workings::PhysicalDebitKind;
@@ -9,9 +12,6 @@ use crate::workings::WorkingResult;
 use crate::workings::WorkingTargetSnapshot;
 use crate::world::World;
 use crate::world::soil;
-use super::ROOTWAKE_NUTRIENT_UNITS;
-use super::ROOTWAKE_WATER_HU;
-use super::working_distance;
 
 impl World {
     /// Rootwake is factored out of the random-tick path but validates the same

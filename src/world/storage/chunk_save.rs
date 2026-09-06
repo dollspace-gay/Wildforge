@@ -1,5 +1,6 @@
 //! Chunk save storage transaction coordination.
 
+use super::encoder;
 use crate::chunk::ChunkPos;
 use crate::world::World;
 

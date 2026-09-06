@@ -2,7 +2,7 @@
 
 use super::Game;
 use super::widgets::{self, Rect};
-use crate::inventory::{HOTBAR_SLOTS, TOTAL_SLOTS, ItemStack};
+use crate::inventory::{HOTBAR_SLOTS, ItemStack, TOTAL_SLOTS};
 use crate::registry::Registry;
 use crate::ui::UiBatch;
 
@@ -17,7 +17,11 @@ pub(super) struct InventoryLayout {
 
 impl InventoryLayout {
     fn new(width: u32, height: u32, craft_size: usize) -> Self {
-        Self { width: width as f32, height: height as f32, craft_size }
+        Self {
+            width: width as f32,
+            height: height as f32,
+            craft_size,
+        }
     }
 
     pub(super) fn hotbar_origin(&self) -> (f32, f32) {
@@ -42,12 +46,7 @@ impl InventoryLayout {
         // leaving the paper doll stranded near the corner of the screen.
         let grid_y = h / 2.0 + 16.0;
         if i < HOTBAR_SLOTS {
-            (
-                x0 + i as f32 * SLOT,
-                grid_y + 3.0 * SLOT + 14.0,
-                SLOT,
-                SLOT,
-            )
+            (x0 + i as f32 * SLOT, grid_y + 3.0 * SLOT + 14.0, SLOT, SLOT)
         } else {
             let j = i - HOTBAR_SLOTS;
             (
@@ -62,12 +61,7 @@ impl InventoryLayout {
     /// Unified inventory card containing identity, gear, crafting and storage.
     pub(super) fn panel_rect(&self) -> (f32, f32, f32, f32) {
         let (grid_x, grid_y, _, _) = self.slot_rect(HOTBAR_SLOTS);
-        (
-            grid_x - 134.0,
-            grid_y - 248.0,
-            9.0 * SLOT + 268.0,
-            464.0,
-        )
+        (grid_x - 134.0, grid_y - 248.0, 9.0 * SLOT + 268.0, 464.0)
     }
 
     pub(super) fn avatar_rect(&self) -> (f32, f32, f32, f32) {
@@ -112,7 +106,6 @@ impl InventoryLayout {
             SLOT,
         )
     }
-
 }
 
 /// A borrowed presentation snapshot. Drawing cannot change the inventory.
@@ -128,21 +121,35 @@ impl PlayerInventory<'_> {
     fn draw(&self, ui: &mut UiBatch) {
         for i in 0..TOTAL_SLOTS {
             let r: Rect = self.layout.slot_rect(i);
-            widgets::slot(self.registry, ui, r, self.slots[i], i == self.selected,
-                widgets::hit(self.cursor, r));
+            widgets::slot(
+                self.registry,
+                ui,
+                r,
+                self.slots[i],
+                i == self.selected,
+                widgets::hit(self.cursor, r),
+            );
         }
     }
 }
 
 impl Game {
     pub(super) fn inventory_layout(&self) -> InventoryLayout {
-        InventoryLayout::new(self.renderer.config.width, self.renderer.config.height,
-            self.interaction.craft_size)
+        InventoryLayout::new(
+            self.renderer.config.width,
+            self.renderer.config.height,
+            self.interaction.craft_size,
+        )
     }
 
     pub(super) fn draw_player_inventory(&self, ui: &mut UiBatch) {
-        PlayerInventory { layout: self.inventory_layout(), slots: &self.inventory.slots,
-            selected: self.input.hotbar_sel, cursor: self.input.ui_cursor,
-            registry: &self.content.reg }.draw(ui);
+        PlayerInventory {
+            layout: self.inventory_layout(),
+            slots: &self.inventory.slots,
+            selected: self.input.hotbar_sel,
+            cursor: self.input.ui_cursor,
+            registry: &self.content.reg,
+        }
+        .draw(ui);
     }
 }

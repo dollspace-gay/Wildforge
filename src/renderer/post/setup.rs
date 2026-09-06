@@ -4,7 +4,10 @@ use super::{PostProcess, create_post_targets};
 use crate::renderer::HDR_FORMAT;
 
 impl PostProcess {
-    pub(in crate::renderer) fn new(device: &wgpu::Device, config: &wgpu::SurfaceConfiguration) -> Self {
+    pub(in crate::renderer) fn new(
+        device: &wgpu::Device,
+        config: &wgpu::SurfaceConfiguration,
+    ) -> Self {
         // ---- HDR + bloom post chain ----
         let post_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("post-shader"),
@@ -140,8 +143,7 @@ impl PostProcess {
             "fs_composite",
             config.format,
         );
-        let post =
-            create_post_targets(device, config, &post_in_bgl, &post_tex_bgl, &post_sampler);
+        let post = create_post_targets(device, config, &post_in_bgl, &post_tex_bgl, &post_sampler);
 
         Self {
             post_in_bgl,

@@ -1,9 +1,9 @@
 //! Deterministic seam-aware priority flooding and neighbor order.
 
-use std::cmp::Ordering as CmpOrdering;
-use std::collections::BinaryHeap;
 use crate::chunk::SEA_LEVEL;
 use crate::planet_atlas::AtlasPos;
+use std::cmp::Ordering as CmpOrdering;
+use std::collections::BinaryHeap;
 
 #[derive(Clone, Copy, Debug)]
 pub(super) struct FloodEntry {

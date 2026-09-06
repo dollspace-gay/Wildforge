@@ -1,14 +1,14 @@
 //! Ritual layout workings transaction coordination.
 
-use std::collections::BTreeSet;
-use crate::world::BlockEntity;
-use crate::planet::BlockPos;
-use crate::implements::ImplementKind;
-use std::collections::VecDeque;
-use crate::world::World;
 use super::ward_horizontal_neighbors;
 use super::ward_interior;
 use super::ward_local_positions;
+use crate::implements::ImplementKind;
+use crate::planet::BlockPos;
+use crate::world::BlockEntity;
+use crate::world::World;
+use std::collections::BTreeSet;
+use std::collections::VecDeque;
 
 impl World {
     pub(super) fn binding_frame_revision(&self, controller: BlockPos) -> Result<u64, String> {
@@ -22,7 +22,10 @@ impl World {
     /// controller. Coordinates are reconstructed through `BlockPos::offset`
     /// so an otherwise local ward remains valid when it crosses a cube-face
     /// seam; raw face-local `u/v` arithmetic would split the same structure.
-    pub(super) fn closed_ward_boundary(&self, controller: BlockPos) -> Result<Vec<BlockPos>, String> {
+    pub(super) fn closed_ward_boundary(
+        &self,
+        controller: BlockPos,
+    ) -> Result<Vec<BlockPos>, String> {
         const RADIUS: i32 = 16;
         const MAX_SEGMENTS: usize = 64;
 

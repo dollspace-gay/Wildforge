@@ -1,8 +1,12 @@
 //! Unresolved references cross registration and linking through named records.
 
-use std::collections::HashMap;
 use crate::registry::BlockId;
-use crate::registry::schema::{AliasToml, AnimalToml, AssemblyToml, BloomeryToml, BonusDropToml, BrushToml, DialogueToml, FeatureToml, FuelToml, HarvestToml, KilnBaseToml, KilnToml, LootToml, NpcToml, PieceToml, PoolToml, QuestToml, RecipeToml, SettlementToml, SmeltToml, StructureToml, TagToml, WorkedToml};
+use crate::registry::schema::{
+    AliasToml, AnimalToml, AssemblyToml, BloomeryToml, BonusDropToml, BrushToml, DialogueToml,
+    FeatureToml, FuelToml, HarvestToml, KilnBaseToml, KilnToml, LootToml, NpcToml, PieceToml,
+    PoolToml, QuestToml, RecipeToml, SettlementToml, SmeltToml, StructureToml, TagToml, WorkedToml,
+};
+use std::collections::HashMap;
 
 pub(in crate::registry) struct PendingDrop {
     pub(in crate::registry) modid: String,

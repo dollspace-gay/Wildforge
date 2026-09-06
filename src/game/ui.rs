@@ -1,6 +1,6 @@
 //! UI layout, drawing, and screen composition.
 
-use super::{widgets, Game, navigation::Screen};
+use super::{Game, navigation::Screen, widgets};
 use crate::ui::UiBatch;
 use glam::{Mat4, Vec3};
 
@@ -52,7 +52,6 @@ pub(super) fn wrap_ui_status(
 }
 
 impl Game {
-
     pub(super) fn hit(&self, r: (f32, f32, f32, f32)) -> bool {
         widgets::hit(self.input.ui_cursor, r)
     }
@@ -75,20 +74,56 @@ impl Game {
 
         // Menu-only screens draw over the sky and skip the HUD entirely.
         let menu_only = match self.ui_state.screen {
-            Screen::Title => { self.draw_title_screen(&mut ui, w, h); true },
-            Screen::NewWorld => { self.draw_new_world_screen(&mut ui, w, h); true },
-            Screen::CreatingWorld => { self.draw_creating_world_screen(&mut ui, w, h); true },
-            Screen::Accounts => { self.draw_accounts_screen(&mut ui, w, h); true },
-            Screen::Moderation(id) => { self.draw_moderation_screen(&mut ui, w, h, id); true },
-            Screen::Mods => { self.draw_mods_screen(&mut ui, w, h); true },
-            Screen::Packs => { self.draw_packs_screen(&mut ui, w, h); true },
-            Screen::Join => { self.draw_join_screen(&mut ui, w, h); true },
-            Screen::Settings => { self.draw_settings_screen(&mut ui, w, h); true },
-            Screen::Appearance => { self.draw_appearance_screen(&mut ui, w, h); true },
-            Screen::ConfirmDelete => { self.draw_confirm_delete_screen(&mut ui, w, h); true },
+            Screen::Title => {
+                self.draw_title_screen(&mut ui, w, h);
+                true
+            }
+            Screen::NewWorld => {
+                self.draw_new_world_screen(&mut ui, w, h);
+                true
+            }
+            Screen::CreatingWorld => {
+                self.draw_creating_world_screen(&mut ui, w, h);
+                true
+            }
+            Screen::Accounts => {
+                self.draw_accounts_screen(&mut ui, w, h);
+                true
+            }
+            Screen::Moderation(id) => {
+                self.draw_moderation_screen(&mut ui, w, h, id);
+                true
+            }
+            Screen::Mods => {
+                self.draw_mods_screen(&mut ui, w, h);
+                true
+            }
+            Screen::Packs => {
+                self.draw_packs_screen(&mut ui, w, h);
+                true
+            }
+            Screen::Join => {
+                self.draw_join_screen(&mut ui, w, h);
+                true
+            }
+            Screen::Settings => {
+                self.draw_settings_screen(&mut ui, w, h);
+                true
+            }
+            Screen::Appearance => {
+                self.draw_appearance_screen(&mut ui, w, h);
+                true
+            }
+            Screen::ConfirmDelete => {
+                self.draw_confirm_delete_screen(&mut ui, w, h);
+                true
+            }
             _ => false,
         };
-        if menu_only { self.ui = ui; return; }
+        if menu_only {
+            self.ui = ui;
+            return;
+        }
         self.draw_status_overlays(&mut ui, w, h);
         self.draw_gameplay_hud(&mut ui, w, h);
         match self.ui_state.screen.clone() {
@@ -116,7 +151,9 @@ impl Game {
             Screen::Offering(pos) => self.draw_offering_screen(&mut ui, w, h, pos),
             Screen::Inventory => self.draw_inventory_screen(&mut ui),
             Screen::Paused => self.draw_paused_screen(&mut ui, w, h),
-            Screen::Dialog { npc, node_id, .. } => self.draw_dialog_screen(&mut ui, w, h, npc, node_id),
+            Screen::Dialog { npc, node_id, .. } => {
+                self.draw_dialog_screen(&mut ui, w, h, npc, node_id)
+            }
             Screen::Journal => self.draw_journal_screen(&mut ui, w, h),
             Screen::Loadout => self.draw_loadout_screen(&mut ui, w, h),
             Screen::Skills => self.draw_skills_screen(&mut ui, w, h),
@@ -161,19 +198,19 @@ mod characterization {
     }
 }
 
+mod dialogue_journal;
+mod gameplay_hud;
+mod loadout;
 mod menu_layout;
-mod world_labels;
-mod settings_layout;
-mod menus_world;
 mod menus_accounts;
 mod menus_preferences;
-mod station_panels;
-mod script_panel;
-mod writing_panel;
-mod storage_panels;
+mod menus_world;
 mod pause_death;
-mod dialogue_journal;
-mod loadout;
+mod script_panel;
+mod settings_layout;
 mod skills;
+mod station_panels;
 mod status_overlays;
-mod gameplay_hud;
+mod storage_panels;
+mod world_labels;
+mod writing_panel;

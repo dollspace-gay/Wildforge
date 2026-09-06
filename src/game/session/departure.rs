@@ -1,11 +1,10 @@
 //! Departure graphical session adapter.
 
-use crate::server;
-use crate::world;
-use crate::world::World;
-use std::path::PathBuf;
 use crate::game::Game;
 use crate::game::navigation::Screen;
+use crate::server;
+use crate::world::World;
+use std::path::PathBuf;
 
 impl Game {
     pub(in crate::game) fn quit_to_title(&mut self) {

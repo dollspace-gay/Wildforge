@@ -4,8 +4,8 @@ use crate::chunk::ChunkPos;
 use crate::world::SaveFailure;
 use crate::world::SaveReport;
 use crate::world::World;
-use std::fs;
 use crate::world::write_world_meta_full;
+use std::fs;
 
 impl World {
     pub fn save_modified(&mut self) -> SaveReport {

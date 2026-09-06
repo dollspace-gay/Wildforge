@@ -4,16 +4,13 @@ use crate::arcane::ArcaneAuthority;
 use crate::arcane::ArcaneMove;
 use crate::arcane::ArcaneOwner;
 use crate::arcane::ArcaneTransaction;
-use std::collections::BTreeMap;
-use std::collections::BTreeSet;
-use crate::world::BlockPos;
 use crate::arcane::Current;
 use crate::implements::ImplementComponent;
 use crate::implements::ImplementKind;
+use crate::world::BlockPos;
 use crate::world::ItemStack;
-
-
-
+use std::collections::BTreeMap;
+use std::collections::BTreeSet;
 
 const ASSEMBLY_CALIBRATION_UNITS: u64 = 16;
 const VESSEL_INITIAL_CHARGE: u64 = 64;
@@ -183,27 +180,26 @@ pub(super) fn transaction_from_maps(
     })
 }
 
-
 mod ambient_custody;
-mod charms;
-mod charm_migration;
-mod observation;
-mod frame_layout;
-mod frame_dispatch;
-mod wand_assembly;
 mod calibration;
 mod charm_binding;
-mod source_transfer;
+mod charm_migration;
+mod charms;
 mod conductor_transfer;
-mod item_transfer;
-mod failure;
-mod discharge;
-mod frame_break;
 mod disassembly;
+mod discharge;
+mod failure;
 mod focus_swap;
+mod frame_break;
+mod frame_dispatch;
+mod frame_layout;
+mod item_transfer;
+mod observation;
 mod repair;
-mod vessel_tick;
 mod retirement;
+mod source_transfer;
+mod vessel_tick;
+mod wand_assembly;
 
 #[cfg(test)]
 mod tests {

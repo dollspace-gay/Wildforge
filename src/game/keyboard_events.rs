@@ -1,11 +1,11 @@
 //! Ordered text input and repeat filtering before high-level key mapping.
 
+use super::text_input::TextAction;
+use super::{Game, Screen};
+use crate::net;
 use winit::event::KeyEvent;
 use winit::event_loop::ActiveEventLoop;
 use winit::keyboard::{KeyCode, PhysicalKey};
-use super::{Game, Screen};
-use super::text_input::TextAction;
-use crate::net;
 
 impl Game {
     pub(super) fn keyboard_event(&mut self, event: &KeyEvent, event_loop: &ActiveEventLoop) {

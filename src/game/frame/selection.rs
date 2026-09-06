@@ -1,11 +1,11 @@
 //! Selection in the graphical frame pipeline.
 
-use crate::world::TerrainRead;
+use super::SelectionFrame;
 use crate::chunk::CHUNK_X;
-use crate::raycast;
 use crate::game::Game;
 use crate::game::navigation::Screen;
-use super::{SelectionFrame};
+use crate::raycast;
+use crate::world::TerrainRead;
 
 impl Game {
     pub(in crate::game) fn prepare_frame_selection(&self, gloom: f32) -> SelectionFrame {
@@ -41,7 +41,10 @@ impl Game {
                 .max()
                 .unwrap_or_default()
         } else {
-            self.runtime.local().world.working_cues()
+            self.runtime
+                .local()
+                .world
+                .working_cues()
                 .into_iter()
                 .map(|cue| cue.warning_band)
                 .max()
@@ -73,6 +76,12 @@ impl Game {
         let underwater = self.player.head_underwater(&self.runtime.view());
         let fog = (self.config.view_dist as f32 - 0.5) * CHUNK_X as f32 * (1.0 - 0.35 * gloom);
 
-        SelectionFrame { playing, outline, outline_color, underwater, fog }
+        SelectionFrame {
+            playing,
+            outline,
+            outline_color,
+            underwater,
+            fog,
+        }
     }
 }

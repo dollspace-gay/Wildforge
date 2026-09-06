@@ -55,7 +55,8 @@ impl World {
         if mass.water_hu == 0 && mass.salt_mass == 0 {
             return Ok(());
         }
-        let (Some(atlas), Some(weather)) = (&self.planet_atlas, self.weather_state.live_mut()) else {
+        let (Some(atlas), Some(weather)) = (&self.planet_atlas, self.weather_state.live_mut())
+        else {
             return Err("Alchemy water needs the authoritative atlas and water cycle.".into());
         };
         let region = atlas.atlas_pos(pos.surface());

@@ -3,8 +3,17 @@
 use super::{C2S, EntityPos, HostFx, HostSession, S2C, Server, discovery_reachable, refresh_held};
 
 impl HostSession {
-    pub(super) fn request_alchemy(&mut self, server: &mut Server, id: u32, msg: C2S, fx: &mut Vec<HostFx>, implement_observers: Vec<(u32, EntityPos)>) {
-        let Some(guest) = self.guests.get_mut(&id) else { return; };
+    pub(super) fn request_alchemy(
+        &mut self,
+        server: &mut Server,
+        id: u32,
+        msg: C2S,
+        fx: &mut Vec<HostFx>,
+        implement_observers: Vec<(u32, EntityPos)>,
+    ) {
+        let Some(guest) = self.guests.get_mut(&id) else {
+            return;
+        };
         match msg {
             C2S::OperateAlchemy {
                 pos,

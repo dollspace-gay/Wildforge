@@ -1,6 +1,7 @@
 //! Physical implement identity, resolution, and lifecycle qualification.
 
 use super::*;
+use crate::world::{ReplicaWorld, ReplicationTarget};
 
 fn summed_materials<'a>(
     reg: &crate::registry::Registry,
@@ -1440,13 +1441,10 @@ fn damaged_vessels_leak_then_fail_visibly_and_overfill_is_defensively_settled() 
         .expect("charged vessel exposes a qualitative presentation cue");
     assert!(initial_cue.charge_band > 0);
     assert_eq!(initial_cue.strain_band, 0);
-    let mut guest_mirror = World::new(
-        0,
-        tmp_dir("implements-vessel-remote-cue"),
-        leaking.reg.clone(),
-    );
-    guest_mirror.set_remote(true);
-    guest_mirror.set_remote_apparatus(vec![initial_cue]);
+    let mut guest_mirror = ReplicaWorld::new(0, leaking.reg.clone(), 0.0);
+    guest_mirror
+        .observations_mut()
+        .extend_apparatus(vec![initial_cue]);
     assert_eq!(
         guest_mirror.apparatus_cues_near(observer, 16.0),
         vec![initial_cue],
@@ -2176,34 +2174,38 @@ fn authored_implement_art_and_remote_or_removed_component_fallbacks_are_legible(
     // Public implement state is enough to draw a remote held wand. Removed
     // mod components retain their stable ids/stats, while each missing visual
     // role falls back to a base silhouette rather than hiding the wand.
-    let mut world = embodied_implements_world("implements-remote-visual");
+    let mut world = ReplicaWorld::new(0, reg.clone(), 0.0);
     let instance_id = 77;
-    world.set_remote_arcane_items(vec![(instance_id, 61)]);
-    world.set_remote_implements(vec![ImplementPublicState {
-        instance_id,
-        kind: ImplementKind::Wand {
-            parts: WandParts {
-                body: "removedmod:body".into(),
-                reservoir: "removedmod:reservoir".into(),
-                focus: "removedmod:focus".into(),
-                binding: "removedmod:binding".into(),
+    world
+        .observations_mut()
+        .extend_charges(vec![(instance_id, 61)]);
+    world
+        .observations_mut()
+        .extend_implements(vec![ImplementPublicState {
+            instance_id,
+            kind: ImplementKind::Wand {
+                parts: WandParts {
+                    body: "removedmod:body".into(),
+                    reservoir: "removedmod:reservoir".into(),
+                    focus: "removedmod:focus".into(),
+                    binding: "removedmod:binding".into(),
+                },
+                resolved: ResolvedWand {
+                    resolver_version: IMPLEMENT_RESOLVER_VERSION,
+                    capacity: 120,
+                    safe_transfer: 12,
+                    stability: 700,
+                    dross_per_thousand: 30,
+                    resonance: std::collections::BTreeMap::from([("base:echo".into(), 1)]),
+                    heat_sensitive: false,
+                    saturation_instability: 0,
+                    containment: 200,
+                },
             },
-            resolved: ResolvedWand {
-                resolver_version: IMPLEMENT_RESOLVER_VERSION,
-                capacity: 120,
-                safe_transfer: 12,
-                stability: 700,
-                dross_per_thousand: 30,
-                resonance: std::collections::BTreeMap::from([("base:echo".into(), 1)]),
-                heat_sensitive: false,
-                saturation_instability: 0,
-                containment: 200,
-            },
-        },
-        wear: 4,
-        strain: 8,
-        dross: 2,
-    }]);
+            wear: 4,
+            strain: 8,
+            dross: 2,
+        }]);
     let stack = ItemStack {
         arcane_id: instance_id,
         ..ItemStack::new(&reg, it(&reg, "base:bound_wand"), 1)

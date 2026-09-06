@@ -1,13 +1,21 @@
 //! Mutable atmosphere, water, and history checkpoint writes.
 
-use crate::planet_atlas::{ATLAS_DYNAMIC_VERSION, AtlasError, DynamicLayers, PlanetAtlas, WATER_CYCLE_SCHEMA_VERSION, WaterCycleState, encode_water_cycle};
+use crate::planet_atlas::codec::container::{
+    container_bytes_owned, variable_container_bytes_owned,
+};
+use crate::planet_atlas::codec::dynamic::encode_dynamic;
+use crate::planet_atlas::codec::models::encode_history;
 use crate::planet_atlas::codec::{DYNAMIC_MAGIC, DYNAMIC_RECORD_BYTES, WATER_CYCLE_MAGIC};
-use crate::planet_atlas::codec::container::{container_bytes_owned, variable_container_bytes_owned};
-use crate::planet_atlas::codec::dynamic::{encode_dynamic};
-use crate::planet_atlas::codec::models::{encode_history};
-use crate::planet_atlas::identity::{stable_hash};
-use crate::planet_atlas::storage::{DYNAMIC_BACKUP_FILE, DYNAMIC_FILE, HISTORY_FILE, MAX_DYNAMIC_BYTES, MAX_HISTORY_BYTES, MAX_WATER_CYCLE_BYTES, WATER_CYCLE_BACKUP_FILE, WATER_CYCLE_FILE, read_bounded, write_manifest};
-use std::path::{Path};
+use crate::planet_atlas::identity::stable_hash;
+use crate::planet_atlas::storage::{
+    DYNAMIC_BACKUP_FILE, DYNAMIC_FILE, HISTORY_FILE, MAX_DYNAMIC_BYTES, MAX_HISTORY_BYTES,
+    MAX_WATER_CYCLE_BYTES, WATER_CYCLE_BACKUP_FILE, WATER_CYCLE_FILE, read_bounded, write_manifest,
+};
+use crate::planet_atlas::{
+    ATLAS_DYNAMIC_VERSION, AtlasError, DynamicLayers, PlanetAtlas, WATER_CYCLE_SCHEMA_VERSION,
+    WaterCycleState, encode_water_cycle,
+};
+use std::path::Path;
 
 impl PlanetAtlas {
     /// Atomically replace mutable hydrology/climate state while preserving a

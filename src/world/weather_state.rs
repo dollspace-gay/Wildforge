@@ -4,7 +4,9 @@
 //! owns its optional atlas-world lifetime, update admission/abort, and overrides.
 //! World coordinates water-inbox materialization after a completed climate hour.
 
-use crate::planet_atlas::{AtlasError, AtlasPos, LocalWeatherSample, PlanetAtlas, PlanetaryWeather, WeatherStepReport};
+use crate::planet_atlas::{
+    AtlasError, AtlasPos, LocalWeatherSample, PlanetAtlas, PlanetaryWeather, WeatherStepReport,
+};
 
 pub(super) struct WeatherState {
     live: Option<PlanetaryWeather>,
@@ -13,11 +15,22 @@ pub(super) struct WeatherState {
 
 impl WeatherState {
     pub(super) fn new(atlas: Option<&PlanetAtlas>) -> Self {
-        Self { live: atlas.map(|atlas| PlanetaryWeather::new(atlas.dynamic.clone(), atlas.water_cycle.clone())), override_sample: None }
+        Self {
+            live: atlas.map(|atlas| {
+                PlanetaryWeather::new(atlas.dynamic.clone(), atlas.water_cycle.clone())
+            }),
+            override_sample: None,
+        }
     }
-    pub(super) fn live(&self) -> Option<&PlanetaryWeather> { self.live.as_ref() }
-    pub(super) fn live_mut(&mut self) -> Option<&mut PlanetaryWeather> { self.live.as_mut() }
-    pub(super) fn override_sample(&self) -> Option<LocalWeatherSample> { self.override_sample }
+    pub(super) fn live(&self) -> Option<&PlanetaryWeather> {
+        self.live.as_ref()
+    }
+    pub(super) fn live_mut(&mut self) -> Option<&mut PlanetaryWeather> {
+        self.live.as_mut()
+    }
+    pub(super) fn override_sample(&self) -> Option<LocalWeatherSample> {
+        self.override_sample
+    }
 
     pub(super) fn force_local_weather(&mut self, requested: &str) {
         let forced = super::calendar_view::forced_weather(requested);
@@ -59,8 +72,12 @@ impl WeatherState {
     }
 
     pub(super) fn advance(
-        &mut self, atlas: &PlanetAtlas, day: f64, budget: usize,
-        dross_completed: Option<u64>, ire_at: impl Fn(AtlasPos) -> f32,
+        &mut self,
+        atlas: &PlanetAtlas,
+        day: f64,
+        budget: usize,
+        dross_completed: Option<u64>,
+        ire_at: impl Fn(AtlasPos) -> f32,
     ) -> Result<Option<WeatherStepReport>, AtlasError> {
         let Some(weather) = self.live.as_mut() else {
             return Ok(None);

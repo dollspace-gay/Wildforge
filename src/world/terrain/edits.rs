@@ -51,12 +51,19 @@ impl TerrainStore {
         position: BlockPos,
         block: BlockId,
     ) -> Option<(BlockPos, BlockId)> {
-        if registry.is_solid(block) { return None; }
+        if registry.is_solid(block) {
+            return None;
+        }
         let above = position.offset(0, 1, 0)?;
         let (x, y, z) = above.local();
-        let above_block = self.resident.get(&above.chunk()).map_or(AIR, |chunk| chunk.get(x, y, z));
+        let above_block = self
+            .resident
+            .get(&above.chunk())
+            .map_or(AIR, |chunk| chunk.get(x, y, z));
         let definition = registry.block(above_block);
-        (above_block != AIR && !definition.floats && (definition.cross || definition.height.is_some()))
-            .then_some((above, above_block))
+        (above_block != AIR
+            && !definition.floats
+            && (definition.cross || definition.height.is_some()))
+        .then_some((above, above_block))
     }
 }

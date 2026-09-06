@@ -1,6 +1,6 @@
 //! Qualification site selection for climate.
 
-use crate::chunk::{SEA_LEVEL};
+use crate::chunk::SEA_LEVEL;
 use crate::planet_atlas::{AtlasPos, PlanetAtlas};
 
 pub(super) fn collect(atlas: &PlanetAtlas, insert: &mut impl FnMut(&str, AtlasPos, String)) {
@@ -82,5 +82,4 @@ pub(super) fn collect(atlas: &PlanetAtlas, insert: &mut impl FnMut(&str, AtlasPo
             format!("downwind of rain-shadow pair; precipitation drop {drop:.1}"),
         );
     }
-
 }

@@ -1,14 +1,14 @@
 //! Nudge workings transaction coordination.
 
-use crate::world::BlockEntity;
+use super::vec3_milli;
+use super::working_distance;
 use crate::planet::BlockPos;
 use crate::workings::NudgeEntityKind;
 use crate::workings::WorkingEffect;
 use crate::workings::WorkingResult;
 use crate::workings::WorkingTargetSnapshot;
+use crate::world::BlockEntity;
 use crate::world::World;
-use super::vec3_milli;
-use super::working_distance;
 
 impl World {
     /// Deflect one host-owned projectile through its ordinary velocity and

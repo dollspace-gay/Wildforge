@@ -1,13 +1,13 @@
 //! Watcher grading, hostile budgets, and nest-spawn coordination.
 
-use crate::world::World;
-use crate::mobs::Mob;
 use crate::chunk::ChunkPos;
 use crate::chunk::SEA_LEVEL;
+use crate::mobs::Mob;
 use crate::planet::BlockPos;
 use crate::planet::EntityPos;
 use crate::registry::AIR;
 use crate::world::MOB_CAP;
+use crate::world::World;
 
 impl World {
     /// Ire-driven warden spawner: territorial lurkers roll into the dark
@@ -82,7 +82,9 @@ impl World {
         if !self.ruleset().hostile_spawns {
             return;
         }
-        if !self.population.hostile_cycle(dt) { return; }
+        if !self.population.hostile_cycle(dt) {
+            return;
+        }
         self.grade_watchers();
         // The wardens are the spirit's immune response. Where the
         // heart is dead they simply stop coming — and the silence is
@@ -101,7 +103,9 @@ impl World {
         let mut budget = [2usize, 6, 10, 14][tier];
         // While a watcher watches, nothing else comes: the warning IS
         // the encounter until it's answered or it graduates.
-        let watcher_near = self.population.mobs()
+        let watcher_near = self
+            .population
+            .mobs()
             .iter()
             .any(|m| m.watcher && m.pos.distance_to(player) < 96.0);
         if watcher_near {
@@ -114,7 +118,9 @@ impl World {
         {
             budget += 1; // dark skies are cover
         }
-        let near_hostiles = self.population.mobs()
+        let near_hostiles = self
+            .population
+            .mobs()
             .iter()
             .filter(|m| {
                 reg.animals.get(m.species).is_some_and(|d| d.hostile)
@@ -258,7 +264,9 @@ impl World {
         if !self.ruleset().nest_spawns {
             return;
         }
-        if !self.population.nest_cycle(dt) { return; }
+        if !self.population.nest_cycle(dt) {
+            return;
+        }
         if self.population.mobs().len() >= MOB_CAP {
             return;
         }
@@ -300,7 +308,9 @@ impl World {
             if cd > 0.0 {
                 continue;
             }
-            let living = self.population.mobs()
+            let living = self
+                .population
+                .mobs()
                 .iter()
                 .filter(|m| {
                     m.species == nest.species

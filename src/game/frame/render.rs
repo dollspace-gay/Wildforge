@@ -1,15 +1,29 @@
 //! Render in the graphical frame pipeline.
 
-use crate::world::TerrainRead;
+use super::{LightingFrame, SelectionFrame};
+use crate::game::Game;
 use crate::renderer::FrameInput;
 use std::time::Instant;
-use crate::game::Game;
-use super::{LightingFrame, SelectionFrame};
 
 impl Game {
     pub(in crate::game) fn build_and_render_frame(&mut self, dt: f32, now: Instant) {
-        let LightingFrame { daylight, sun_dir, sun_dir_true, sun_col, amb_col, gloom, sh_ambient, local_weather } = self.prepare_frame_lighting(dt);
-        let SelectionFrame { playing, outline, outline_color, underwater, fog } = self.prepare_frame_selection(gloom);
+        let LightingFrame {
+            daylight,
+            sun_dir,
+            sun_dir_true,
+            sun_col,
+            amb_col,
+            gloom,
+            sh_ambient,
+            local_weather,
+        } = self.prepare_frame_lighting(dt);
+        let SelectionFrame {
+            playing,
+            outline,
+            outline_color,
+            underwater,
+            fog,
+        } = self.prepare_frame_selection(gloom);
         let mut entities = self.prepare_scene_members(dt);
         self.emit_scene_stations(&mut entities);
         self.emit_scene_precipitation(&mut entities, local_weather);

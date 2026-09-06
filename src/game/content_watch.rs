@@ -1,7 +1,7 @@
 //! Script source selection and hot-reload tree observation. No live publication.
 
-use std::path::PathBuf;
 use crate::registry::Registry;
+use std::path::PathBuf;
 
 /// (mod id, dir) pairs for mods that ship a main.rhai.
 pub(super) fn script_mod_dirs(reg: &Registry) -> Vec<(String, PathBuf)> {
@@ -44,4 +44,3 @@ pub(crate) fn content_tree_stamp_of(roots: &[&std::path::Path]) -> u64 {
 pub(super) fn content_tree_stamp() -> u64 {
     content_tree_stamp_of(&[std::path::Path::new("mods"), std::path::Path::new("packs")])
 }
-

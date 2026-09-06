@@ -1,11 +1,15 @@
 //! Soil texture, fertility, freezing, and groundwater genesis.
 
-use crate::chunk::{SEA_LEVEL};
-use crate::planet_atlas::{AtlasError, AtlasGrid, BedrockFamily, ClimateCell, GenerationMode, GroundCell, HYDRO_DELTA, HYDRO_FLOODPLAIN, HYDRO_LAKE, HYDRO_OCEAN, HYDRO_PLAYA, HYDRO_TERMINAL, HYDRO_WETLAND, HydrologyCell, TectonicCell, TerrainCell};
-use crate::planet_atlas::grid::{generate_grid};
-use crate::planet_atlas::identity::{cell_hash};
-use super::{FREEZE_PERMAFROST, FREEZE_SEASONAL};
 use super::classification::slope_at;
+use super::{FREEZE_PERMAFROST, FREEZE_SEASONAL};
+use crate::chunk::SEA_LEVEL;
+use crate::planet_atlas::grid::generate_grid;
+use crate::planet_atlas::identity::cell_hash;
+use crate::planet_atlas::{
+    AtlasError, AtlasGrid, BedrockFamily, ClimateCell, GenerationMode, GroundCell, HYDRO_DELTA,
+    HYDRO_FLOODPLAIN, HYDRO_LAKE, HYDRO_OCEAN, HYDRO_PLAYA, HYDRO_TERMINAL, HYDRO_WETLAND,
+    HydrologyCell, TectonicCell, TerrainCell,
+};
 fn parent_texture(parent: BedrockFamily) -> (u8, u8) {
     match parent {
         BedrockFamily::Sandstone => (188, 48),

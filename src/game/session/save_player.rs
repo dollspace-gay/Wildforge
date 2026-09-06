@@ -1,8 +1,7 @@
 //! Save player graphical session adapter.
 
-use crate::identity;
-use crate::world;
 use crate::game::Game;
+use crate::identity;
 
 impl Game {
     pub(in crate::game) fn save_player(&self) -> std::io::Result<()> {

@@ -1,16 +1,13 @@
 //! Stewardship capture scene construction.
 
-use crate::world::TerrainRead;
-use crate::inventory::ItemStack;
-use crate::registry::AIR;
-use crate::world;
-use glam::Vec3;
-use crate::game::Game;
-use crate::planet::{BlockPos, EntityPos, Face, SurfacePos};
 use super::DemoChart;
+use crate::game::Game;
+use crate::inventory::ItemStack;
+use crate::planet::EntityPos;
+use crate::registry::AIR;
 
 impl Game {
-    pub(in crate::game) fn stage_capture_ecology(&mut self, spawn: EntityPos, chart: DemoChart) {
+    pub(super) fn stage_capture_ecology(&mut self, spawn: EntityPos, chart: DemoChart) {
         if std::env::var("WILDFORGE_DEMO_ECO").is_ok() {
             // The living-soil field: four fertility bands, palest dust
             // to deepest loam, wheat standing on the two rich bands —

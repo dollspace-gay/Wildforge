@@ -1,11 +1,20 @@
 //! Explicit fixed-width immutable cell encoding and decoding.
 
-use crate::planet_atlas::{AtlasError, AtlasGrid, BasinKind, BiomeCell, BoundaryClass, ClimateCell, DetailedBoundary, GenesisLayers, GeometryCell, GroundCell, HydrologyCell, ResourceCell, TectonicCell, TerrainCell, WaterBodyKind};
+use crate::planet_atlas::codec::primitives::{
+    ByteReader, put_f32, put_i16, put_i32, put_u8, put_u16, put_u32, put_u64,
+};
 use crate::planet_atlas::codec::{FILE_HEADER_BYTES, GENESIS_RECORD_BYTES};
-use crate::planet_atlas::codec::primitives::{ByteReader, put_f32, put_i16, put_i32, put_u16, put_u32, put_u64, put_u8};
-use crate::planet_atlas::grid::{atlas_count};
+use crate::planet_atlas::grid::atlas_count;
+use crate::planet_atlas::{
+    AtlasError, AtlasGrid, BasinKind, BiomeCell, BoundaryClass, ClimateCell, DetailedBoundary,
+    GenesisLayers, GeometryCell, GroundCell, HydrologyCell, ResourceCell, TectonicCell,
+    TerrainCell, WaterBodyKind,
+};
 
-pub(in crate::planet_atlas) fn decode_genesis(side: u16, payload: &[u8]) -> Result<GenesisLayers, AtlasError> {
+pub(in crate::planet_atlas) fn decode_genesis(
+    side: u16,
+    payload: &[u8],
+) -> Result<GenesisLayers, AtlasError> {
     let count = atlas_count(side)?;
     if payload.len() != count * GENESIS_RECORD_BYTES {
         return Err(AtlasError::Corrupt("genesis payload width mismatch".into()));
@@ -152,7 +161,9 @@ pub(in crate::planet_atlas) fn decode_genesis(side: u16, payload: &[u8]) -> Resu
     })
 }
 
-pub(in crate::planet_atlas) fn encode_genesis(genesis: &GenesisLayers) -> Result<Vec<u8>, AtlasError> {
+pub(in crate::planet_atlas) fn encode_genesis(
+    genesis: &GenesisLayers,
+) -> Result<Vec<u8>, AtlasError> {
     let count = genesis.geometry.len();
     let mut out = Vec::with_capacity(count * GENESIS_RECORD_BYTES + FILE_HEADER_BYTES);
     for index in 0..count {

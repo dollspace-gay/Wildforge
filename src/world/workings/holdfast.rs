@@ -1,7 +1,9 @@
 //! Holdfast workings transaction coordination.
 
+use super::inventory_target_id;
+use super::mounted_target_id;
+use super::working_distance;
 use crate::arcane::ArcaneOwner;
-use crate::world::BlockEntity;
 use crate::planet::BlockPos;
 use crate::workings::PhysicalDebit;
 use crate::workings::PhysicalDebitKind;
@@ -9,10 +11,8 @@ use crate::workings::PreservationKind;
 use crate::workings::WorkingEffect;
 use crate::workings::WorkingResult;
 use crate::workings::WorkingTargetSnapshot;
+use crate::world::BlockEntity;
 use crate::world::World;
-use super::inventory_target_id;
-use super::mounted_target_id;
-use super::working_distance;
 
 impl World {
     /// Begin continuous preservation of one exact carried fragile stack.
@@ -193,7 +193,10 @@ impl World {
         self.mounted_fragile_at(mount).is_some()
     }
 
-    pub(super) fn mounted_fragile_at(&self, mount: BlockPos) -> Option<(u8, crate::inventory::ItemStack)> {
+    pub(super) fn mounted_fragile_at(
+        &self,
+        mount: BlockPos,
+    ) -> Option<(u8, crate::inventory::ItemStack)> {
         let BlockEntity::DiscoveryApparatus(apparatus) = self.block_entity_at(&mount)? else {
             return None;
         };

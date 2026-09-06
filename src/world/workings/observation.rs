@@ -1,13 +1,12 @@
 //! Observation workings transaction coordination.
 
-use crate::arcane::Current;
+use super::working_completion;
 use crate::workings::WorkingCue;
 use crate::workings::WorkingCueKind;
 use crate::workings::WorkingEffect;
 use crate::workings::WorkingPhase;
 use crate::workings::WorkingTransaction;
 use crate::world::World;
-use super::working_completion;
 
 impl World {
     /// Visible active paths for local rendering and interest-managed network

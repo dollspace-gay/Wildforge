@@ -1,10 +1,10 @@
 //! Shared dispatch machine_tick transaction coordination.
 
-use crate::world::World;
 use super::tick_bloomery_machines;
 use super::tick_forge_machines;
 use super::tick_kiln_machines;
 use super::tick_separator_machines;
+use crate::world::World;
 
 impl World {
     /// Advance machines. Returns true if any visible state changed.

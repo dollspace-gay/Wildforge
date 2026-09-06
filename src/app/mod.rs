@@ -1,11 +1,11 @@
 //! Process command selection. Order is compatibility-sensitive when flags coexist.
 
 mod audits;
-mod geography;
-mod worlds;
 mod entry;
-mod qualification;
+mod geography;
 mod launch;
+mod qualification;
+mod worlds;
 
 #[derive(Clone, Copy)]
 enum Command {
@@ -45,7 +45,10 @@ impl Command {
             ("--arcane-geography-audit", Command::ArcaneGeographyAudit),
             ("--arcane-ecology-audit", Command::ArcaneEcologyAudit),
             ("--arcane-geography-export", Command::ArcaneGeographyExport),
-            ("--arcane-geography-retrogen", Command::ArcaneGeographyRetrogen),
+            (
+                "--arcane-geography-retrogen",
+                Command::ArcaneGeographyRetrogen,
+            ),
             ("--water-audit", Command::WaterAudit),
             ("--create-world", Command::CreateWorld),
             ("--generate-atlas", Command::GenerateAtlas),
@@ -55,7 +58,9 @@ impl Command {
             ("--agent", Command::Agent),
         ];
         ORDER.iter().find_map(|(flag, command)| {
-            args.iter().position(|arg| arg == flag).map(|i| (*command, i))
+            args.iter()
+                .position(|arg| arg == flag)
+                .map(|i| (*command, i))
         })
     }
 

@@ -1,17 +1,33 @@
 //! Validated atlas load and paired mutable-state backup recovery.
 
-use crate::planet_atlas::{ATLAS_DYNAMIC_VERSION, ATLAS_FORMAT_VERSION, AtlasError, AtlasManifest, BiomeModel, GeologyModel, HistoryLayers, HydrologyModel, PlanetAtlas, WATER_CYCLE_SCHEMA_VERSION, decode_water_cycle};
-use crate::planet_atlas::codec::{DYNAMIC_MAGIC, DYNAMIC_RECORD_BYTES, GENESIS_MAGIC, GENESIS_RECORD_BYTES, WATER_CYCLE_MAGIC};
-use crate::planet_atlas::codec::container::{container_bytes, decode_container, decode_variable_container, variable_container_bytes};
-use crate::planet_atlas::codec::dynamic::{decode_dynamic};
-use crate::planet_atlas::codec::genesis::{decode_genesis};
-use crate::planet_atlas::identity::{stable_hash};
-use crate::planet_atlas::manifest::{validate_manifest};
-use crate::planet_atlas::storage::{BIOMES_FILE, DYNAMIC_BACKUP_FILE, DYNAMIC_FILE, GENESIS_FILE, GEOLOGY_FILE, HISTORY_FILE, HYDROLOGY_FILE, MANIFEST_FILE, MAX_BIOMES_BYTES, MAX_DYNAMIC_BYTES, MAX_GENESIS_BYTES, MAX_GEOLOGY_BYTES, MAX_HISTORY_BYTES, MAX_HYDROLOGY_BYTES, MAX_MANIFEST_BYTES, MAX_WATER_CYCLE_BYTES, WATER_CYCLE_BACKUP_FILE, WATER_CYCLE_FILE, read_bounded, write_manifest};
-use std::path::{Path};
+use crate::planet_atlas::codec::container::{
+    container_bytes, decode_container, decode_variable_container, variable_container_bytes,
+};
+use crate::planet_atlas::codec::dynamic::decode_dynamic;
+use crate::planet_atlas::codec::genesis::decode_genesis;
+use crate::planet_atlas::codec::{
+    DYNAMIC_MAGIC, DYNAMIC_RECORD_BYTES, GENESIS_MAGIC, GENESIS_RECORD_BYTES, WATER_CYCLE_MAGIC,
+};
+use crate::planet_atlas::identity::stable_hash;
+use crate::planet_atlas::manifest::validate_manifest;
+use crate::planet_atlas::storage::{
+    BIOMES_FILE, DYNAMIC_BACKUP_FILE, DYNAMIC_FILE, GENESIS_FILE, GEOLOGY_FILE, HISTORY_FILE,
+    HYDROLOGY_FILE, MANIFEST_FILE, MAX_BIOMES_BYTES, MAX_DYNAMIC_BYTES, MAX_GENESIS_BYTES,
+    MAX_GEOLOGY_BYTES, MAX_HISTORY_BYTES, MAX_HYDROLOGY_BYTES, MAX_MANIFEST_BYTES,
+    MAX_WATER_CYCLE_BYTES, WATER_CYCLE_BACKUP_FILE, WATER_CYCLE_FILE, read_bounded, write_manifest,
+};
+use crate::planet_atlas::{
+    ATLAS_DYNAMIC_VERSION, ATLAS_FORMAT_VERSION, AtlasError, AtlasManifest, BiomeModel,
+    GeologyModel, HistoryLayers, HydrologyModel, PlanetAtlas, WATER_CYCLE_SCHEMA_VERSION,
+    decode_water_cycle,
+};
+use std::path::Path;
 
 impl PlanetAtlas {
-    pub(super) fn load_planet_dir(planet_dir: &Path, production_only: bool) -> Result<Self, AtlasError> {
+    pub(super) fn load_planet_dir(
+        planet_dir: &Path,
+        production_only: bool,
+    ) -> Result<Self, AtlasError> {
         let manifest_path = planet_dir.join(MANIFEST_FILE);
         let manifest_bytes = read_bounded(&manifest_path, MAX_MANIFEST_BYTES)?;
         let manifest_text = std::str::from_utf8(&manifest_bytes)

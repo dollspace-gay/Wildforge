@@ -34,7 +34,10 @@ pub(crate) fn purchase(
     if price.count == 0 {
         return Err(PurchaseError::InvalidStack);
     }
-    let goods = stall.goods.iter().position(Option::is_some)
+    let goods = stall
+        .goods
+        .iter()
+        .position(Option::is_some)
         .ok_or(PurchaseError::NoStock)?;
     let stock = stall.goods[goods].ok_or(PurchaseError::NoStock)?;
     validate_stack(registry, stock)?;
@@ -56,8 +59,18 @@ pub(crate) fn purchase(
         }
         validate_stack(registry, stack)?;
         let take = stack.count.min(need);
-        deposit(registry, &mut till, ItemStack { count: take, ..stack })?;
-        *slot = (stack.count > take).then_some(ItemStack { count: stack.count - take, ..stack });
+        deposit(
+            registry,
+            &mut till,
+            ItemStack {
+                count: take,
+                ..stack
+            },
+        )?;
+        *slot = (stack.count > take).then_some(ItemStack {
+            count: stack.count - take,
+            ..stack
+        });
         need -= take;
     }
     if need != 0 {
@@ -65,11 +78,17 @@ pub(crate) fn purchase(
     }
     let remainder = inventory.add_stack(registry, sold);
     // No fallible operation follows the first committed mutation.
-    stall.goods[goods] = (stock.count > 1).then_some(ItemStack { count: stock.count - 1, ..stock });
+    stall.goods[goods] = (stock.count > 1).then_some(ItemStack {
+        count: stock.count - 1,
+        ..stock
+    });
     stall.till = till;
     *buyer = inventory;
     Ok(Purchase {
-        overflow: (remainder > 0).then_some(ItemStack { count: remainder, ..sold }),
+        overflow: (remainder > 0).then_some(ItemStack {
+            count: remainder,
+            ..sold
+        }),
     })
 }
 
@@ -77,7 +96,8 @@ fn validate_stack(registry: &Registry, stack: ItemStack) -> Result<(), PurchaseE
     let Some(definition) = registry.items.get(usize::from(stack.item.0)) else {
         return Err(PurchaseError::InvalidStack);
     };
-    if stack.count == 0 || stack.count > definition.max_stack
+    if stack.count == 0
+        || stack.count > definition.max_stack
         || ((stack.arcane_id != 0 || definition.tool.is_some()) && stack.count != 1)
     {
         return Err(PurchaseError::InvalidStack);
@@ -92,13 +112,20 @@ fn deposit(
 ) -> Result<(), PurchaseError> {
     // Retain first-fit placement for ordinary currency. Distinct physical
     // instances require their own slots, and their payload must survive barter.
-    let slot = till.iter_mut().find(|slot| match slot {
-        None => true,
-        Some(stack) => stack.can_merge(registry, &payment)
-            && stack.durability == payment.durability
-            && stack.count.checked_add(payment.count)
-                .is_some_and(|count| count <= registry.item(stack.item).max_stack),
-    }).ok_or(PurchaseError::TillFull)?;
+    let slot = till
+        .iter_mut()
+        .find(|slot| match slot {
+            None => true,
+            Some(stack) => {
+                stack.can_merge(registry, &payment)
+                    && stack.durability == payment.durability
+                    && stack
+                        .count
+                        .checked_add(payment.count)
+                        .is_some_and(|count| count <= registry.item(stack.item).max_stack)
+            }
+        })
+        .ok_or(PurchaseError::TillFull)?;
     match slot {
         Some(stack) => stack.count += payment.count,
         None => *slot = Some(payment),

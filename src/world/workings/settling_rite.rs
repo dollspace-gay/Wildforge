@@ -1,8 +1,9 @@
 //! Settling rite workings transaction coordination.
 
+use super::working_distance;
 use crate::arcane::ArcaneOwner;
-use crate::planet::BlockPos;
 use crate::arcane::Current;
+use crate::planet::BlockPos;
 use crate::workings::PhysicalDebit;
 use crate::workings::PhysicalDebitKind;
 use crate::workings::WorkingEffect;
@@ -11,7 +12,6 @@ use crate::workings::WorkingPhase;
 use crate::workings::WorkingResult;
 use crate::workings::WorkingTargetSnapshot;
 use crate::world::World;
-use super::working_distance;
 
 impl World {
     /// Stabilize one already-running adjacent magical process. The rite uses

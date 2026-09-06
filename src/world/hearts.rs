@@ -7,10 +7,8 @@
 //! its death is the quietest catastrophe in the game.
 
 use super::*;
-use crate::planet::{BlockPos, EntityPos, SurfacePos, geodesic_distance, great_circle_bearing};
+use crate::planet::{BlockPos, EntityPos, SurfacePos, geodesic_distance};
 use crate::worldgen::ProvinceKey;
-
-
 
 /// A country's spirit, keyed on its province.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -688,13 +686,19 @@ impl World {
     /// been there — a country whose heart this world has watched die,
     /// and a badlands scar, which was dead before anyone walked it.
     pub fn seed_bearing_at(&self, from: EntityPos) -> String {
-        super::country_view::seed_bearing(self.generator.geography(), from,
-            |key| self.hearts.get(&key).is_some_and(|heart| heart.stage == 0))
+        super::country_view::seed_bearing(self.generator.geography(), from, |key| {
+            self.hearts.get(&key).is_some_and(|heart| heart.stage == 0)
+        })
     }
 
     /// The compass reading a survey cairn gives for the country's
     /// heart: where it stands and how it fares.
     pub fn heart_report_at(&self, pos: SurfacePos) -> String {
-        super::country_view::heart_report(self.generator.geography(), &self.reg, pos, self.heart_at_surface(pos))
+        super::country_view::heart_report(
+            self.generator.geography(),
+            &self.reg,
+            pos,
+            self.heart_at_surface(pos),
+        )
     }
 }

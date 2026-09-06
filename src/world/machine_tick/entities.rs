@@ -1,11 +1,10 @@
 //! Entities machine_tick transaction coordination.
 
-use crate::world::BlockEntity;
-use crate::planet::BlockPos;
-use crate::world::FurnaceState;
 use crate::inventory::ItemStack;
+use crate::planet::BlockPos;
+use crate::world::BlockEntity;
+use crate::world::FurnaceState;
 use crate::world::World;
-use std::fs;
 
 impl World {
     /// A running generator within reach: the field that lights lamps

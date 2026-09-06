@@ -1,12 +1,12 @@
 //! Ritual reservation workings transaction coordination.
 
+use super::effect_path;
 use crate::arcane::ArcaneOwner;
-use std::collections::BTreeMap;
-use crate::planet::BlockPos;
 use crate::arcane::Current;
+use crate::arcane::LinkedFileReplacement;
+use crate::planet::BlockPos;
 use crate::workings::CurrentDebit;
 use crate::workings::DeliveryMode;
-use crate::arcane::LinkedFileReplacement;
 use crate::workings::PhysicalDebit;
 use crate::workings::StrainInputs;
 use crate::workings::WorkingApparatus;
@@ -17,7 +17,7 @@ use crate::workings::WorkingResult;
 use crate::workings::WorkingTargetSnapshot;
 use crate::workings::WorkingTransaction;
 use crate::world::World;
-use super::effect_path;
+use std::collections::BTreeMap;
 
 impl World {
     #[allow(clippy::too_many_arguments)]

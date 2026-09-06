@@ -5,8 +5,8 @@ use std::io;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use crate::registry::{self, Registry};
 use crate::content_files::AssetSnapshot;
+use crate::registry::{self, Registry};
 
 #[derive(Debug, thiserror::Error)]
 pub(crate) enum TransferError {
@@ -22,7 +22,9 @@ pub(crate) enum TransferError {
     Io(#[from] io::Error),
     #[error("host content failed validation: {0}")]
     InvalidRegistry(String),
-    #[error("host content publication failed: {publish}; restore failed: {restore}; previous content retained at {backup}")]
+    #[error(
+        "host content publication failed: {publish}; restore failed: {restore}; previous content retained at {backup}"
+    )]
     Restore {
         publish: io::Error,
         restore: io::Error,
@@ -44,7 +46,10 @@ impl Publication {
         }
         let root = cache.with_extension("transfer");
         match std::fs::create_dir(&root) {
-            Ok(()) => Ok(Self { root, preserve: false }),
+            Ok(()) => Ok(Self {
+                root,
+                preserve: false,
+            }),
             Err(error) if error.kind() == io::ErrorKind::AlreadyExists => Err(TransferError::Busy),
             Err(error) => Err(error.into()),
         }
@@ -120,7 +125,11 @@ pub(crate) fn install(
     if let Err(publish) = std::fs::rename(&staging, cache) {
         if previous && let Err(restore) = std::fs::rename(&backup, cache) {
             publication.preserve = true;
-            return Err(TransferError::Restore { publish, restore, backup });
+            return Err(TransferError::Restore {
+                publish,
+                restore,
+                backup,
+            });
         }
         return Err(publish.into());
     }

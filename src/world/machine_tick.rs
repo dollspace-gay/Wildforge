@@ -1,12 +1,11 @@
 //! Runtime ticking for bloomeries, clamps, furnaces, and related machines.
 
-mod shared_dispatch;
-mod food_storage;
 mod clamps;
+mod entities;
+mod food_storage;
+mod shared_dispatch;
 mod stations;
 mod steam;
-mod entities;
-
 
 mod bloomery;
 pub(super) use bloomery::tick_bloomery_machines;

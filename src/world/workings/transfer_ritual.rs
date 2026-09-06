@@ -2,7 +2,6 @@
 
 use crate::arcane::ArcaneOwner;
 use crate::planet::BlockPos;
-use crate::arcane::Current;
 use crate::workings::PhysicalDebit;
 use crate::workings::PhysicalDebitKind;
 use crate::workings::WorkingEffect;

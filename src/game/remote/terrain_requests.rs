@@ -1,10 +1,18 @@
 //! Terrain requests graphical guest adapter.
 
 use crate::chunk::CHUNK_X;
-use crate::net;
+use crate::game::Game;
 use crate::game::Remote;
+use crate::net;
+use crate::world::TerrainRead;
 
 impl Game {
+    /// Ask the host for chunks we should have and do not.
+    ///
+    /// Nearest first, a few per frame, bounded by the granted radius. This is
+    /// what closes the hole a guest used to leave behind by walking away and
+    /// coming back: the host remembers what it sent forever, so without this
+    /// the ground never returned.
     pub(in crate::game) fn request_missing_chunks(&mut self, r: &mut Remote) {
         const ASK_PER_FRAME: usize = 4;
         let vd = r.granted_view_dist.min(self.config.view_dist);

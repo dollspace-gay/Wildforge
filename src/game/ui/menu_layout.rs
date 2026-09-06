@@ -43,7 +43,8 @@ impl Game {
         } else if let Some(r) = &self.multiplayer.remote
             && r.role.can_moderate()
         {
-            r.session.roster()
+            r.session
+                .roster()
                 .iter()
                 .filter(|(id, _)| **id != 0 && **id != r.my_id)
                 .map(|(id, presence)| (*id, crate::game::remote::presence_label(presence)))
@@ -133,5 +134,6 @@ impl Game {
 
     // ---- settings screen layout ----
 
-    pub(super) const SLIDERS: [&'static str; 4] = ["VOLUME", "SENSITIVITY", "RENDER DIST", "FOV"];
+    pub(in crate::game) const SLIDERS: [&'static str; 4] =
+        ["VOLUME", "SENSITIVITY", "RENDER DIST", "FOV"];
 }

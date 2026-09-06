@@ -1,6 +1,5 @@
 //! Registered biomes diagnostic maps in export order.
 
-
 use super::{LayerKind, LayerSpec, layer};
 pub(super) const LAYERS: &[LayerSpec] = &[
     layer(

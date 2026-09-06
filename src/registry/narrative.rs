@@ -169,4 +169,3 @@ pub struct GateDef {
     /// Whether the sealed block is unbreakable while locked (default true).
     pub unbreakable_when_locked: bool,
 }
-

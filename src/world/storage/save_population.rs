@@ -1,9 +1,9 @@
 //! Save population storage transaction coordination.
 
-use std::path::PathBuf;
 use crate::world::SaveFailure;
 use crate::world::SaveReport;
 use crate::world::World;
+use std::path::PathBuf;
 
 impl World {
     pub(in crate::world) fn mobs_path(&self) -> PathBuf {
@@ -102,7 +102,14 @@ impl World {
         report.record(
             "long winter",
             path.clone(),
-            crate::world::persistence::atomic_replace(&path, if self.calendar_state.long_winter() { b"1" } else { b"0" }),
+            crate::world::persistence::atomic_replace(
+                &path,
+                if self.calendar_state.long_winter() {
+                    b"1"
+                } else {
+                    b"0"
+                },
+            ),
         );
         // The ground's spent willingness to bloom.
         let mut sb = Vec::with_capacity(4 + self.bloom_spent.len() * 8);

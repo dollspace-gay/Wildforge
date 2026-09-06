@@ -61,7 +61,6 @@ pub trait BlockRead {
     /// report fair weather: a structure-hosted machine is exempt from the
     /// world's storm dousing.
     fn weather_at(&self, at: BlockPos) -> LocalWeatherSample;
-
 }
 
 /// A machine store that can commit physical changes. Recognition and rendering
@@ -89,12 +88,12 @@ pub trait BlockStore: BlockRead {
 
 /// Displacement of canonical cells on one planetary face.
 pub(super) fn planetary_delta(from: BlockPos, to: BlockPos) -> Option<(i32, i32, i32)> {
-        if from.face() != to.face() {
-            return None;
-        }
-        Some((
-            i32::from(to.u()) - i32::from(from.u()),
-            i32::from(to.y()) - i32::from(from.y()),
-            i32::from(to.v()) - i32::from(from.v()),
-        ))
+    if from.face() != to.face() {
+        return None;
+    }
+    Some((
+        i32::from(to.u()) - i32::from(from.u()),
+        i32::from(to.y()) - i32::from(from.y()),
+        i32::from(to.v()) - i32::from(from.v()),
+    ))
 }

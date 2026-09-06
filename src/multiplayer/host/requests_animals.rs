@@ -1,10 +1,15 @@
 //! Authenticated animals request adapter.
 
-use super::{C2S, HostSession, ItemStack, REACH, S2C, Server, StackSnap, Vec3, click_stack, net, refresh_held, take_item};
+use super::{
+    C2S, HostSession, ItemStack, REACH, S2C, Server, StackSnap, Vec3, click_stack, net,
+    refresh_held, take_item,
+};
 
 impl HostSession {
     pub(super) fn request_animals(&mut self, server: &mut Server, id: u32, msg: C2S) {
-        let Some(guest) = self.guests.get_mut(&id) else { return; };
+        let Some(guest) = self.guests.get_mut(&id) else {
+            return;
+        };
         match msg {
             C2S::AttackMob { id: mob_id, heavy } => {
                 // Stable ids: snapshots lag the sim, so an index would
@@ -65,7 +70,9 @@ impl HostSession {
                     let def = &reg.animals[m.species];
                     if (m.pos - gpos).length() <= REACH
                         && let Some(feeding) = crate::player_ops::feeding::FeedPlan::prepare(
-                            def, m, guest.inventory.slots[guest.hotbar].map(|stack| stack.item),
+                            def,
+                            m,
+                            guest.inventory.slots[guest.hotbar].map(|stack| stack.item),
                         )
                     {
                         feeding.apply(m);

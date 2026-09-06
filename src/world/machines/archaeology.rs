@@ -1,7 +1,7 @@
 //! Archaeology machines transaction coordination.
 
-use crate::planet::BlockPos;
 use crate::inventory::ItemStack;
+use crate::planet::BlockPos;
 use crate::world::World;
 
 impl World {

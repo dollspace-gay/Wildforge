@@ -1,5 +1,6 @@
 //! Adoption chunks transaction coordination.
 
+use super::EDIFICE_CLEARANCE;
 use crate::chunk::CHUNK_X;
 use crate::chunk::CHUNK_Y;
 use crate::chunk::CHUNK_Z;
@@ -8,7 +9,6 @@ use crate::chunk::ChunkPos;
 use crate::world::ChunkRead;
 use crate::world::ChunkRevision;
 use crate::world::World;
-use super::EDIFICE_CLEARANCE;
 
 impl World {
     pub fn ensure_chunk(&mut self, pos: ChunkPos) -> bool {
@@ -204,7 +204,9 @@ impl World {
         // A chunk seen for the first time is up to date; one loaded
         // from disk keeps its old stamp (the gap below reads it).
         let stamp = self.last_random.get(&pos).copied();
-        self.last_random.entry(pos).or_insert(self.calendar_state.clock());
+        self.last_random
+            .entry(pos)
+            .or_insert(self.calendar_state.clock());
         self.wake_seams(pos);
         // A chunk back from disk may hold water saved mid-flow (or
         // stranded by older, unsealed worldgen): set it settling again.

@@ -5,39 +5,53 @@
 use std::collections::{BTreeMap, HashMap};
 use std::path::PathBuf;
 
-
+mod blocks;
 #[path = "registry/runtime.rs"]
 mod runtime;
-mod blocks;
-pub use blocks::{BlockId, AIR, BlockDef};
+pub use blocks::{AIR, BlockDef, BlockId};
 mod content_magic;
-pub use content_magic::{MaterialClass, MaterialVector, ArcaneDisposition, ArcaneContentDef, ObservationDef, DiscoveryItemDef, DiscoveryFixtureDef, EcologyRole, ArcaneEcologyKind, EcologySource, ReproductionMode, EcologyHarvestClass, ArcaneEcologyDef, ArcaneSiteRule, SalvageDef, RetrogenPolicy};
+pub use content_magic::{
+    ArcaneContentDef, ArcaneDisposition, ArcaneEcologyDef, ArcaneEcologyKind, ArcaneSiteRule,
+    DiscoveryFixtureDef, DiscoveryItemDef, EcologyHarvestClass, EcologyRole, EcologySource,
+    MaterialClass, MaterialVector, ObservationDef, ReproductionMode, RetrogenPolicy, SalvageDef,
+};
 mod items;
-pub use items::{ItemId, ToolKind, NUTRIENTS, FoodDef, ArmorSlot, BowDef, ItemDef};
+pub use items::{ArmorSlot, BowDef, FoodDef, ItemDef, ItemId, NUTRIENTS, ToolKind};
 mod fauna;
-pub use fauna::{ModelBox, ProjectileDef, AttackKind, AttackDef, BehaviorArchetype, ArchetypeParams, RusherDef, TankDef, SniperDef, SupportDef, SwarmDef, ControllerDef, PhaserDef, ShieldDef, NestDef, RawNestToml, BuilderDef, HackDef, AnimalDef, AquaticHabitatDef};
+pub use fauna::{
+    AnimalDef, AquaticHabitatDef, ArchetypeParams, AttackDef, AttackKind, BehaviorArchetype,
+    BuilderDef, ControllerDef, HackDef, ModelBox, NestDef, PhaserDef, ProjectileDef, RawNestToml,
+    RusherDef, ShieldDef, SniperDef, SupportDef, SwarmDef, TankDef,
+};
 mod narrative;
-pub use narrative::{NpcDef, DialogueDef, ScriptHook, DialogueNode, DialogueChoice, QuestDef, QuestObjective, SettlementTier, SettlementDef, SettlementNeed, QuestReward, GateDef};
+pub use narrative::{
+    DialogueChoice, DialogueDef, DialogueNode, GateDef, NpcDef, QuestDef, QuestObjective,
+    QuestReward, ScriptHook, SettlementDef, SettlementNeed, SettlementTier,
+};
 mod recipes;
-pub use recipes::{Ingredient, RecipeDef, SmeltDef, ForgeSalvageDef, BloomeryDef, WorkedDef, KilnDef};
+pub use recipes::{
+    BloomeryDef, ForgeSalvageDef, Ingredient, KilnDef, RecipeDef, SmeltDef, WorkedDef,
+};
 mod structures;
-pub use structures::{VeinShape, OreFeature, LootEntry, StructureDef, PieceConnector, PieceMarker, PieceChest, PieceDef, PoolEntry, PoolDef, TerrainAdaptation, AssemblyDef, DungeonDef};
-mod policy;
-mod placeholders;
-mod schema;
-mod loading;
-mod reading;
-mod publication;
+pub use structures::{
+    AssemblyDef, DungeonDef, LootEntry, OreFeature, PieceChest, PieceConnector, PieceDef,
+    PieceMarker, PoolDef, PoolEntry, StructureDef, TerrainAdaptation, VeinShape,
+};
 mod assets;
+mod loading;
+mod placeholders;
+mod policy;
+mod publication;
+mod reading;
+mod schema;
 pub use publication::{ContentErrors, load_validated};
 mod linking;
 pub use loading::load;
 pub const WORLD_API_VERSION: u32 = 2;
-pub use schema::NestFileToml;
+mod arcane_validation;
+mod ecology_validation;
 mod material_graph;
 mod salvage;
-mod ecology_validation;
-mod arcane_validation;
 
 #[derive(Clone, Debug)]
 pub struct ModInfo {

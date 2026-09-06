@@ -1,23 +1,30 @@
 //! Wand in the ordered graphical action pipeline.
 
-use crate::game::Game;
-use crate::world::TerrainRead;
 use crate::audio::Sfx;
+use crate::game::Game;
+use crate::game::LocalWorkingChannel;
 use crate::identity;
 use crate::net;
 use crate::raycast;
-use crate::game::LocalWorkingChannel;
+use crate::world::TerrainRead;
 
 impl Game {
-
-    pub(in crate::game) fn interact_wand(&mut self, dt: f32, hit: Option<&raycast::PlanetHit>) -> bool {
+    pub(in crate::game) fn interact_wand(
+        &mut self,
+        dt: f32,
+        hit: Option<&raycast::PlanetHit>,
+    ) -> bool {
         use crate::workings::{WorkingIntent, WorkingTargetIntent};
 
         let left_range = if self.multiplayer.remote.is_none() {
             self.interaction.working.as_ref().and_then(|channel| {
                 let source = self.player.pos.block()?;
                 (channel.stable_id != 0
-                    && !self.runtime.local().world.wand_working_reachable_from(channel.stable_id, source))
+                    && !self
+                        .runtime
+                        .local()
+                        .world
+                        .wand_working_reachable_from(channel.stable_id, source))
                 .then_some(channel.stable_id)
             })
         } else {
@@ -25,7 +32,11 @@ impl Game {
         };
         if let Some(stable_id) = left_range {
             self.interaction.working = None;
-            let mut cue = self.runtime.local().world.working_cues()
+            let mut cue = self
+                .runtime
+                .local()
+                .world
+                .working_cues()
                 .into_iter()
                 .find(|cue| cue.stable_id == stable_id);
             match self.runtime.local_mut().world.interrupt_working(stable_id) {
@@ -70,7 +81,11 @@ impl Game {
                     intent: WorkingIntent::Cancel,
                 });
             } else if channel.stable_id != 0
-                && let Err(error) = self.runtime.local_mut().world.interrupt_working(channel.stable_id)
+                && let Err(error) = self
+                    .runtime
+                    .local_mut()
+                    .world
+                    .interrupt_working(channel.stable_id)
             {
                 self.toast(error);
             }
@@ -117,15 +132,25 @@ impl Game {
                 });
             } else if channel.stable_id != 0 {
                 let completion = if channel.working_id == "base:fieldmend" {
-                    self.runtime.local_mut().world.complete_inventory_working(channel.stable_id, &mut self.inventory)
+                    self.runtime
+                        .local_mut()
+                        .world
+                        .complete_inventory_working(channel.stable_id, &mut self.inventory)
                 } else {
-                    self.runtime.local_mut().world.release_working(channel.stable_id)
+                    self.runtime
+                        .local_mut()
+                        .world
+                        .release_working(channel.stable_id)
                 };
                 match completion {
                     Ok(result) => {
                         if result.phase == Some(crate::workings::WorkingPhase::PendingApply) {
                             match self.save_player() {
-                                Ok(()) => match self.runtime.local_mut().world.finish_inventory_working(channel.stable_id)
+                                Ok(()) => match self
+                                    .runtime
+                                    .local_mut()
+                                    .world
+                                    .finish_inventory_working(channel.stable_id)
                                 {
                                     Ok(finished) => self.toast(finished.message),
                                     Err(error) => self.toast(error),
@@ -169,16 +194,23 @@ impl Game {
         let eye = self.player.eye();
         let forward = self.camera.local_forward().normalize_or_zero();
         let reach = self.reach();
-        let entity_target = self.runtime.view().projectiles()
+        let entity_target = self
+            .runtime
+            .view()
+            .projectiles()
             .iter()
             .map(|projectile| (projectile.pos, projectile.stable_id, 0.45))
             .chain(
-                self.runtime.view().loose_items()
+                self.runtime
+                    .view()
+                    .loose_items()
                     .iter()
                     .map(|item| (item.pos, item.stable_id, 0.35)),
             )
             .filter_map(|(pos, stable_id, radius)| {
-                if stable_id == 0 { return None; }
+                if stable_id == 0 {
+                    return None;
+                }
                 let delta = eye.local_delta_to(pos);
                 let along = delta.dot(forward);
                 (along > 0.0 && along <= reach && (delta - forward * along).length() <= radius)
@@ -214,7 +246,11 @@ impl Game {
             let definition = self.content.reg.block(block);
             if definition.interaction.as_deref() == Some("discovery_lab")
                 && (self.multiplayer.remote.is_some()
-                    || self.runtime.local().world.holdfast_mounted_target_at(hit.block))
+                    || self
+                        .runtime
+                        .local()
+                        .world
+                        .holdfast_mounted_target_at(hit.block))
             {
                 // The client identifies only the physical mount. Its hidden
                 // sample contents remain host-owned and are validated by the
@@ -349,7 +385,11 @@ impl Game {
             );
             match result {
                 Ok(result) => {
-                    if let Some(cue) = self.runtime.local().world.working_cues()
+                    if let Some(cue) = self
+                        .runtime
+                        .local()
+                        .world
+                        .working_cues()
                         .into_iter()
                         .find(|cue| cue.stable_id == result.stable_id)
                     {

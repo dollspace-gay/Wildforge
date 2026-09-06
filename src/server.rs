@@ -165,7 +165,8 @@ impl Server {
             if self.time_of_day < before {
                 self.world.advance_calendar_day();
             }
-            self.world.set_simulation_clock(Server::clock_of(self.world.day(), self.time_of_day));
+            self.world
+                .set_simulation_clock(Server::clock_of(self.world.day(), self.time_of_day));
         }
         if !all_deep {
             self.tick_overworld_nature(dt, events);
@@ -537,7 +538,8 @@ impl Server {
     pub fn sleep_to_dawn(&mut self) {
         self.time_of_day = 0.3;
         self.world.advance_calendar_day();
-        self.world.set_simulation_clock(Server::clock_of(self.world.day(), self.time_of_day));
+        self.world
+            .set_simulation_clock(Server::clock_of(self.world.day(), self.time_of_day));
     }
 
     /// Sync the tier tracker (world load / forced ire) so the next tick

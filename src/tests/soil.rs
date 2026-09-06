@@ -155,7 +155,7 @@ fn fallow_fields_recover_and_winter_is_the_soils_turn() {
     );
     // A winter twin recovers faster over the same ticks.
     let mut ww = test_world_with("fallow-winter", reg.clone());
-    ww.day = 3 * crate::world::SEASON_DAYS;
+    ww.set_calendar_day(3 * crate::world::SEASON_DAYS);
     let hw = ww.surface_height(4, 4);
     for x in 0..16 {
         for z in 0..16 {

@@ -1,7 +1,7 @@
 //! Magic and content qualification command adapters.
 
-use std::path::PathBuf;
 use crate::{identity, magic_qualification, mod_lint};
+use std::path::PathBuf;
 
 pub(super) fn magic(args: &[String], i: usize) {
     let Some(world) = args.get(i + 1).map(PathBuf::from) else {

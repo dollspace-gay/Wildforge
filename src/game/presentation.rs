@@ -1,8 +1,8 @@
 //! Cosmetic state, deterministic cosmetic variation, particles, and gait.
 
-use glam::Vec3;
-use crate::{config, lights, particles, world};
 use crate::inventory::HOTBAR_SLOTS;
+use crate::{config, lights, particles, world};
+use glam::Vec3;
 
 /// Cosmetic animation, particles, transient feedback, and light selection.
 pub(super) struct PresentationState {
@@ -122,14 +122,11 @@ impl PresentationState {
 
     /// Advance a remote player's walk phase from their motion.
     pub(super) fn gait_for(&mut self, id: u32, pos: Vec3, dt: f32) -> (f32, f32) {
-        let e = self.player_gait
-            .entry(id)
-            .or_insert((pos, 0.0));
+        let e = self.player_gait.entry(id).or_insert((pos, 0.0));
         let hspeed = Vec3::new(pos.x - e.0.x, 0.0, pos.z - e.0.z).length() / dt.max(0.001);
         e.0 = pos;
         let amp = (hspeed / 3.5).clamp(0.0, 1.0);
         e.1 += hspeed * dt * 3.2;
         (e.1, amp)
     }
-
 }

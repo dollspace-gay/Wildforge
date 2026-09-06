@@ -1,8 +1,10 @@
 //! Ward workings transaction coordination.
 
+use super::inside_ward;
+use super::ward_radius;
 use crate::arcane::ArcaneOwner;
-use crate::planet::BlockPos;
 use crate::arcane::Current;
+use crate::planet::BlockPos;
 use crate::workings::PhysicalDebit;
 use crate::workings::PhysicalDebitKind;
 use crate::workings::WorkingEffect;
@@ -10,8 +12,6 @@ use crate::workings::WorkingPhase;
 use crate::workings::WorkingResult;
 use crate::workings::WorkingTargetSnapshot;
 use crate::world::World;
-use super::inside_ward;
-use super::ward_radius;
 
 impl World {
     /// Validate a closed, degree-two conductor loop around the controller and

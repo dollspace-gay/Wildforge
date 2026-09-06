@@ -1,7 +1,7 @@
 //! Deterministic spherical sites, rotations, and nearest-site lookup.
 
-use glam::DVec3;
 use crate::planet_atlas::mix64;
+use glam::DVec3;
 
 pub(super) fn dvec(array: [f32; 3]) -> DVec3 {
     DVec3::new(

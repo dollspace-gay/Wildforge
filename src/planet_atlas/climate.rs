@@ -1,29 +1,40 @@
 //! Climate normals and one owned, transactional whole-planet weather state.
 
-use std::collections::BTreeMap;
+use super::{
+    AtlasError, AtlasGrid, AtlasPos, DynamicCell, DynamicLayers, FluxInbox, PlanetAtlas,
+    ReservoirMass, SparseAquiferState, SpringState, SurfaceReservoirState, WaterCell,
+    WaterCycleState, WaterLedger,
+};
 use crate::planet::SurfacePos;
-use super::{AtlasGrid, AtlasPos, AtlasError, PlanetAtlas, DynamicLayers, DynamicCell, WaterCell, WaterCycleState, ReservoirMass, SparseAquiferState, SurfaceReservoirState, SpringState, FluxInbox, WaterLedger};
+#[cfg(test)]
+pub(crate) use basins::take_river_baseflow;
+use std::collections::BTreeMap;
+#[cfg(test)]
+pub(crate) use transport::chart_vector;
 
 mod solar;
-pub use solar::{rotation_axis, prime_meridian, solar_declination, solar_direction, day_length_hours, daily_mean_insolation, local_season, latitude_longitude};
+pub use solar::{
+    daily_mean_insolation, day_length_hours, latitude_longitude, local_season, prime_meridian,
+    rotation_axis, solar_declination, solar_direction,
+};
 mod circulation;
-mod transport;
-pub(crate) use transport::chart_vector;
 mod moisture;
 mod normals;
+mod transport;
 pub(crate) use normals::generate_climate;
 mod weather_types;
-pub use weather_types::{LocalWeather, PrecipitationForm, LocalWeatherSample, WeatherStepReport, RunoffTransport};
-mod ecology;
-mod custody;
-mod industrial;
+pub use weather_types::{
+    LocalWeather, LocalWeatherSample, PrecipitationForm, RunoffTransport, WeatherStepReport,
+};
 mod basins;
-pub(crate) use basins::take_river_baseflow;
+mod custody;
+mod ecology;
 mod groundwater;
 mod hour_cell;
 mod hour_commit;
+mod industrial;
 mod sampling;
-pub use sampling::{seasonal_scalar, seasonal_vector, weather_sample, dynamic_water_total};
+pub use sampling::{dynamic_water_total, seasonal_scalar, seasonal_vector, weather_sample};
 
 pub const CLIMATE_SEASONS: usize = 4;
 pub const YEAR_DAYS: u32 = 144;
@@ -144,7 +155,8 @@ impl PlanetaryWeather {
         });
         self.cells_swapped = false;
         self.scratch.values_mut().fill(DynamicCell::default());
-        self.water_scratch.values_mut()
+        self.water_scratch
+            .values_mut()
             .clone_from_slice(self.water.cells.values());
         self.water_inbound.fill(ReservoirMass::default());
         self.surface_fluxes.clear();

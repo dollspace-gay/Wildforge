@@ -100,6 +100,14 @@ impl DeviceState {
             desired_maximum_frame_latency: 2,
         };
         surface.configure(&device, &config);
-        Self { surface, device, queue, config, adapter_name, adapter_backend, adapter_hardware }
+        Self {
+            surface,
+            device,
+            queue,
+            config,
+            adapter_name,
+            adapter_backend,
+            adapter_hardware,
+        }
     }
 }

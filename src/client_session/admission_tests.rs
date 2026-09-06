@@ -8,7 +8,7 @@ use super::{Admission, AdmissionError, PresentationRequirement};
 use crate::chunk::ChunkPos;
 use crate::planet::{EntityPos, Face};
 use crate::registry;
-use crate::world::World;
+use crate::world::{ReplicaWorld, ReplicationTarget, TerrainRead};
 
 fn spawn() -> EntityPos {
     EntityPos::new(Face::PosZ, 100.0, 80.0, 100.0).unwrap()
@@ -180,14 +180,7 @@ fn activity_retains_the_existing_idle_timeout_without_timing_out_active_sessions
 fn rejected_chunk_payloads_cannot_count_as_decoded_entry_terrain() {
     let reg = Arc::new(registry::load(Path::new("/nonexistent-mods-dir")));
     let center = spawn().chunk().unwrap();
-    let directory = std::env::temp_dir().join(format!(
-        "wildforge-admission-rejected-chunks-{}",
-        std::process::id()
-    ));
-    // Remote worlds never save; this unique absent path is only a cache identity.
-    assert!(!directory.exists());
-    let mut world = World::new(1, directory, reg);
-    world.set_remote(true);
+    let mut world = ReplicaWorld::new(1, reg, 0.0);
     for requirement in [
         PresentationRequirement::TerrainOnly,
         PresentationRequirement::FirstFrame,

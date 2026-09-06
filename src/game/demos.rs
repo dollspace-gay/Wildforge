@@ -10,11 +10,11 @@
 //! Nothing here runs unless the matching environment variable is set, so an
 //! ordinary session pays one function call for the lot.
 
+use crate::chunk::ChunkPos;
 use crate::game::Game;
 use crate::inventory::ItemStack;
-use crate::registry::{ItemId, Registry};
 use crate::planet::{BlockPos, EntityPos, Face, SurfacePos};
-use crate::chunk::ChunkPos;
+use crate::registry::{ItemId, Registry};
 use glam::Vec3;
 
 /// Face-local drafting coordinates for capture scenes. Scene descriptions use
@@ -207,7 +207,9 @@ impl Game {
         self.stage_capture_flight(spawn, chart);
         self.stage_capture_edifice(spawn);
         self.stage_capture_fire(spawn, chart);
-        if self.stage_capture_lava(spawn, chart) { return; }
+        if self.stage_capture_lava(spawn, chart) {
+            return;
+        }
         self.stage_capture_furnace(spawn, chart);
         if (std::env::var("WILDFORGE_DEMO_IMPLEMENTS").is_ok()
             || std::env::var("WILDFORGE_DEMO_WORKINGS").is_ok())
@@ -224,22 +226,21 @@ impl Game {
             self.stage_planet_qualification(&scene);
         }
     }
-
 }
 
-mod flow;
-mod overrides;
-mod ecology;
-mod lighting;
-mod bounce;
-mod trade;
-mod stewardship;
-mod mill;
-mod materials;
-mod industry;
-mod animals;
-mod storage;
-mod landmarks;
 mod alchemy;
+mod animals;
+mod bounce;
+mod ecology;
+mod flow;
 mod implements;
+mod industry;
+mod landmarks;
+mod lighting;
+mod materials;
+mod mill;
+mod overrides;
 mod planet;
+mod stewardship;
+mod storage;
+mod trade;

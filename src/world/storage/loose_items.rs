@@ -23,7 +23,9 @@ impl World {
             version: u32,
             drop: Vec<StoredDrop>,
         }
-        let drop = self.population.loose_items()
+        let drop = self
+            .population
+            .loose_items()
             .iter()
             .filter(|item| item.stable_id != 0 && item.count != 0)
             .map(|item| StoredDrop {

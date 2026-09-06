@@ -1,10 +1,10 @@
 //! Trace gleam workings transaction coordination.
 
+use super::working_distance;
 use crate::planet::BlockPos;
 use crate::workings::WorkingEffect;
 use crate::workings::WorkingResult;
 use crate::world::World;
-use super::working_distance;
 
 impl World {
     /// Begin the harmless sensing working. The active transaction itself is

@@ -4,25 +4,25 @@
 //! interpolation) -> cave carving (cheese + spaghetti) -> slope/altitude-aware
 //! surface rules -> data-driven ores -> biome vegetation -> bedrock.
 
-mod shape;
 mod caves;
-mod surface;
-mod water;
-mod minerals;
-mod vegetation;
-mod structures;
 mod landmarks;
+mod minerals;
+mod shape;
+mod structures;
+mod surface;
+mod vegetation;
+mod water;
 pub use landmarks::{heart_form, heart_height};
 
 mod geography;
 pub(crate) use geography::Geography;
-mod queries;
+mod context;
+mod density;
 mod hydrology;
 #[cfg(test)]
 mod prospecting;
-mod density;
+mod queries;
 mod strata;
-mod context;
 
 use std::sync::Arc;
 
@@ -379,7 +379,10 @@ impl Generator {
         if pos.face().is_deep() {
             return Chunk::new();
         }
-        let shape::ShapedTerrain { chunk: mut c, columns } = self.shape(pos);
+        let shape::ShapedTerrain {
+            chunk: mut c,
+            columns,
+        } = self.shape(pos);
         self.carve(pos, &mut c, &columns.top);
         let surface = self.apply_surface(pos, &mut c, &columns);
         self.plant_pipe(&mut c, pos, &surface.heights);
@@ -397,5 +400,4 @@ impl Generator {
         c.modified = false;
         c
     }
-
 }

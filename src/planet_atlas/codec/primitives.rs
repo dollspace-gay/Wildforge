@@ -1,6 +1,6 @@
 //! Bounded little-endian field readers and writers.
 
-use crate::planet_atlas::{AtlasError};
+use crate::planet_atlas::AtlasError;
 
 pub(in crate::planet_atlas) struct ByteReader<'a> {
     bytes: &'a [u8],

@@ -1,14 +1,16 @@
 //! Finite lake budgets and acyclic reservoir outlet resolution.
 
-use std::collections::VecDeque;
-use crate::planet::FACE_BLOCKS;
-use crate::planet_atlas::{AtlasGrid, AtlasPos, BasinKind, ClimateCell, GeometryCell, TectonicCell, mix64};
 use super::LakeRecord;
 use super::flood::neighbors8_indices;
 use super::flow::{FlowAccumulation, receiver_path_reaches};
 use super::lake_candidates::{lake_candidates, lake_class};
 use super::records::{generated_word, storage_curve};
 use super::runoff::infiltration_fraction;
+use crate::planet::FACE_BLOCKS;
+use crate::planet_atlas::{
+    AtlasGrid, AtlasPos, BasinKind, ClimateCell, GeometryCell, TectonicCell, mix64,
+};
+use std::collections::VecDeque;
 
 pub(super) struct LakeSolution {
     pub(super) records: Vec<LakeRecord>,

@@ -1,8 +1,13 @@
 //! One ordered pass over dense layers and finite water reservoirs.
 
-use crate::chunk::{SEA_LEVEL};
-use crate::planet::{geodesic_distance};
-use crate::planet_atlas::{AtlasPos, BedrockFamily, BoundaryClass, HABITAT_AQUATIC_BRACKISH, HABITAT_AQUATIC_FRESH, HABITAT_AQUATIC_SALT, HABITAT_NAMES, HABITAT_OASIS, HABITAT_RIPARIAN, HABITAT_SPRING, HABITAT_WETLAND, HYDRO_DELTA, HYDRO_ESTUARY, HYDRO_FLOODPLAIN, HYDRO_RIVER, HYDRO_WETLAND, PlanetAtlas};
+use crate::chunk::SEA_LEVEL;
+use crate::planet::geodesic_distance;
+use crate::planet_atlas::{
+    AtlasPos, BedrockFamily, BoundaryClass, HABITAT_AQUATIC_BRACKISH, HABITAT_AQUATIC_FRESH,
+    HABITAT_AQUATIC_SALT, HABITAT_NAMES, HABITAT_OASIS, HABITAT_RIPARIAN, HABITAT_SPRING,
+    HABITAT_WETLAND, HYDRO_DELTA, HYDRO_ESTUARY, HYDRO_FLOODPLAIN, HYDRO_RIVER, HYDRO_WETLAND,
+    PlanetAtlas,
+};
 use std::collections::{BTreeMap, BTreeSet};
 
 pub(super) struct DenseCensus {
@@ -94,13 +99,21 @@ impl DenseCensus {
         for (pos, geometry) in atlas.genesis.geometry.iter() {
             let area = f64::from(geometry.physical_area);
             physical_area += area;
-            let terrain = atlas.genesis.terrain.get(pos).expect("matching atlas grids");
+            let terrain = atlas
+                .genesis
+                .terrain
+                .get(pos)
+                .expect("matching atlas grids");
             let tectonics = atlas
                 .genesis
                 .tectonics
                 .get(pos)
                 .expect("matching atlas grids");
-            let climate = atlas.genesis.climate.get(pos).expect("matching atlas grids");
+            let climate = atlas
+                .genesis
+                .climate
+                .get(pos)
+                .expect("matching atlas grids");
             let hydrology = atlas
                 .genesis
                 .hydrology

@@ -1,17 +1,15 @@
 //! Planet capture scene construction.
 
-use crate::world::TerrainRead;
-use crate::chunk::SEA_LEVEL;
-use crate::registry::AIR;
-use crate::world;
-use glam::Vec3;
-use crate::game::Game;
-use crate::planet::{BlockPos, EntityPos, Face, SurfacePos};
 use super::DemoChart;
+use crate::chunk::SEA_LEVEL;
+use crate::game::Game;
+use crate::planet::{EntityPos, Face, SurfacePos};
+use crate::registry::AIR;
+use glam::Vec3;
 
 impl Game {
     /// Deterministic scenes used by the finite-planet visual gate.
-    pub(in crate::game) fn stage_planet_qualification(&mut self, scene: &str) {
+    pub(super) fn stage_planet_qualification(&mut self, scene: &str) {
         if matches!(scene, "sea" | "mountain") {
             let anchor = self.qualification_ocean();
             self.config.view_dist = 14;
@@ -51,7 +49,10 @@ impl Game {
         let center = chart.chunk(center_x, center_z);
         for du in -radius..=radius {
             for dv in -radius..=radius {
-                self.runtime.local_mut().world.ensure_chunk(center.offset(du, dv));
+                self.runtime
+                    .local_mut()
+                    .world
+                    .ensure_chunk(center.offset(du, dv));
             }
         }
         self.config.view_dist = 7;
@@ -176,7 +177,7 @@ impl Game {
         eprintln!("planet qualification {scene}: staged at the PosZ east seam");
     }
 
-    pub(in crate::game) fn qualification_ocean(&self) -> SurfacePos {
+    pub(super) fn qualification_ocean(&self) -> SurfacePos {
         for face in Face::ALL {
             for u in (128..crate::planet::FACE_BLOCKS).step_by(256) {
                 for v in (128..crate::planet::FACE_BLOCKS).step_by(256) {
@@ -192,7 +193,12 @@ impl Game {
                             .unwrap();
                             self.runtime.local().world.generator.biome_at(sample)
                                 == crate::worldgen::Biome::Ocean
-                                && self.runtime.local().world.generator.surface_estimate_at(sample)
+                                && self
+                                    .runtime
+                                    .local()
+                                    .world
+                                    .generator
+                                    .surface_estimate_at(sample)
                                     < SEA_LEVEL - 4
                         });
                     if deep {

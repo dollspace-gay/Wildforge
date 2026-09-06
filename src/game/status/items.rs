@@ -3,12 +3,11 @@
 use crate::audio;
 use crate::audio::Sfx;
 use crate::entity;
-use crate::inventory::HOTBAR_SLOTS;
-use crate::inventory::ItemStack;
-use crate::world;
-use glam::Vec3;
 use crate::game::Game;
 use crate::game::navigation::Screen;
+use crate::inventory::HOTBAR_SLOTS;
+use crate::inventory::ItemStack;
+use glam::Vec3;
 
 impl Game {
     pub(in crate::game) fn update_items(&mut self, _dt: f32) {

@@ -1,8 +1,8 @@
 //! Inventory helpers shared alchemy rules.
 
+use crate::alchemy::ProducedStack;
 use crate::inventory::Inventory;
 use crate::inventory::ItemStack;
-use crate::alchemy::ProducedStack;
 
 pub(super) fn take_count(
     inventory: &mut Inventory,
@@ -63,4 +63,3 @@ pub(super) fn take_exact_slot(
         .take_one_stack(slot)
         .ok_or("The input changed before it could be reserved.".into())
 }
-

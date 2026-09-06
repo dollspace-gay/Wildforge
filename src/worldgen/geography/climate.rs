@@ -1,11 +1,11 @@
 //! Climate and biome classification from immutable atlas/noise inputs.
 
-use super::super::{Biome, Climate, Tectonics, CENTROIDS};
+#[cfg(test)]
+use super::super::hash2;
+use super::super::{Biome, CENTROIDS, Climate, Tectonics};
 use super::Geography;
 use crate::chunk::SEA_LEVEL;
 use crate::planet::{Direction4, SurfacePos, step4};
-#[cfg(test)]
-use super::super::hash2;
 #[cfg(test)]
 use noise::NoiseFn;
 
@@ -287,5 +287,4 @@ impl Geography {
         }
         best
     }
-
 }

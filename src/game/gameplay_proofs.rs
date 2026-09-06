@@ -87,14 +87,20 @@ fn depot_case(game: &mut Game, name: &str, item_name: &str, held: u32, staged: u
     for x in 6..=10 {
         for z in 6..=12 {
             for y in 200..=204 {
-                game.runtime.local_mut().world.set_block_at(crate::planet::BlockPos::of_world(x, y, z).unwrap(), AIR);
+                game.runtime
+                    .local_mut()
+                    .world
+                    .set_block_at(crate::planet::BlockPos::of_world(x, y, z).unwrap(), AIR);
             }
         }
     }
     assert!(game.runtime.local_mut().world.place_block_at(pos, depot));
     if staged > 0 {
         assert_eq!(
-            game.runtime.local_mut().world.depot_deposit(pos, &ItemStack::new(&reg, item, staged)),
+            game.runtime
+                .local_mut()
+                .world
+                .depot_deposit(pos, &ItemStack::new(&reg, item, staged)),
             staged
         );
     }

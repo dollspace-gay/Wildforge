@@ -1,8 +1,8 @@
 //! Charm migration implements transaction coordination.
 
-use crate::world::BlockEntity;
-use crate::planet::BlockPos;
 use crate::inventory::ItemStack;
+use crate::planet::BlockPos;
+use crate::world::BlockEntity;
 use crate::world::World;
 
 impl World {

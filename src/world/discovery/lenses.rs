@@ -1,8 +1,8 @@
 //! Lenses discovery transaction coordination.
 
-use crate::planet::BlockPos;
 use crate::discovery::CalibrationGrade;
 use crate::inventory::ItemStack;
+use crate::planet::BlockPos;
 use crate::world::World;
 
 impl World {

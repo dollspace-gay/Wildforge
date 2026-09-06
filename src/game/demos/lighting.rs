@@ -1,17 +1,15 @@
 //! Lighting capture scene construction.
 
-use crate::world::TerrainRead;
+use super::DemoChart;
+use crate::game::Game;
 use crate::lights;
+use crate::planet::EntityPos;
 use crate::registry::AIR;
-use crate::world;
 use crate::world::World;
 use glam::Vec3;
-use crate::game::Game;
-use crate::planet::{BlockPos, EntityPos, Face, SurfacePos};
-use super::DemoChart;
 
 impl Game {
-    pub(in crate::game) fn stage_capture_colored_shadows(&mut self, spawn: EntityPos, chart: DemoChart) {
+    pub(super) fn stage_capture_colored_shadows(&mut self, spawn: EntityPos, chart: DemoChart) {
         // Dev: a ring of torches near spawn (lighting verification).
         if std::env::var("WILDFORGE_DEMO_TORCH").is_ok()
             && let Some(torch) = self.content.reg.block_id("base:torch")
@@ -36,13 +34,27 @@ impl Game {
                 // A neutral grey floor reads colored light far better than grass.
                 for dx in -8..=8 {
                     for dz in -6..=8 {
-                        demo_set!(self.runtime.local_mut().world, chart, bx + dx, y, bz + dz, stone);
+                        demo_set!(
+                            self.runtime.local_mut().world,
+                            chart,
+                            bx + dx,
+                            y,
+                            bz + dz,
+                            stone
+                        );
                     }
                 }
                 // Two pillars as occluders.
                 for px in [-2i32, 2] {
                     for h in 1..=3 {
-                        demo_set!(self.runtime.local_mut().world, chart, bx + px, y + h, bz, stone);
+                        demo_set!(
+                            self.runtime.local_mut().world,
+                            chart,
+                            bx + px,
+                            y + h,
+                            bz,
+                            stone
+                        );
                     }
                 }
             }
@@ -56,7 +68,7 @@ impl Game {
         }
     }
 
-    pub(in crate::game) fn stage_capture_room(&mut self, spawn: EntityPos, chart: DemoChart) {
+    pub(super) fn stage_capture_room(&mut self, spawn: EntityPos, chart: DemoChart) {
         // Dev: an enclosed cobblestone room with a 1-wide door and a 2x2 east
         // window, for eyeballing interior lighting — the sky occlusion (walls go
         // dark away from the openings) and the cascaded-shadow sunbeam that
@@ -72,24 +84,59 @@ impl Game {
                         let shell =
                             dx == -4 || dx == 4 || dz == -4 || dz == 4 || dy == 0 || dy == 6;
                         let b = if shell { stone } else { AIR };
-                        demo_set!(self.runtime.local_mut().world, chart, bx + dx, fy + dy, bz + dz, b);
+                        demo_set!(
+                            self.runtime.local_mut().world,
+                            chart,
+                            bx + dx,
+                            fy + dy,
+                            bz + dz,
+                            b
+                        );
                     }
                 }
             }
             // A 1-wide, 2-tall door in the +z wall.
-            demo_set!(self.runtime.local_mut().world, chart, bx, fy + 1, bz + 4, AIR);
-            demo_set!(self.runtime.local_mut().world, chart, bx, fy + 2, bz + 4, AIR);
+            demo_set!(
+                self.runtime.local_mut().world,
+                chart,
+                bx,
+                fy + 1,
+                bz + 4,
+                AIR
+            );
+            demo_set!(
+                self.runtime.local_mut().world,
+                chart,
+                bx,
+                fy + 2,
+                bz + 4,
+                AIR
+            );
             // A 2x2 window high in the +x (east) wall — the morning sun throws
             // a bright quad onto the floor that tracks across it.
             for wy in 3..=4 {
                 for wz in -1..=0 {
-                    demo_set!(self.runtime.local_mut().world, chart, bx + 4, fy + wy, bz + wz, AIR);
+                    demo_set!(
+                        self.runtime.local_mut().world,
+                        chart,
+                        bx + 4,
+                        fy + wy,
+                        bz + wz,
+                        AIR
+                    );
                 }
             }
             if std::env::var("WILDFORGE_DEMO_ROOM").as_deref() == Ok("torch")
                 && let Some(torch) = self.content.reg.block_id("base:torch")
             {
-                demo_set!(self.runtime.local_mut().world, chart, bx + 2, fy + 1, bz, torch);
+                demo_set!(
+                    self.runtime.local_mut().world,
+                    chart,
+                    bx + 2,
+                    fy + 1,
+                    bz,
+                    torch
+                );
             }
             // Stand the player inside (this world has a saved position).
             self.player.pos = self
@@ -105,7 +152,7 @@ impl Game {
         }
     }
 
-    pub(in crate::game) fn stage_capture_point_lights(&mut self, spawn: EntityPos, chart: DemoChart) {
+    pub(super) fn stage_capture_point_lights(&mut self, spawn: EntityPos, chart: DemoChart) {
         // Dev: two pillars on a grey floor lit by a blue and a red dynamic
         // point light (sharp per-light shadows). Pair with
         // WILDFORGE_AMBIENT=0.05,0.05,0.05 for stark contrast.
@@ -117,12 +164,26 @@ impl Game {
             if let Some(stone) = stone {
                 for dx in -9..=9 {
                     for dz in -7..=9 {
-                        demo_set!(self.runtime.local_mut().world, chart, bx + dx, y, bz + dz, stone);
+                        demo_set!(
+                            self.runtime.local_mut().world,
+                            chart,
+                            bx + dx,
+                            y,
+                            bz + dz,
+                            stone
+                        );
                     }
                 }
                 for px in [-2i32, 2] {
                     for h in 1..=3 {
-                        demo_set!(self.runtime.local_mut().world, chart, bx + px, y + h, bz, stone);
+                        demo_set!(
+                            self.runtime.local_mut().world,
+                            chart,
+                            bx + px,
+                            y + h,
+                            bz,
+                            stone
+                        );
                     }
                 }
             }
@@ -148,14 +209,17 @@ impl Game {
         }
     }
 
-    pub(in crate::game) fn stage_capture_camp(&mut self, spawn: EntityPos, chart: DemoChart) {
+    pub(super) fn stage_capture_camp(&mut self, spawn: EntityPos, chart: DemoChart) {
         if std::env::var("WILDFORGE_DEMO_CAMP").is_ok() {
             let b = |n: &str| self.content.reg.block_id(n);
             let bx = spawn.x as i32;
             let bz = spawn.z as i32;
             for dx in [-8i32, 0, 8] {
                 for dz in [-8i32, 0, 8] {
-                    self.runtime.local_mut().world.ensure_chunk(chart.chunk(bx + dx, bz + dz));
+                    self.runtime
+                        .local_mut()
+                        .world
+                        .ensure_chunk(chart.chunk(bx + dx, bz + dz));
                 }
             }
             if let (Some(log), Some(torch)) = (b("base:log"), b("base:torch")) {
@@ -192,10 +256,9 @@ impl Game {
                 self.give_dev_item(&reg, t, 5);
             }
         }
-
     }
 
-    pub(in crate::game) fn stage_capture_torch_room(&mut self, spawn: EntityPos, chart: DemoChart) {
+    pub(super) fn stage_capture_torch_room(&mut self, spawn: EntityPos, chart: DemoChart) {
         // Dev: an enclosed torch-lit room — the full static pipeline
         // (mesher emitters -> promotion -> cached cube shadows), with two
         // pillars to throw hard shadows and a red-glazed alcove (stained
@@ -213,7 +276,10 @@ impl Game {
             // writes into missing chunks vanish, leaving open walls.
             for dx in [-8i32, 0, 8] {
                 for dz in [-8i32, 0, 8] {
-                    self.runtime.local_mut().world.ensure_chunk(chart.chunk(bx + dx, bz + dz));
+                    self.runtime
+                        .local_mut()
+                        .world
+                        .ensure_chunk(chart.chunk(bx + dx, bz + dz));
                 }
             }
             let yf = (-7..=7)
@@ -223,7 +289,14 @@ impl Game {
                 .unwrap_or(spawn.y as i32);
             for dx in -7..=7i32 {
                 for dz in -7..=7i32 {
-                    demo_set!(self.runtime.local_mut().world, chart, bx + dx, yf, bz + dz, stone);
+                    demo_set!(
+                        self.runtime.local_mut().world,
+                        chart,
+                        bx + dx,
+                        yf,
+                        bz + dz,
+                        stone
+                    );
                     let wall = dx.abs() == 7 || dz.abs() == 7;
                     for h in 1..=8 {
                         let b = if (wall && h <= 3) || h == 4 {
@@ -232,17 +305,38 @@ impl Game {
                             AIR
                         };
                         let b = if h > 4 { AIR } else { b };
-                        demo_set!(self.runtime.local_mut().world, chart, bx + dx, yf + h, bz + dz, b);
+                        demo_set!(
+                            self.runtime.local_mut().world,
+                            chart,
+                            bx + dx,
+                            yf + h,
+                            bz + dz,
+                            b
+                        );
                     }
                 }
             }
             for px in [-3i32, 3] {
                 for h in 1..=3 {
-                    demo_set!(self.runtime.local_mut().world, chart, bx + px, yf + h, bz + 3, stone);
+                    demo_set!(
+                        self.runtime.local_mut().world,
+                        chart,
+                        bx + px,
+                        yf + h,
+                        bz + 3,
+                        stone
+                    );
                 }
             }
             for (tx, tz) in [(-6i32, -6i32), (6, -6), (0, 6)] {
-                demo_set!(self.runtime.local_mut().world, chart, bx + tx, yf + 1, bz + tz, torch);
+                demo_set!(
+                    self.runtime.local_mut().world,
+                    chart,
+                    bx + tx,
+                    yf + 1,
+                    bz + tz,
+                    torch
+                );
             }
             // A red-glazed alcove: torch sealed behind a stained pane —
             // its pool outside should come out the color of the glass.
@@ -251,10 +345,38 @@ impl Game {
                 demo_set!(self.runtime.local_mut().world, chart, ax, yf + 1, az, stone);
                 demo_set!(self.runtime.local_mut().world, chart, ax, yf + 2, az, torch);
                 demo_set!(self.runtime.local_mut().world, chart, ax, yf + 3, az, stone);
-                demo_set!(self.runtime.local_mut().world, chart, ax - 1, yf + 2, az, stone);
-                demo_set!(self.runtime.local_mut().world, chart, ax + 1, yf + 2, az, stone);
-                demo_set!(self.runtime.local_mut().world, chart, ax, yf + 2, az - 1, stone);
-                demo_set!(self.runtime.local_mut().world, chart, ax, yf + 2, az + 1, rg);
+                demo_set!(
+                    self.runtime.local_mut().world,
+                    chart,
+                    ax - 1,
+                    yf + 2,
+                    az,
+                    stone
+                );
+                demo_set!(
+                    self.runtime.local_mut().world,
+                    chart,
+                    ax + 1,
+                    yf + 2,
+                    az,
+                    stone
+                );
+                demo_set!(
+                    self.runtime.local_mut().world,
+                    chart,
+                    ax,
+                    yf + 2,
+                    az - 1,
+                    stone
+                );
+                demo_set!(
+                    self.runtime.local_mut().world,
+                    chart,
+                    ax,
+                    yf + 2,
+                    az + 1,
+                    rg
+                );
             }
             // Stand in the room, whatever the terrain wanted.
             let inside = Vec3::new(bx as f32 + 0.5, yf as f32 + 1.2, bz as f32 + 0.5);
@@ -268,10 +390,9 @@ impl Game {
                 self.give_dev_item(&reg, t, 5);
             }
         }
-
     }
 
-    pub(in crate::game) fn stage_capture_colored_light(&mut self, spawn: EntityPos, chart: DemoChart) {
+    pub(super) fn stage_capture_colored_light(&mut self, spawn: EntityPos, chart: DemoChart) {
         // Dev: a warm torch and a red ruby block side by side (colored-light
         // verification — pools of warm and red that blend where they meet).
         if std::env::var("WILDFORGE_DEMO_COLORLIGHT").is_ok() {
@@ -287,7 +408,7 @@ impl Game {
         }
     }
 
-    pub(in crate::game) fn stage_capture_pillars(&mut self, spawn: EntityPos, chart: DemoChart) {
+    pub(super) fn stage_capture_pillars(&mut self, spawn: EntityPos, chart: DemoChart) {
         // Dev: a few tall pillars near spawn (shadow-casting verification).
         if std::env::var("WILDFORGE_DEMO_PILLARS").is_ok()
             && let Some(stone) = self.content.reg.block_id("base:cobblestone")

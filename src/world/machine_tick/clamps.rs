@@ -1,15 +1,16 @@
 //! Clamps machine_tick transaction coordination.
 
+use crate::planet::BlockPos;
 use crate::registry::AIR;
 use crate::world::BlockEntity;
-use crate::planet::BlockPos;
 use crate::world::CLAMP_SECS_PER_LOG;
 use crate::world::World;
 
 impl World {
     /// Smolder every clamp; venting burns the exposed log away.
     pub(in crate::world) fn tick_clamps(&mut self, dt: f32) {
-        let keys: Vec<BlockPos> = self.installations
+        let keys: Vec<BlockPos> = self
+            .installations
             .iter()
             .filter(|(_, e)| matches!(e, BlockEntity::Clamp(_)))
             .map(|(k, _)| *k)

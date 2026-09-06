@@ -1,8 +1,11 @@
 //! Country record lookup and dense partition consistency.
 
-use crate::chunk::{SEA_LEVEL};
+use super::{
+    BIOME_OCEAN, BIOME_SCHEMA_VERSION, BiomeModel, CountryRecord, HABITAT_AQUATIC_BRACKISH,
+    HABITAT_AQUATIC_FRESH, HABITAT_AQUATIC_SALT,
+};
+use crate::chunk::SEA_LEVEL;
 use crate::planet_atlas::{ATLAS_FACE_SIDE, AtlasError, AtlasGrid, BiomeCell, TerrainCell};
-use super::{BIOME_OCEAN, BIOME_SCHEMA_VERSION, BiomeModel, CountryRecord, HABITAT_AQUATIC_BRACKISH, HABITAT_AQUATIC_FRESH, HABITAT_AQUATIC_SALT};
 
 impl BiomeModel {
     pub fn country(&self, id: u16) -> Option<&CountryRecord> {

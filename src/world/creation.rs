@@ -1,8 +1,8 @@
 //! Creation and compatibility adapters.
 
-use std::{fs, sync::Arc};
-use crate::registry::Registry;
 use super::{World, write_world_meta};
+use crate::registry::Registry;
+use std::{fs, sync::Arc};
 
 /// Create a complete production world off to the side and publish it with a
 /// single directory rename. The browser therefore never sees `world.toml`
@@ -28,9 +28,8 @@ pub fn create_world_atomic(
     cancel: &crate::planet_atlas::CancellationToken,
     mut progress: impl FnMut(WorldCreationProgress),
 ) -> std::io::Result<()> {
-    reg.validate().map_err(|error| {
-        std::io::Error::new(std::io::ErrorKind::InvalidData, error)
-    })?;
+    reg.validate()
+        .map_err(|error| std::io::Error::new(std::io::ErrorKind::InvalidData, error))?;
     if destination.exists() {
         return Err(std::io::Error::new(
             std::io::ErrorKind::AlreadyExists,
@@ -204,4 +203,3 @@ pub(crate) fn create_qualification_world_from_atlas(
         Some((reg, &mut progress)),
     )
 }
-

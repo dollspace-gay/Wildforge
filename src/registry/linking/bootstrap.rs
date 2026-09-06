@@ -1,6 +1,6 @@
 //! Empty content graph and engine-owned sentinel definitions.
 
-use crate::registry::{Registry, BlockDef, BlockId, AIR, MaterialClass, MaterialVector};
+use crate::registry::{AIR, BlockDef, BlockId, MaterialClass, MaterialVector, Registry};
 use std::collections::{BTreeMap, HashMap};
 
 pub(super) fn empty() -> Registry {

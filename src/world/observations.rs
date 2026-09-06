@@ -30,7 +30,9 @@ impl ReplicaObservations {
         if self.weather_side == 0 {
             return None;
         }
-        self.weather.get(&AtlasPos::from_surface(position, self.weather_side)).copied()
+        self.weather
+            .get(&AtlasPos::from_surface(position, self.weather_side))
+            .copied()
     }
 
     pub(crate) fn set_arcane_cue(
@@ -43,28 +45,41 @@ impl ReplicaObservations {
         self.arcane_dominant = dominant.min(crate::arcane::BASE_RESONANCES.len() as u8);
         self.ecology = ecology.map(|(mut text, damped)| {
             let mut end = text.len().min(240);
-            while !text.is_char_boundary(end) { end -= 1; }
+            while !text.is_char_boundary(end) {
+                end -= 1;
+            }
             text.truncate(end);
             (text, damped)
         });
     }
 
-    pub(crate) fn arcane_bands(&self) -> [u8; 2] { self.arcane_bands }
-    pub(crate) fn arcane_dominant(&self) -> u8 { self.arcane_dominant }
+    pub(crate) fn arcane_bands(&self) -> [u8; 2] {
+        self.arcane_bands
+    }
+    pub(crate) fn arcane_dominant(&self) -> u8 {
+        self.arcane_dominant
+    }
 
     pub(crate) fn ecology(&self) -> Option<EcologyObservation> {
-        self.ecology.as_ref().map(|(text, damped)| EcologyObservation {
-            text: text.clone(), damped: *damped,
-        })
+        self.ecology
+            .as_ref()
+            .map(|(text, damped)| EcologyObservation {
+                text: text.clone(),
+                damped: *damped,
+            })
     }
 
     pub(crate) fn charge(&self, id: u64) -> Option<u64> {
-        if id == 0 { return None; }
+        if id == 0 {
+            return None;
+        }
         self.charges.get(&id).copied()
     }
 
     pub(crate) fn set_charge(&mut self, id: u64, units: u64) {
-        if id != 0 { self.charges.insert(id, units); }
+        if id != 0 {
+            self.charges.insert(id, units);
+        }
     }
 
     pub(crate) fn implement(&self, id: u64) -> Option<&ImplementPublicState> {
@@ -78,40 +93,31 @@ impl ReplicaObservations {
     }
 
     pub(crate) fn extend_charges(&mut self, charges: Vec<(u64, u64)>) {
-        self.charges.extend(charges.into_iter().filter(|(id, _)| *id != 0));
+        self.charges
+            .extend(charges.into_iter().filter(|(id, _)| *id != 0));
     }
 
     pub(crate) fn extend_implements(&mut self, states: Vec<ImplementPublicState>) {
-        self.implements.extend(states.into_iter()
-            .filter(|state| state.instance_id != 0).map(|state| (state.instance_id, state)));
+        self.implements.extend(
+            states
+                .into_iter()
+                .filter(|state| state.instance_id != 0)
+                .map(|state| (state.instance_id, state)),
+        );
     }
 
     pub(crate) fn extend_apparatus(&mut self, cues: Vec<ApparatusCue>) {
-        self.apparatus.extend(cues.into_iter().take(128).map(|cue| (cue.pos, cue)));
+        self.apparatus
+            .extend(cues.into_iter().take(128).map(|cue| (cue.pos, cue)));
     }
 
     pub(crate) fn apparatus_near(&self, observer: EntityPos, radius: f32) -> Vec<ApparatusCue> {
         let radius = radius.clamp(1.0, 96.0);
-        self.apparatus.values().copied()
+        self.apparatus
+            .values()
+            .copied()
             .filter(|cue| observer.distance_to(cue.pos.entity_center()) <= radius)
-            .take(128).collect()
-    }
-
-    #[cfg(test)]
-    pub(crate) fn replace_charges(&mut self, charges: Vec<(u64, u64)>) {
-        self.charges.clear();
-        self.extend_charges(charges);
-    }
-
-    #[cfg(test)]
-    pub(crate) fn replace_implements(&mut self, states: Vec<ImplementPublicState>) {
-        self.implements.clear();
-        self.extend_implements(states);
-    }
-
-    #[cfg(test)]
-    pub(crate) fn replace_apparatus(&mut self, cues: Vec<ApparatusCue>) {
-        self.apparatus.clear();
-        self.extend_apparatus(cues);
+            .take(128)
+            .collect()
     }
 }

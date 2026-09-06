@@ -1,7 +1,7 @@
 //! Ecological water exchanges respect the in-flight weather cursor.
 
-use crate::planet_atlas::AtlasPos;
 use super::PlanetaryWeather;
+use crate::planet_atlas::AtlasPos;
 
 impl PlanetaryWeather {
     /// Soil water visible to an ecology update even while a sliced climate
@@ -24,7 +24,10 @@ impl PlanetaryWeather {
         let index = pos.index(self.water.cells.side());
         let in_scratch = self.active_hour.is_some() && index < self.cursor;
         let (water, atmosphere) = if in_scratch {
-            (&mut self.water_scratch.values_mut()[index], &mut self.scratch.values_mut()[index])
+            (
+                &mut self.water_scratch.values_mut()[index],
+                &mut self.scratch.values_mut()[index],
+            )
         } else {
             (
                 &mut self.water.cells.values_mut()[index],

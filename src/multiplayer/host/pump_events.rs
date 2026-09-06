@@ -76,6 +76,5 @@ impl HostSession {
         for (id, resident, total) in progress {
             self.net.send(id, &S2C::EntryProgress { resident, total });
         }
-
     }
 }

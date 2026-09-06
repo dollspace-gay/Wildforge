@@ -1,10 +1,17 @@
 //! Join for the authoritative host session.
 
-use super::{AuthenticatedJoin, DisplayName, HostFx, HostSession, ModerationStore, PendingGuest, ProfileStore, Refusal, RefusalCode, S2C, Server, net, shares_principal};
+use super::{
+    AuthenticatedJoin, DisplayName, HostFx, HostSession, ModerationStore, PendingGuest,
+    ProfileStore, Refusal, RefusalCode, S2C, Server, net, shares_principal,
+};
 
 impl HostSession {
-
-    pub(super) fn on_join(&mut self, server: &mut Server, join: AuthenticatedJoin, _fx: &mut Vec<HostFx>) {
+    pub(super) fn on_join(
+        &mut self,
+        server: &mut Server,
+        join: AuthenticatedJoin,
+        _fx: &mut Vec<HostFx>,
+    ) {
         let AuthenticatedJoin {
             id,
             display_name,

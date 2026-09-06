@@ -1,7 +1,7 @@
 //! Equipment graphical containers adapter.
 
-use crate::net;
 use crate::game::Game;
+use crate::net;
 
 impl Game {
     pub(in crate::game) fn armor_click(&mut self, i: usize) {

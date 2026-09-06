@@ -1,15 +1,13 @@
 //! Landmarks capture scene construction.
 
-use crate::world::TerrainRead;
 use crate::chunk::ChunkPos;
-use crate::chunk::SEA_LEVEL;
-use crate::world;
-use glam::Vec3;
 use crate::game::Game;
-use crate::planet::{BlockPos, EntityPos, Face, SurfacePos};
+use crate::planet::{EntityPos, SurfacePos};
+use crate::world::TerrainRead;
+use glam::Vec3;
 
 impl Game {
-    pub(in crate::game) fn stage_capture_edifice(&mut self, spawn: EntityPos) {
+    pub(super) fn stage_capture_edifice(&mut self, spawn: EntityPos) {
         // Dev: fly to the nearest country's heart and look at what
         // stands over it. WILDFORGE_DEMO_EDIFICE=<n> steps outward
         // through neighbouring provinces, so each family can be seen.
@@ -33,11 +31,15 @@ impl Game {
                     acc
                 });
             if let Some(&site) = sites.get(skip) {
-                let ed = crate::edifice::edifice_of(self.runtime.local().world.generator.biome_at(site));
+                let ed =
+                    crate::edifice::edifice_of(self.runtime.local().world.generator.biome_at(site));
                 let center = ChunkPos::from_surface(site);
                 for cx in -3..=3 {
                     for cz in -3..=3 {
-                        self.runtime.local_mut().world.ensure_chunk(center.offset(cx, cz));
+                        self.runtime
+                            .local_mut()
+                            .world
+                            .ensure_chunk(center.offset(cx, cz));
                     }
                 }
                 let base = self.runtime.view().surface_height_at(site);

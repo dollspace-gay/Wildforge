@@ -106,7 +106,14 @@ impl Player {
         world.registry().is_fluid(b)
     }
 
-    pub fn update(&mut self, world: &(impl TerrainRead + ?Sized), input: &Input, flat_fwd: Vec3, right: Vec3, dt: f32) {
+    pub fn update(
+        &mut self,
+        world: &(impl TerrainRead + ?Sized),
+        input: &Input,
+        flat_fwd: Vec3,
+        right: Vec3,
+        dt: f32,
+    ) {
         self.frame_rotation = QuarterTurn::IDENTITY;
         self.in_water = self.body_in_water(world);
 

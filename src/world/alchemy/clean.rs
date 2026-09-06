@@ -1,21 +1,21 @@
 //! Clean alchemy transaction coordination.
 
+use super::add_materials;
+use super::produced;
+use super::result_for;
+use super::take_exact_slot;
 use crate::alchemy::AlchemyAuditEvent;
 use crate::alchemy::AlchemyCueKind;
 use crate::alchemy::AlchemyRequest;
 use crate::alchemy::AlchemyResult;
 use crate::arcane::ArcaneOwner;
-use crate::planet::BlockPos;
 use crate::arcane::Current;
-use crate::planet_atlas::HYDRO_UNITS_PER_BLOCK;
 use crate::inventory::Inventory;
+use crate::planet::BlockPos;
+use crate::planet_atlas::HYDRO_UNITS_PER_BLOCK;
 use crate::planet_atlas::ReservoirMass;
 use crate::planet_atlas::WaterClass;
 use crate::world::World;
-use super::add_materials;
-use super::produced;
-use super::result_for;
-use super::take_exact_slot;
 
 impl World {
     pub(super) fn alchemy_clean(
@@ -177,7 +177,9 @@ impl World {
         let residue_water = batch_snapshot
             .as_ref()
             .map_or_else(ReservoirMass::default, |batch| batch.residue_water);
-        let cleaning_water = self.weather_state.live()
+        let cleaning_water = self
+            .weather_state
+            .live()
             .ok_or("Cleaning needs the authoritative planetary water cycle.")?
             .preview_portable_exchange_to_runoff(
                 atlas_pos,
@@ -262,7 +264,9 @@ impl World {
                 .record_consumption(&consumed_materials)
                 .map_err(|error| error.to_string())?;
         }
-        let moved = self.weather_state.live_mut()
+        let moved = self
+            .weather_state
+            .live_mut()
             .and_then(|weather| {
                 weather.portable_exchange_to_runoff(
                     atlas_pos,

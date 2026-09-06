@@ -3,8 +3,8 @@
 use super::{Source, WorldView};
 use crate::entity::ItemEntity;
 use crate::mobs::{Mob, Projectile};
-use crate::world::{FallingBlock, SceneRead};
 use crate::world::local_structure::{LocalStructure, LocalStructureId};
+use crate::world::{FallingBlock, SceneRead};
 
 impl<'a> WorldView<'a> {
     pub(crate) fn mobs(&self) -> &'a [Mob] {
@@ -13,11 +13,15 @@ impl<'a> WorldView<'a> {
             Source::Replica(world) => world.mobs(),
         }
     }
-    pub(crate) fn mob(&self, index: usize) -> Option<&'a Mob> { self.mobs().get(index) }
+    pub(crate) fn mob(&self, index: usize) -> Option<&'a Mob> {
+        self.mobs().get(index)
+    }
     pub(crate) fn mob_by_id(&self, id: u32) -> Option<&'a Mob> {
         self.mobs().iter().find(|mob| mob.id == id)
     }
-    pub(crate) fn mob_count(&self) -> usize { self.mobs().len() }
+    pub(crate) fn mob_count(&self) -> usize {
+        self.mobs().len()
+    }
     pub(crate) fn projectiles(&self) -> &'a [Projectile] {
         match self.source {
             Source::Authority(world) => world.projectiles(),
@@ -43,7 +47,9 @@ impl<'a> WorldView<'a> {
         }
     }
     pub(crate) fn local_structure(&self, id: LocalStructureId) -> Option<&'a LocalStructure> {
-        self.structures().iter().find(|structure| structure.id == id)
+        self.structures()
+            .iter()
+            .find(|structure| structure.id == id)
     }
     pub(crate) fn npc_by_mob(&self, id: u32) -> Option<&'a crate::npc::NpcInstance> {
         match self.source {
@@ -62,7 +68,10 @@ impl<'a> WorldView<'a> {
 }
 
 impl WorldView<'_> {
-    pub(crate) fn dungeon_checkpoint_for(&self, position: crate::planet::EntityPos) -> Option<crate::planet::EntityPos> {
+    pub(crate) fn dungeon_checkpoint_for(
+        &self,
+        position: crate::planet::EntityPos,
+    ) -> Option<crate::planet::EntityPos> {
         match self.source {
             Source::Authority(world) => world.dungeon_checkpoint_for(position),
             Source::Replica(_) => None,

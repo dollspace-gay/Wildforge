@@ -6,12 +6,12 @@
 
 use crate::world::TerrainRead;
 
-use crate::chunk::CHUNK_X;
-use crate::chunk::ChunkPos;
-use crate::mesher;
 use super::GEN_BUDGET;
 use super::Game;
 use super::navigation::Screen;
+use crate::chunk::CHUNK_X;
+use crate::chunk::ChunkPos;
+use crate::mesher;
 use crate::terrain_jobs::Priority;
 
 impl Game {
@@ -64,7 +64,10 @@ impl Game {
                 .count()
         });
         pending
-            + self.runtime.view().dirty_chunks()
+            + self
+                .runtime
+                .view()
+                .dirty_chunks()
                 .into_iter()
                 .filter(|position| {
                     self.chunk_mesh_ready(*position, center, vd)
@@ -145,7 +148,10 @@ impl Game {
                             &prepared.revision,
                         ) {
                             for (dx, dz) in [(-1, 0), (1, 0), (0, -1), (0, 1)] {
-                                self.runtime.local_mut().world.mark_chunk_dirty(pos.offset(dx, dz));
+                                self.runtime
+                                    .local_mut()
+                                    .world
+                                    .mark_chunk_dirty(pos.offset(dx, dz));
                             }
                         }
                     }
@@ -168,7 +174,10 @@ impl Game {
             for (_, pos) in wanted.into_iter().take(GEN_BUDGET) {
                 self.runtime.local_mut().world.ensure_chunk(pos);
                 for (dx, dz) in [(-1, 0), (1, 0), (0, -1), (0, 1)] {
-                    self.runtime.local_mut().world.mark_chunk_dirty(pos.offset(dx, dz));
+                    self.runtime
+                        .local_mut()
+                        .world
+                        .mark_chunk_dirty(pos.offset(dx, dz));
                 }
             }
         }
@@ -226,7 +235,10 @@ impl Game {
             Vec::new()
         };
         for (position, mesh) in completed_meshes {
-            let still_current = self.runtime.view().chunk(position)
+            let still_current = self
+                .runtime
+                .view()
+                .chunk(position)
                 .is_some_and(|chunk| !chunk.dirty);
             if !still_current {
                 continue;
@@ -247,7 +259,10 @@ impl Game {
         // circular residency set still has an outer boundary; neighbors beyond
         // the negotiated radius are deliberately sampled as air, so the ring
         // that used to remain invisible forever is meshed exactly once.
-        let mut dirty: Vec<(i32, ChunkPos)> = self.runtime.view().dirty_chunks()
+        let mut dirty: Vec<(i32, ChunkPos)> = self
+            .runtime
+            .view()
+            .dirty_chunks()
             .into_iter()
             .map(|p| (p.distance(center) as i32, p))
             .collect();

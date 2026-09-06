@@ -1,26 +1,27 @@
 //! Vessel tick implements transaction coordination.
 
-use crate::arcane::ArcaneOwner;
-use std::collections::BTreeMap;
-use crate::world::BlockEntity;
-use crate::planet::BlockPos;
-use crate::arcane::Current;
-use crate::arcane::DrossMedium;
-use crate::implements::ImplementAuditEvent;
-use crate::implements::ImplementKind;
-use crate::inventory::ItemStack;
-use crate::arcane::LinkedFileReplacement;
-use crate::world::World;
 use super::add_current;
 use super::all_neighbors;
 use super::transaction_from_maps;
+use crate::arcane::ArcaneOwner;
+use crate::arcane::Current;
+use crate::arcane::DrossMedium;
+use crate::arcane::LinkedFileReplacement;
+use crate::implements::ImplementAuditEvent;
+use crate::implements::ImplementKind;
+use crate::inventory::ItemStack;
+use crate::planet::BlockPos;
+use crate::world::BlockEntity;
+use crate::world::World;
+use std::collections::BTreeMap;
 
 impl World {
     /// Bounded physical upkeep for placed charge vessels. The server calls
     /// this once per five seconds, so a no-magic world pays one cheap empty
     /// block-entity scan at that cadence rather than work on every 30 Hz tick.
     pub fn tick_implements(&mut self, cursor: &mut usize) {
-        let mut vessel_positions: Vec<BlockPos> = self.installations
+        let mut vessel_positions: Vec<BlockPos> = self
+            .installations
             .iter()
             .filter_map(|(&pos, entity)| {
                 matches!(entity, BlockEntity::ChargeVessel(_)).then_some(pos)

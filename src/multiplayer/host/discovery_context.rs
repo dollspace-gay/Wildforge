@@ -2,7 +2,6 @@
 
 use super::{BlockEntity, BlockPos, EntityPos, Guest, REACH, Vec3, World, net};
 
-
 pub(super) fn discovery_reachable(world: &World, guest: &Guest, pos: BlockPos) -> bool {
     discovery_reachable_from(world, guest.pos, pos)
 }
@@ -79,7 +78,11 @@ pub(super) fn discovery_holder_id(
     }
 }
 
-pub(super) fn discovery_holder_capacity(world: &World, guest: &Guest, holder: net::RecordHolderSnap) -> usize {
+pub(super) fn discovery_holder_capacity(
+    world: &World,
+    guest: &Guest,
+    holder: net::RecordHolderSnap,
+) -> usize {
     match holder {
         net::RecordHolderSnap::Folio { .. } => crate::discovery::SURVEY_FOLIO_RECORDS,
         net::RecordHolderSnap::Inventory { slot } => {

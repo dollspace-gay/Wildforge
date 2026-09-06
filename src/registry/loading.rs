@@ -1,8 +1,12 @@
 //! Parse mod files, order providers, and build a fresh registry without publishing it.
 
-use super::{ModInfo, Registry, RetrogenPolicy, WORLD_API_VERSION};
 use super::linking::build;
-use super::schema::{AliasesFile, AnimalsFile, ArcaneFile, BlocksFile, DialogueFile, FeaturesFile, ItemsFile, ModToml, ModesFile, NestFileToml, NpcsFile, PiecesFile, QuestsFile, RawMod, RecipesFile, StructuresFile, TagsFile};
+use super::schema::{
+    AliasesFile, AnimalsFile, ArcaneFile, BlocksFile, DialogueFile, FeaturesFile, ItemsFile,
+    ModToml, ModesFile, NestFileToml, NpcsFile, PiecesFile, QuestsFile, RawMod, RecipesFile,
+    StructuresFile, TagsFile,
+};
+use super::{ModInfo, Registry, RetrogenPolicy, WORLD_API_VERSION};
 use std::path::Path;
 
 const BASE_BLOCKS: &str = include_str!("../../base/blocks.toml");
@@ -75,8 +79,9 @@ fn parse_mod_dir(dir: &Path) -> Result<RawMod, String> {
             crate::workings::WORKINGS_SCHEMA_VERSION
         ));
     }
-    let preparations: crate::alchemy::PreparationsFile = toml::from_str(&read("preparations.toml")?)
-        .map_err(|e| format!("preparations.toml: {e}"))?;
+    let preparations: crate::alchemy::PreparationsFile =
+        toml::from_str(&read("preparations.toml")?)
+            .map_err(|e| format!("preparations.toml: {e}"))?;
     if preparations
         .schema_version
         .is_some_and(|version| version != crate::alchemy::PREPARATIONS_SCHEMA_VERSION)
@@ -94,8 +99,8 @@ fn parse_mod_dir(dir: &Path) -> Result<RawMod, String> {
         None
     };
     let machines = if let Some(text) = super::reading::optional(dir, "machines.toml")? {
-        let parsed: crate::machines::RawMachineToml = toml::from_str(&text)
-            .map_err(|error| format!("machines.toml: {error}"))?;
+        let parsed: crate::machines::RawMachineToml =
+            toml::from_str(&text).map_err(|error| format!("machines.toml: {error}"))?;
         if parsed
             .schema_version
             .is_some_and(|version| version != crate::machines::MACHINES_SCHEMA_VERSION)
@@ -118,8 +123,8 @@ fn parse_mod_dir(dir: &Path) -> Result<RawMod, String> {
         None
     };
     let screens = if let Some(text) = super::reading::optional(dir, "screens.toml")? {
-        let parsed: crate::screens::RawScreensToml = toml::from_str(&text)
-            .map_err(|error| format!("screens.toml: {error}"))?;
+        let parsed: crate::screens::RawScreensToml =
+            toml::from_str(&text).map_err(|error| format!("screens.toml: {error}"))?;
         if parsed
             .schema_version
             .is_some_and(|version| version != crate::screens::SCREENS_SCHEMA_VERSION)
@@ -140,7 +145,10 @@ fn parse_mod_dir(dir: &Path) -> Result<RawMod, String> {
                 .into(),
         );
     }
-    let has_script = dir.join("main.rhai").try_exists().map_err(|error| format!("main.rhai: {error}"))?;
+    let has_script = dir
+        .join("main.rhai")
+        .try_exists()
+        .map_err(|error| format!("main.rhai: {error}"))?;
     Ok(RawMod {
         info: ModInfo {
             id: m.id.clone(),
@@ -261,21 +269,21 @@ pub fn load(mods_dir: &Path) -> Registry {
     let mut failed: Vec<ModInfo> = Vec::new();
     match super::reading::mod_dirs(mods_dir) {
         Ok(dirs) => {
-        for dir in dirs {
-            match parse_mod_dir(&dir) {
-                Ok(r) => raws.push(r),
-                Err(e) => failed.push(ModInfo {
-                    id: dir.file_name().unwrap_or_default().to_string_lossy().into(),
-                    name: String::new(),
-                    version: String::new(),
-                    path: Some(dir),
-                    has_script: false,
-                    retrogen: None,
-                    error: Some(e),
-                }),
+            for dir in dirs {
+                match parse_mod_dir(&dir) {
+                    Ok(r) => raws.push(r),
+                    Err(e) => failed.push(ModInfo {
+                        id: dir.file_name().unwrap_or_default().to_string_lossy().into(),
+                        name: String::new(),
+                        version: String::new(),
+                        path: Some(dir),
+                        has_script: false,
+                        retrogen: None,
+                        error: Some(e),
+                    }),
+                }
             }
         }
-    }
         Err(error) => failed.push(ModInfo {
             id: "mods".into(),
             name: "Mod directory".into(),

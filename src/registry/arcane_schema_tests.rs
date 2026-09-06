@@ -1,8 +1,8 @@
-use super::{load, ArcaneDisposition, RecipeDef, Ingredient, MaterialVector};
 use super::arcane_validation::validate_arcane_graph;
 use super::linking::arcane_def;
-use std::collections::BTreeMap;
 use super::schema::ArcaneContentToml;
+use super::{ArcaneDisposition, Ingredient, MaterialVector, RecipeDef, load};
+use std::collections::BTreeMap;
 use std::path::Path;
 
 #[test]

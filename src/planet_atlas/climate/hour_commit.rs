@@ -1,7 +1,7 @@
 //! Commit one complete weather grid, reconcile stores, and prove conservation.
 
-use crate::planet_atlas::{PlanetAtlas, AtlasError, ReservoirMass, SurfaceReservoirState};
 use super::{PlanetaryWeather, WeatherStepReport, dynamic_water_total};
+use crate::planet_atlas::{AtlasError, PlanetAtlas, ReservoirMass, SurfaceReservoirState};
 
 impl PlanetaryWeather {
     pub(super) fn plan_surface_evaporation(&mut self, id: u64, requested_hu: u64) -> ReservoirMass {
@@ -31,8 +31,17 @@ impl PlanetaryWeather {
         entry.1.add_assign(mass).expect("surface flux fits u64");
     }
 
-    pub(super) fn finish_hour(&mut self, atlas: &PlanetAtlas, climate_hour: u64) -> Result<WeatherStepReport, AtlasError> {
-        for (cell, inbound) in self.water_scratch.values_mut().iter_mut().zip(&self.water_inbound) {
+    pub(super) fn finish_hour(
+        &mut self,
+        atlas: &PlanetAtlas,
+        climate_hour: u64,
+    ) -> Result<WeatherStepReport, AtlasError> {
+        for (cell, inbound) in self
+            .water_scratch
+            .values_mut()
+            .iter_mut()
+            .zip(&self.water_inbound)
+        {
             cell.runoff.add_assign(*inbound)?;
         }
         for (id, (debit, credit)) in std::mem::take(&mut self.surface_fluxes) {

@@ -1,11 +1,16 @@
 //! Fixed-width atmosphere checkpoints and completed-hour markers.
 
-use crate::planet_atlas::{AtlasError, AtlasGrid, DynamicCell, DynamicLayers};
+use crate::planet_atlas::codec::primitives::{
+    ByteReader, put_i16, put_i32, put_u16, put_u32, put_u64,
+};
 use crate::planet_atlas::codec::{DYNAMIC_PREFIX_BYTES, DYNAMIC_RECORD_BYTES, FILE_HEADER_BYTES};
-use crate::planet_atlas::codec::primitives::{ByteReader, put_i16, put_i32, put_u16, put_u32, put_u64};
-use crate::planet_atlas::grid::{atlas_count};
+use crate::planet_atlas::grid::atlas_count;
+use crate::planet_atlas::{AtlasError, AtlasGrid, DynamicCell, DynamicLayers};
 
-pub(in crate::planet_atlas) fn decode_dynamic(side: u16, payload: &[u8]) -> Result<DynamicLayers, AtlasError> {
+pub(in crate::planet_atlas) fn decode_dynamic(
+    side: u16,
+    payload: &[u8],
+) -> Result<DynamicLayers, AtlasError> {
     let count = atlas_count(side)?;
     if payload.len() != DYNAMIC_PREFIX_BYTES + count * DYNAMIC_RECORD_BYTES {
         return Err(AtlasError::Corrupt("dynamic payload width mismatch".into()));
@@ -33,7 +38,9 @@ pub(in crate::planet_atlas) fn decode_dynamic(side: u16, payload: &[u8]) -> Resu
     })
 }
 
-pub(in crate::planet_atlas) fn encode_dynamic(dynamic: &DynamicLayers) -> Result<Vec<u8>, AtlasError> {
+pub(in crate::planet_atlas) fn encode_dynamic(
+    dynamic: &DynamicLayers,
+) -> Result<Vec<u8>, AtlasError> {
     let mut out = Vec::with_capacity(
         DYNAMIC_PREFIX_BYTES + dynamic.cells.len() * DYNAMIC_RECORD_BYTES + FILE_HEADER_BYTES,
     );

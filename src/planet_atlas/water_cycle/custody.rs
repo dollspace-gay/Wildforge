@@ -1,7 +1,10 @@
 //! Detailed water debit/credit coordinated with reservoir commitments.
 
+use super::{
+    ReservoirMass, SurfaceReservoirKind, SurfaceReservoirState, WaterCycleState,
+    surface_reservoir_id,
+};
 use crate::planet_atlas::AtlasError;
-use super::{ReservoirMass, SurfaceReservoirKind, SurfaceReservoirState, WaterCycleState, surface_reservoir_id};
 
 impl WaterCycleState {
     pub fn reservoir_mut(&mut self, id: u64) -> Option<&mut SurfaceReservoirState> {

@@ -1,16 +1,16 @@
 //! Structures chunks transaction coordination.
 
-use crate::registry::AIR;
-use crate::world::BlockEntity;
-use crate::planet::BlockPos;
-use crate::world::CHEST_SLOTS;
 use crate::chunk::CHUNK_X;
 use crate::chunk::CHUNK_Y;
 use crate::chunk::CHUNK_Z;
-use crate::world::ChestState;
 use crate::chunk::ChunkPos;
-use crate::inventory::ItemStack;
 use crate::chunk::SEA_LEVEL;
+use crate::inventory::ItemStack;
+use crate::planet::BlockPos;
+use crate::registry::AIR;
+use crate::world::BlockEntity;
+use crate::world::CHEST_SLOTS;
+use crate::world::ChestState;
 use crate::world::World;
 
 impl World {

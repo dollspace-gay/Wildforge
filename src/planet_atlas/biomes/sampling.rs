@@ -1,8 +1,12 @@
 //! Read-only biome, country, and graft compatibility queries.
 
-use crate::planet::{SurfacePos};
+use super::{
+    BIOME_ARCTIC, BIOME_BADLANDS, BIOME_DESERT, BIOME_FOREST, BIOME_JUNGLE, BIOME_MOUNTAINS,
+    BIOME_SAVANNA, BIOME_SCRUBLAND, BIOME_TAIGA, BIOME_TUNDRA, CountryRecord, HABITAT_OASIS,
+    HABITAT_RIPARIAN,
+};
+use crate::planet::SurfacePos;
 use crate::planet_atlas::{HYDRO_FLOODPLAIN, HYDRO_RIVER, PlanetAtlas};
-use super::{BIOME_ARCTIC, BIOME_BADLANDS, BIOME_DESERT, BIOME_FOREST, BIOME_JUNGLE, BIOME_MOUNTAINS, BIOME_SAVANNA, BIOME_SCRUBLAND, BIOME_TAIGA, BIOME_TUNDRA, CountryRecord, HABITAT_OASIS, HABITAT_RIPARIAN};
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct AtlasBiomeSample {

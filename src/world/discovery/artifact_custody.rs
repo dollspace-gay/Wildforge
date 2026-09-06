@@ -1,10 +1,10 @@
 //! Artifact custody discovery transaction coordination.
 
-use crate::planet::BlockPos;
 use crate::discovery::CalibrationGrade;
 use crate::discovery::DiscoveryError;
-use crate::inventory::ItemStack;
 use crate::discovery::KnowledgeKind;
+use crate::inventory::ItemStack;
+use crate::planet::BlockPos;
 use crate::world::World;
 
 impl World {

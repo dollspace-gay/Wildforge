@@ -1,11 +1,11 @@
 //! Feeding machines transaction coordination.
 
-use crate::world::BlockEntity;
-use crate::planet::BlockPos;
 use crate::inventory::ItemStack;
+use crate::planet::BlockPos;
+use crate::world::BlockEntity;
 use crate::world::MachineInstance;
-use crate::world::multiblock::MachineKind;
 use crate::world::World;
+use crate::world::multiblock::MachineKind;
 
 impl World {
     /// Resolve a qualified machine id to its kind. Base ships all four of

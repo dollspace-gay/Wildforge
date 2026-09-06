@@ -4,7 +4,9 @@ use super::{C2S, EDITS_PER_SEC, HostSession, ItemStack, REACH, Server, refresh_h
 
 impl HostSession {
     pub(super) fn request_terrain(&mut self, server: &mut Server, id: u32, msg: C2S) {
-        let Some(guest) = self.guests.get_mut(&id) else { return; };
+        let Some(guest) = self.guests.get_mut(&id) else {
+            return;
+        };
         match msg {
             C2S::Break { pos } => {
                 if guest.pos.distance_to(pos.entity_center()) > REACH
@@ -15,7 +17,9 @@ impl HostSession {
                 guest.edits += 1;
                 let creative = server.world.mode == "creative";
                 let held = guest.inventory.slots[guest.hotbar].map(|stack| stack.item);
-                let Some(mined) = crate::player_ops::terrain::mine(&mut server.world, pos, held, creative) else {
+                let Some(mined) =
+                    crate::player_ops::terrain::mine(&mut server.world, pos, held, creative)
+                else {
                     return;
                 };
                 let result = mined.result;
@@ -93,7 +97,11 @@ impl HostSession {
                 }
                 let selected = guest.inventory.slots[guest.hotbar];
                 let creative = server.world.mode == "creative";
-                let Some(placement) = crate::player_ops::terrain::Placement::from_stack(&server.world.reg, selected) else { return; };
+                let Some(placement) =
+                    crate::player_ops::terrain::Placement::from_stack(&server.world.reg, selected)
+                else {
+                    return;
+                };
                 let overlaps = {
                     let player = crate::physics::Player::new_at(guest.pos);
                     player.overlaps_block_at(pos)

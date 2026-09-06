@@ -1,7 +1,7 @@
 //! Shared astronomical geometry with the established manifest axes.
 
+use super::{AXIAL_TILT_DEGREES, PRIME_MERIDIAN, ROTATION_AXIS, YEAR_DAYS};
 use glam::DVec3;
-use super::{AXIAL_TILT_DEGREES, ROTATION_AXIS, PRIME_MERIDIAN, YEAR_DAYS};
 
 #[inline]
 pub fn rotation_axis() -> DVec3 {

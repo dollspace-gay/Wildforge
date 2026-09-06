@@ -1,10 +1,10 @@
 //! Plate sites, craton fields, Euler motion, and boundary pair classification.
 
+use super::geometry::{arr, dvec, fibonacci_sites, nearest_two, unit_from_hash};
+use super::{CratonRecord, DetailedBoundary, LLOYD_PASSES, PlateRecord};
+use crate::planet_atlas::{AtlasGrid, GeometryCell, mix64};
 use glam::DVec3;
 use noise::{NoiseFn, Perlin};
-use crate::planet_atlas::{AtlasGrid, GeometryCell, mix64};
-use super::{PlateRecord, CratonRecord, DetailedBoundary, LLOYD_PASSES};
-use super::geometry::{dvec, arr, unit_from_hash, fibonacci_sites, nearest_two};
 
 pub(super) fn plate_sites(seed: u32, geometry: &AtlasGrid<GeometryCell>) -> Vec<PlateRecord> {
     let count = 16 + (mix64(u64::from(seed) ^ 0x504c_4154_4553) % 7) as usize;
@@ -38,7 +38,10 @@ pub(super) fn plate_sites(seed: u32, geometry: &AtlasGrid<GeometryCell>) -> Vec<
         .collect()
 }
 
-pub(super) fn plate_assignments(plates: &[PlateRecord], geometry: &AtlasGrid<GeometryCell>) -> Vec<u16> {
+pub(super) fn plate_assignments(
+    plates: &[PlateRecord],
+    geometry: &AtlasGrid<GeometryCell>,
+) -> Vec<u16> {
     let sites: Vec<_> = plates.iter().map(|plate| dvec(plate.site_unit)).collect();
     geometry
         .values()

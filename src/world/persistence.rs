@@ -23,9 +23,8 @@ impl World {
         cancel: &crate::planet_atlas::CancellationToken,
     ) -> std::io::Result<World> {
         super::preparation::check_cancelled(cancel)?;
-        reg.validate().map_err(|error| {
-            std::io::Error::new(std::io::ErrorKind::InvalidData, error)
-        })?;
+        reg.validate()
+            .map_err(|error| std::io::Error::new(std::io::ErrorKind::InvalidData, error))?;
         let mut existing = load_world_meta(&save_dir)?;
         storage::PaletteStore::validate_saved(&save_dir)?;
         let seed = existing.as_ref().map(|meta| meta.seed).unwrap_or_else(|| {

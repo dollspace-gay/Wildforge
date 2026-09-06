@@ -1,11 +1,14 @@
 //! Deterministic geological and climatic basin shaping.
 
-use crate::chunk::SEA_LEVEL;
-use crate::planet::geodesic_distance;
-use crate::planet_atlas::{AtlasError, AtlasGrid, AtlasPos, BasinKind, ClimateCell, GeometryCell, TectonicCell, CLIMATE_SEASONS, cell_hash};
 use super::flood::{neighbors8_indices, priority_flood};
 use super::flow::{accumulate_flow, edge_distance};
 use super::runoff::local_runoff;
+use crate::chunk::SEA_LEVEL;
+use crate::planet::geodesic_distance;
+use crate::planet_atlas::{
+    AtlasError, AtlasGrid, AtlasPos, BasinKind, CLIMATE_SEASONS, ClimateCell, GeometryCell,
+    TectonicCell, cell_hash,
+};
 
 pub(super) fn shape_supported_basins(
     seed: u32,

@@ -1,10 +1,10 @@
 //! Load population storage transaction coordination.
 
-use crate::planet::BlockPos;
 use crate::chunk::ChunkPos;
-use crate::world::Heart;
 use crate::inventory::ItemStack;
 use crate::mobs::Mob;
+use crate::planet::BlockPos;
+use crate::world::Heart;
 use crate::world::RegionCell;
 use crate::world::RevealKey;
 use crate::world::World;
@@ -114,7 +114,8 @@ impl World {
                     // The instance's mob_id must equal the companion Mob's
                     // stable id. Stamp it now instead of waiting for the lazy
                     // id pass in tick_mobs, so the two match immediately.
-                    self.population.attach_loaded_npc(&npc.clone(), def_idx, pos);
+                    self.population
+                        .attach_loaded_npc(&npc.clone(), def_idx, pos);
                 }
             }
         }
@@ -152,9 +153,11 @@ impl World {
                 }
             }
         }
-        self.calendar_state.long_winter() = fs::read(self.save_dir.join("longwinter"))
-            .map(|d| d.first() == Some(&b'1'))
-            .unwrap_or(false);
+        self.calendar_state.set_long_winter(
+            fs::read(self.save_dir.join("longwinter"))
+                .map(|d| d.first() == Some(&b'1'))
+                .unwrap_or(false),
+        );
         if let Ok(data) = fs::read(self.save_dir.join("bspent"))
             && let Some(body) = data.strip_prefix(b"WFS1")
         {

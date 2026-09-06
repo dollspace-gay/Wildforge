@@ -24,7 +24,10 @@ impl World {
         ledger.record_consumption(&total)
     }
 
-    pub(super) fn complete_material_operation(&mut self, operation: &crate::materials::MaterialOperation) {
+    pub(super) fn complete_material_operation(
+        &mut self,
+        operation: &crate::materials::MaterialOperation,
+    ) {
         // The voxel lands first. If the process stops after this write, the
         // pending operation replays exactly once on load. If the chunk write
         // fails, leave the journal unapplied: disk still owns the old voxel.
@@ -142,7 +145,10 @@ impl World {
         Ok(())
     }
 
-    pub(super) fn record_admin_block_entity_deletion(&mut self, entity: &BlockEntity) -> std::io::Result<()> {
+    pub(super) fn record_admin_block_entity_deletion(
+        &mut self,
+        entity: &BlockEntity,
+    ) -> std::io::Result<()> {
         for stack in Self::block_entity_stacks(entity) {
             self.record_admin_stack_deletion(stack)?;
         }

@@ -2,7 +2,6 @@
 
 use super::{Guest, World};
 
-
 pub(super) fn inspectable_arcane_items(
     world: &World,
     guest: &Guest,
@@ -64,4 +63,3 @@ pub(super) fn inspectable_arcane_items(
     apparatus.sort_by_key(|cue| cue.pos);
     (charges, implements, apparatus)
 }
-

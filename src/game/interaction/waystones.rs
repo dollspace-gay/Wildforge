@@ -1,11 +1,9 @@
 //! Waystones interaction adapter.
 
-use crate::world::TerrainRead;
-use crate::world;
 use crate::game::Game;
+use crate::world;
 
 impl Game {
-
     /// The attunement sidecar for the current world (local knowledge —
     /// what this player's feet have actually touched).
     pub(in crate::game) fn attune_path(&self) -> std::path::PathBuf {

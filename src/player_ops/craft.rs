@@ -49,7 +49,8 @@ pub(crate) fn take_result(
         if cursor.is_some() {
             return Err(CraftError::CursorFull);
         }
-        let retired = grid[repair.part_slot].into_iter()
+        let retired = grid[repair.part_slot]
+            .into_iter()
             .filter(|stack| stack.arcane_id != 0)
             .map(|stack| ItemStack { count: 1, ..stack })
             .collect();
@@ -71,17 +72,25 @@ pub(crate) fn take_result(
     let output = ItemStack::new(registry, recipe.output, recipe.count);
     let next_cursor = match *cursor {
         None => Some(output),
-        Some(held) if held.can_merge(registry, &output)
-            && held.count + output.count <= registry.item(held.item).max_stack =>
+        Some(held)
+            if held.can_merge(registry, &output)
+                && held.count + output.count <= registry.item(held.item).max_stack =>
         {
-            Some(ItemStack { count: held.count + output.count, ..held })
+            Some(ItemStack {
+                count: held.count + output.count,
+                ..held
+            })
         }
         _ => return Err(CraftError::CursorFull),
     };
     let effects = CraftEffects {
         kind: CraftKind::Recipe(recipe.output),
-        retired: grid.iter().flatten().filter(|stack| stack.arcane_id != 0)
-            .map(|stack| ItemStack { count: 1, ..*stack }).collect(),
+        retired: grid
+            .iter()
+            .flatten()
+            .filter(|stack| stack.arcane_id != 0)
+            .map(|stack| ItemStack { count: 1, ..*stack })
+            .collect(),
         loss: recipe.loss.clone(),
         byproducts: recipe.byproducts.clone(),
     };
@@ -113,17 +122,31 @@ impl CraftEffects {
                 world.retire_arcane_stack_at(position, stack, reason);
             }
         }
-        self.finish_outputs(&world.reg, world.material_ledger.as_mut(), position, inventory, overflow_reason)
+        self.finish_outputs(
+            &world.reg,
+            world.material_ledger.as_mut(),
+            position,
+            inventory,
+            overflow_reason,
+        )
     }
 
     /// The guest mirrors inventory byproducts without material or Current books.
-    pub(crate) fn finish_prediction(self, registry: &Registry, inventory: &mut Inventory) -> CraftKind {
+    pub(crate) fn finish_prediction(
+        self,
+        registry: &Registry,
+        inventory: &mut Inventory,
+    ) -> CraftKind {
         self.finish_outputs(registry, None, None, inventory, "")
     }
 
     fn finish_outputs(
-        self, registry: &Registry, mut ledger: Option<&mut crate::materials::MaterialLedger>,
-        position: Option<BlockPos>, inventory: &mut Inventory, overflow_reason: &str,
+        self,
+        registry: &Registry,
+        mut ledger: Option<&mut crate::materials::MaterialLedger>,
+        position: Option<BlockPos>,
+        inventory: &mut Inventory,
+        overflow_reason: &str,
     ) -> CraftKind {
         if let Some(ledger) = ledger.as_deref_mut()
             && let Err(error) = ledger.record_recipe_loss(&self.loss)
@@ -135,7 +158,8 @@ impl CraftEffects {
                 && let Some(ledger) = ledger.as_deref_mut()
             {
                 let materials = crate::materials::stack_materials(
-                    registry, ItemStack::new(registry, item, count),
+                    registry,
+                    ItemStack::new(registry, item, count),
                 );
                 if let Err(error) = ledger.record_secondary_output(&materials) {
                     eprintln!("materials: crafting secondary output failed: {error}");
@@ -145,7 +169,10 @@ impl CraftEffects {
             if remainder != 0
                 && let (Some(position), Some(ledger)) = (position, ledger.as_deref_mut())
                 && let Err(error) = ledger.bury_stack(
-                    registry, position, ItemStack::new(registry, item, remainder), overflow_reason,
+                    registry,
+                    position,
+                    ItemStack::new(registry, item, remainder),
+                    overflow_reason,
                 )
             {
                 eprintln!("materials: crafting byproduct salvage failed: {error}");

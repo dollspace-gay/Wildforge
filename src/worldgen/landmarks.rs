@@ -44,4 +44,3 @@ pub fn heart_height(form: &str) -> i32 {
         _ => 1,
     }
 }
-

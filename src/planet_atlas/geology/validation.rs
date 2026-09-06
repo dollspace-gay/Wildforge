@@ -1,9 +1,11 @@
 //! Validate geological manifests against the chosen immutable cell layers.
 
-use crate::planet_atlas::{TectonicCell, TerrainCell, ResourceCell, AtlasError, GEOLOGY_SCHEMA_VERSION, atlas_count};
-use crate::chunk::SEA_LEVEL;
-use super::{GeologyModel, VolcanoSource, DetailedBoundary};
 use super::volcanism::chamber_volume;
+use super::{DetailedBoundary, GeologyModel, VolcanoSource};
+use crate::chunk::SEA_LEVEL;
+use crate::planet_atlas::{
+    AtlasError, GEOLOGY_SCHEMA_VERSION, ResourceCell, TectonicCell, TerrainCell, atlas_count,
+};
 
 impl GeologyModel {
     pub(in crate::planet_atlas) fn validate(

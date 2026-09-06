@@ -1,10 +1,15 @@
 //! Authenticated knowledge request adapter.
 
-use super::{C2S, HostSession, S2C, Server, discovery_holder_at_writing_surface, discovery_holder_capacity, discovery_holder_id, discovery_reachable, net};
+use super::{
+    C2S, HostSession, S2C, Server, discovery_holder_at_writing_surface, discovery_holder_capacity,
+    discovery_holder_id, discovery_reachable, net,
+};
 
 impl HostSession {
     pub(super) fn request_knowledge(&mut self, server: &mut Server, id: u32, msg: C2S) {
-        let Some(guest) = self.guests.get_mut(&id) else { return; };
+        let Some(guest) = self.guests.get_mut(&id) else {
+            return;
+        };
         match msg {
             C2S::ReadKnowledge { slot } => {
                 let index = usize::from(slot);

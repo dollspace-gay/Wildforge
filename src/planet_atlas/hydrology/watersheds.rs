@@ -1,10 +1,10 @@
 //! Stable watershed labels and catchment records.
 
-use std::collections::BTreeMap;
-use crate::planet_atlas::{AtlasError, AtlasGrid, AtlasPos, GeometryCell, mix64};
 use super::WatershedRecord;
 use super::flow::topological_order;
 use super::records::generated_word;
+use crate::planet_atlas::{AtlasError, AtlasGrid, AtlasPos, GeometryCell, mix64};
+use std::collections::BTreeMap;
 
 pub(super) struct WatershedInput<'a> {
     pub(super) side: u16,

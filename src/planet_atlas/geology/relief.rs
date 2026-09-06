@@ -1,11 +1,11 @@
 //! Tectonic and volcanic relief, smoothing, sea-level quantiles, and connected land.
 
+use super::{DetailedBoundary, VolcanoRecord};
+use crate::chunk::SEA_LEVEL;
+use crate::planet::{FACE_BLOCKS, geodesic_distance};
+use crate::planet_atlas::{AtlasGrid, AtlasPos, GeometryCell, TectonicCell, TerrainCell};
 use std::cmp::Ordering as CmpOrdering;
 use std::collections::{BTreeSet, VecDeque};
-use crate::planet_atlas::{AtlasGrid, AtlasPos, GeometryCell, TectonicCell, TerrainCell};
-use crate::planet::{geodesic_distance, FACE_BLOCKS};
-use crate::chunk::SEA_LEVEL;
-use super::{DetailedBoundary, VolcanoRecord};
 
 pub(super) fn boundary_relief(cell: TectonicCell, cell_blocks: u16) -> f32 {
     let distance = f32::from(cell.boundary_distance) * f32::from(cell_blocks);
@@ -85,7 +85,11 @@ pub(super) fn smooth_scalar(side: u16, values: &[f32], passes: usize) -> Vec<f32
     current
 }
 
-pub(super) fn weighted_sea_level(raw: &[f32], geometry: &AtlasGrid<GeometryCell>, target_ocean: f64) -> f32 {
+pub(super) fn weighted_sea_level(
+    raw: &[f32],
+    geometry: &AtlasGrid<GeometryCell>,
+    target_ocean: f64,
+) -> f32 {
     let mut order: Vec<usize> = (0..raw.len()).collect();
     order.sort_unstable_by(|a, b| raw[*a].partial_cmp(&raw[*b]).unwrap_or(CmpOrdering::Equal));
     let total: f64 = geometry

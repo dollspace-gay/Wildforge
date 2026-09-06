@@ -1,9 +1,9 @@
 //! Existing WFC6-WFC9 wire reconstruction into resident voxel planes.
 
-use std::sync::Arc;
+use super::TerrainStore;
 use crate::chunk::{Chunk, ChunkPos};
 use crate::registry::{BlockId, Registry};
-use super::TerrainStore;
+use std::sync::Arc;
 
 impl TerrainStore {
     /// Insert a group received in one network poll. Current WFC9 payloads carry
@@ -184,5 +184,4 @@ impl TerrainStore {
         }
         Some(version9)
     }
-
 }

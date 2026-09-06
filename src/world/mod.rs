@@ -2,18 +2,12 @@
 //! persistence (save v2 with a per-world id palette; legacy v1 migrates).
 
 use std::collections::{HashMap, HashSet, VecDeque};
-use std::fmt;
 use std::fs;
 use std::path::PathBuf;
 use std::sync::Arc;
 
-#[cfg(test)]
-use glam::Vec3;
-
 use crate::chunk::{CHUNK_X, CHUNK_Y, CHUNK_Z, Chunk, ChunkPos, SEA_LEVEL};
-use crate::entity::ItemEntity;
 use crate::inventory::ItemStack;
-use crate::mobs::{Mob, MobEvent, ProjHit, Projectile};
 use crate::planet::BlockPos;
 use crate::registry::{AIR, BlockId, ItemId, Registry};
 use crate::worldgen::Generator;
@@ -33,12 +27,16 @@ mod dross;
 mod ecology;
 pub use ecology::SettledMobDeath;
 pub(crate) mod belt;
+mod calendar_state;
+mod construction;
+mod country_view;
 pub(crate) mod dungeon;
 mod entities;
 mod fire;
 mod fluids;
 mod hearts;
 mod implements;
+mod installations;
 mod item_presentation;
 mod lighting;
 mod machine_tick;
@@ -46,16 +44,12 @@ pub(crate) mod machines;
 pub(crate) mod multiblock;
 mod persistence;
 pub(crate) mod pieces;
+mod population;
 mod power;
 mod query;
 mod standing;
-mod country_view;
-mod calendar_state;
-mod weather_state;
-mod installations;
-mod construction;
-mod population;
 mod view;
+mod weather_state;
 pub(crate) use view::WorldView;
 mod replica;
 mod replication;
@@ -70,12 +64,14 @@ mod preparation;
 #[path = "storage/region.rs"]
 pub(crate) mod region;
 mod storage;
+#[cfg(test)]
+pub(crate) use storage::encode_chunk as encode_chunk_for_test;
 
+pub use crate::worldgen::{heart_form, heart_height};
 pub use hearts::ROOT_READY_FRAC;
 #[cfg(test)]
 pub use hearts::{HEART_CUTTING_DAYS, HEART_DEATH_STRAIN, HEART_SICKEN_STRAIN, ROOT_DAYS};
 pub use hearts::{Heart, heart_block_name, seed_nature, seed_of_form};
-pub use crate::worldgen::{heart_form, heart_height};
 pub use machines::{station_powered, worked_table_for};
 pub mod soil;
 mod spawn;
@@ -84,8 +80,8 @@ pub(crate) use storage::{ChunkLoader, ChunkRead, ChunkRevision, encode_stream_ch
 pub(crate) mod local_structure;
 pub(crate) mod rail;
 pub(crate) mod template;
-mod ticks;
 mod terrain;
+mod ticks;
 mod workings;
 
 /// Materialized water conditions used by fish and later aquatic biomes. Depth
@@ -100,10 +96,18 @@ pub struct AquaticHabitat {
 }
 
 mod save_reports;
-pub use save_reports::{SaveFailure, SaveReport, ResidencyReport};
+pub use save_reports::{ResidencyReport, SaveFailure, SaveReport};
 
 mod block_entities;
-pub use block_entities::{BlockEntity, SwitchState, SurveyFolioState, DiscoveryApparatusState, BindingFrameState, ChargeVesselState, MachineInstance, SEPARATE_SECS, KILN_FIRE_SECS, ELEC_RADIUS, SteamState, STEAM_SECS_PER_WATER, STEAM_FUEL_CAP, STEAM_RATE, SmokerState, SMOKE_SECS, StallState, DepotState, SignState, ClampState, AnvilState, FallingBlock, BLOOMERY_FIRE_SECS, FORGE_FIRE_SECS, FORGE_ITEMS_PER_FUEL, CLAMP_SECS_PER_LOG, STATION_STRIKE_SECS, HELVE_STRIKE_SECS, PUMP_STROKE_SECS, PUMP_REACH, OfferingState, CHEST_SLOTS, ChestState, FurnaceState};
+pub use block_entities::{
+    AnvilState, BLOOMERY_FIRE_SECS, BindingFrameState, BlockEntity, CHEST_SLOTS,
+    CLAMP_SECS_PER_LOG, ChargeVesselState, ChestState, ClampState, DepotState,
+    DiscoveryApparatusState, ELEC_RADIUS, FORGE_FIRE_SECS, FORGE_ITEMS_PER_FUEL, FallingBlock,
+    FurnaceState, HELVE_STRIKE_SECS, KILN_FIRE_SECS, MachineInstance, OfferingState, PUMP_REACH,
+    PUMP_STROKE_SECS, SEPARATE_SECS, SMOKE_SECS, STATION_STRIKE_SECS, STEAM_FUEL_CAP, STEAM_RATE,
+    STEAM_SECS_PER_WATER, SignState, SmokerState, StallState, SteamState, SurveyFolioState,
+    SwitchState,
+};
 
 /// The world's year stops when this many countries are dead AND they are
 /// this share of every country anyone has seen.
@@ -131,15 +135,18 @@ pub const FRESHNESS_PER_SEC: f32 = 0.5;
 pub const RANDOM_TICKS_PER_CHUNK_SEC: f64 = 8.0;
 
 mod world_metadata;
-use world_metadata::MIN_SUPPORTED_WORLD_GENERATOR_VERSION;
-pub use world_metadata::{WORLD_GENERATOR_VERSION, WorldMeta, load_world_meta, read_world_meta, read_world_meta_full, write_world_meta, write_world_meta_full, list_worlds, WorldBrowserEntry, inspect_worlds};
 pub use crate::planet::WORLD_TOPOLOGY;
+use world_metadata::MIN_SUPPORTED_WORLD_GENERATOR_VERSION;
+pub use world_metadata::{
+    WORLD_GENERATOR_VERSION, inspect_worlds, list_worlds, load_world_meta, read_world_meta,
+    write_world_meta, write_world_meta_full,
+};
 
 mod creation;
-pub use creation::{WorldCreationProgress, create_world_atomic};
-pub(crate) use creation::{create_qualification_world_from_atlas};
+pub(crate) use creation::create_qualification_world_from_atlas;
 #[cfg(test)]
 pub use creation::create_world_fixture_atomic;
+pub use creation::{WorldCreationProgress, create_world_atomic};
 
 /// One 256×256-cell regional ledger tile on a particular cube face.
 ///
@@ -453,20 +460,19 @@ pub const MOB_CAP: usize = 320;
 /// is the right shape — it stops a bad script from flooding the world.
 pub const NPC_CAP: usize = 24;
 
-
-mod initialization;
-mod arcane_environment;
 mod arcane_context;
+mod arcane_environment;
+mod block_edits;
 mod ecology_custody;
-mod item_custody;
-mod world_events;
-mod installation_access;
-mod residency;
 mod feature_access;
-mod voxel_access;
+mod initialization;
+mod installation_access;
+mod item_custody;
+mod lunar_observation;
+mod material_transactions;
 mod mining;
 mod placement;
-mod material_transactions;
-mod block_edits;
+mod residency;
 mod spawn_rescue;
-mod lunar_observation;
+mod voxel_access;
+mod world_events;

@@ -1,11 +1,11 @@
 //! Build the tectonic cell layer from plate and craton fields.
 
-use std::collections::{BTreeMap, VecDeque};
-use glam::DVec3;
-use crate::planet_atlas::{AtlasGrid, AtlasPos, GeometryCell, TectonicCell, cell_hash};
-use super::{PlateRecord, DetailedBoundary, BedrockFamily, BasinKind};
 use super::geometry::dvec;
 use super::plates::classify_pair;
+use super::{BasinKind, BedrockFamily, DetailedBoundary, PlateRecord};
+use crate::planet_atlas::{AtlasGrid, AtlasPos, GeometryCell, TectonicCell, cell_hash};
+use glam::DVec3;
+use std::collections::{BTreeMap, VecDeque};
 
 pub(super) fn build_tectonics(
     side: u16,

@@ -1,3 +1,4 @@
+use crate::world::{ReplicaWorld, ReplicationTarget, TerrainRead};
 use std::collections::BTreeSet;
 use std::sync::{Arc, OnceLock};
 
@@ -934,19 +935,18 @@ fn chunk_save_and_load_preserve_hydrology_residuals_and_exact_salt() {
         .collect();
     assert!(!expected_records.is_empty());
     let payload = world.chunk_rle(chunk_pos).unwrap();
-    let mut remote = World::new(1_337, tmp_dir("hydrology-wfc6-remote"), reg.clone());
-    remote.set_remote(true);
+    let mut remote = ReplicaWorld::new(1_337, reg.clone(), 0.0);
     let remap: Vec<_> = (0..reg.blocks.len())
         .map(|index| crate::registry::BlockId(index as u16))
         .collect();
-    remote.insert_remote_chunk(chunk_pos, &payload, &remap);
+    remote.insert_remote_chunks([(chunk_pos, payload.as_slice())], &remap);
     assert_eq!(
-        remote.chunks()[&chunk_pos].hydrology_volumes(),
+        remote.chunk(chunk_pos).unwrap().hydrology_volumes(),
         expected_records
     );
     assert_eq!(
         (1..CHUNK_Y)
-            .map(|y| remote.chunks()[&chunk_pos].water_salt(8, y, 8))
+            .map(|y| remote.chunk(chunk_pos).unwrap().water_salt(8, y, 8))
             .collect::<Vec<_>>(),
         expected_salt
     );

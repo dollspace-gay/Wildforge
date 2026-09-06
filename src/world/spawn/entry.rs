@@ -1,17 +1,7 @@
 //! Entry for the common spawn contract.
 
-use std::sync::Arc;
-use crate::chunk::CHUNK_Y;
-use crate::planet::FACE_BLOCKS;
-use crate::planet::Face;
-use crate::planet::SurfacePos;
-use crate::world::WORLD_GENERATOR_VERSION;
-use crate::world::WORLD_TOPOLOGY;
-use crate::world::World;
-use crate::world::preparation::check_cancelled;
-use std::fs;
-use crate::world::preparation::generate_trial_region;
 use super::ENTRY_RADIUS_CHUNKS;
+use super::HomelandTrial;
 use super::MAX_SPAWN_MANIFEST_BYTES;
 use super::SPAWN_MANIFEST_VERSION;
 use super::SPAWN_VERIFICATION_VERSION;
@@ -22,8 +12,23 @@ use super::qualified_atlas_candidates;
 use super::qualify_trial_region;
 use super::spawn_candidate_portfolio;
 use super::validate_spawn_ledgers;
+use crate::chunk::CHUNK_Y;
+use crate::planet::FACE_BLOCKS;
+#[cfg(test)]
+use crate::planet::{Face, SurfacePos};
+use crate::world::WORLD_GENERATOR_VERSION;
+use crate::world::WORLD_TOPOLOGY;
+use crate::world::World;
+use crate::world::preparation::check_cancelled;
+use crate::world::preparation::generate_trial_region;
+use std::fs;
+use std::sync::Arc;
 
 impl World {
+    /// Pick one deterministic, naturally viable common spawn for every play
+    /// mode. Voxel-level refinement remains `safe_spawn_at`; unlike the old
+    /// dedicated path, its starting country is already dry, living land.
+    #[cfg(test)]
     pub fn qualified_spawn_surface(&self) -> Option<SurfacePos> {
         let Some(atlas) = self.planet_atlas.as_deref() else {
             // Atlas-free fixtures retain a deterministic local doorstep.
@@ -337,5 +342,4 @@ impl World {
         self.common_spawn = Some(spawn);
         Ok(spawn)
     }
-
 }

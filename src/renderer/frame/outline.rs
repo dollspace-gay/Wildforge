@@ -1,9 +1,13 @@
 //! Outline stage of GPU frame encoding.
 
-use crate::renderer::{Renderer, LineVertex};
+use crate::renderer::{LineVertex, Renderer};
 
 impl Renderer {
-    pub(in crate::renderer) fn upload_outline(&self, outline: Option<crate::planet::BlockPos>, outline_color: [f32; 3]) {
+    pub(in crate::renderer) fn upload_outline(
+        &self,
+        outline: Option<crate::planet::BlockPos>,
+        outline_color: [f32; 3],
+    ) {
         if let Some(block) = outline {
             let e = 0.003f32;
             let c = outline_color;
@@ -53,6 +57,5 @@ impl Renderer {
             self.queue
                 .write_buffer(&self.outline_buf, 0, bytemuck::cast_slice(&verts));
         }
-
     }
 }

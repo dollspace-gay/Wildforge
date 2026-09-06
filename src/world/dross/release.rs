@@ -4,7 +4,6 @@ use crate::arcane::ArcaneAuthority;
 use crate::arcane::ArcaneOwner;
 use crate::arcane::ArcaneTransaction;
 use crate::planet::BlockPos;
-use crate::arcane::Current;
 use crate::world::World;
 
 impl World {

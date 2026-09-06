@@ -1,15 +1,14 @@
 //! Storage capture scene construction.
 
-use crate::world::TerrainRead;
-use crate::inventory::ItemStack;
-use crate::world;
+use super::DemoChart;
 use crate::game::Game;
 use crate::game::navigation::Screen;
-use crate::planet::{BlockPos, EntityPos, Face, SurfacePos};
-use super::DemoChart;
+use crate::inventory::ItemStack;
+use crate::planet::EntityPos;
+use crate::world;
 
 impl Game {
-    pub(in crate::game) fn stage_capture_chest(&mut self, spawn: EntityPos, chart: DemoChart) {
+    pub(super) fn stage_capture_chest(&mut self, spawn: EntityPos, chart: DemoChart) {
         // Dev: a stocked chest next to spawn, screen open (UI verification).
         if std::env::var("WILDFORGE_DEMO_CHEST").is_ok() {
             let p = (spawn.x as i32 - 2, spawn.y as i32, spawn.z as i32);
@@ -29,13 +28,18 @@ impl Game {
                         st.slots[i * 4] = Some(ItemStack::new(&reg, item, *n));
                     }
                 }
-                demo_insert!(self.runtime.local_mut().world, chart, p, world::BlockEntity::Chest(st));
+                demo_insert!(
+                    self.runtime.local_mut().world,
+                    chart,
+                    p,
+                    world::BlockEntity::Chest(st)
+                );
                 self.set_screen(Screen::Chest(chart.block_tuple(p)));
             }
         }
     }
 
-    pub(in crate::game) fn stage_capture_furnace(&mut self, spawn: EntityPos, chart: DemoChart) {
+    pub(super) fn stage_capture_furnace(&mut self, spawn: EntityPos, chart: DemoChart) {
         // Dev: a stocked furnace next to spawn, screen open (UI verification).
         if std::env::var("WILDFORGE_DEMO_FURNACE").is_ok() {
             let p = (spawn.x as i32 + 2, spawn.y as i32, spawn.z as i32);

@@ -1,14 +1,14 @@
 //! Viewmodel in the graphical frame pipeline.
 
-use crate::world::TerrainRead;
+use super::{VIEWMODEL_HAND_MAX, VIEWMODEL_HAND_MIN, VIEWMODEL_SLEEVE_MAX, VIEWMODEL_SLEEVE_MIN};
 use crate::atlas;
+use crate::game::Game;
+use crate::game::navigation::Screen;
 use crate::mesher;
 use crate::registry::ItemId;
 use crate::style;
+use crate::world::TerrainRead;
 use glam::Vec3;
-use crate::game::Game;
-use crate::game::navigation::Screen;
-use super::{VIEWMODEL_SLEEVE_MIN, VIEWMODEL_SLEEVE_MAX, VIEWMODEL_HAND_MIN, VIEWMODEL_HAND_MAX};
 
 impl Game {
     /// First-person viewmodel: your arm, or the block/item it holds,

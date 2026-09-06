@@ -1,8 +1,7 @@
 //! Preparation use in the ordered graphical action pipeline.
 
-use crate::game::Game;
-use crate::world::TerrainRead;
 use super::ActionFrame;
+use crate::game::Game;
 
 impl Game {
     pub(in crate::game) fn interact_preparation_use(&mut self, frame: &ActionFrame) -> bool {
@@ -66,7 +65,6 @@ impl Game {
             self.input.action_cooldown = 0.3;
             return true;
         }
-
 
         false
     }

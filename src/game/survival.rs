@@ -1,15 +1,15 @@
 //! Player survival, damage, death, respawn, and inventory drops.
 
+use super::Game;
+use super::MAX_AIR;
+use super::combat;
+use super::navigation::Screen;
 use crate::audio::Sfx;
 use crate::entity::ItemEntity;
 use crate::inventory::ItemStack;
 use crate::net;
 use crate::physics::Player;
 use glam::Vec3;
-use super::Game;
-use super::MAX_AIR;
-use super::combat;
-use super::navigation::Screen;
 
 impl Game {
     pub(super) fn armor_points(&self) -> u32 {
@@ -162,10 +162,18 @@ impl Game {
                         intent: crate::workings::WorkingIntent::Cancel,
                     });
                 } else if channel.stable_id != 0 {
-                    let prior = self.runtime.local().world.working_cues()
+                    let prior = self
+                        .runtime
+                        .local()
+                        .world
+                        .working_cues()
                         .into_iter()
                         .find(|cue| cue.stable_id == channel.stable_id);
-                    if let Ok(result) = self.runtime.local_mut().world.interrupt_working(channel.stable_id)
+                    if let Ok(result) = self
+                        .runtime
+                        .local_mut()
+                        .world
+                        .interrupt_working(channel.stable_id)
                         && let Some(mut cue) = prior
                     {
                         cue.kind = result.cue;
@@ -183,7 +191,11 @@ impl Game {
                     self.identity.device_id(),
                 )
                 .unwrap_or(crate::identity::PlayerId([0; 16]));
-                if let Err(error) = self.runtime.local_mut().world.settle_preparations_on_death(actor.0, actor_pos)
+                if let Err(error) = self
+                    .runtime
+                    .local_mut()
+                    .world
+                    .settle_preparations_on_death(actor.0, actor_pos)
                 {
                     eprintln!("alchemy: local death settlement failed: {error}");
                 }
@@ -296,4 +308,3 @@ impl Game {
 pub(crate) fn reduced_damage(amount: f32, points: u32) -> f32 {
     amount * (1.0 - (points as f32 * 0.04).min(0.6))
 }
-

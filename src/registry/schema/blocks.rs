@@ -1,6 +1,8 @@
 //! Raw blocks content schema; no runtime mutation.
 
-use super::{ArcaneContentToml, ArcaneEcologyToml, BrushToml, DiscoveryFixtureToml, ObservationToml};
+use super::{
+    ArcaneContentToml, ArcaneEcologyToml, BrushToml, DiscoveryFixtureToml, ObservationToml,
+};
 use crate::registry::{MaterialClass, MaterialVector, ToolKind};
 use serde::Deserialize;
 
@@ -166,4 +168,3 @@ pub(in crate::registry) struct HarvestToml {
     pub(in crate::registry) count: Option<u32>,
     pub(in crate::registry) becomes: String,
 }
-

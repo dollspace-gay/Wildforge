@@ -1,12 +1,13 @@
 //! Gameplay hud layout and UI composition.
 
-use crate::world::TerrainRead;
-use crate::game::widgets;
-use crate::ui::UiBatch;
-use glam::Vec3;
 use crate::game::Game;
 use crate::game::MAX_AIR;
 use crate::game::navigation::Screen;
+use crate::game::widgets;
+use crate::inventory::HOTBAR_SLOTS;
+use crate::ui::UiBatch;
+use crate::world::TerrainRead;
+use glam::Vec3;
 
 impl Game {
     pub(in crate::game) fn draw_gameplay_hud(&mut self, ui: &mut UiBatch, w: f32, h: f32) {
@@ -234,7 +235,10 @@ impl Game {
             }
             // Signs and waystones wear their words in the world,
             // nameplate-style (occluded, distance-gated).
-            let sign_texts: Vec<(crate::planet::EntityPos, [String; 3])> = self.runtime.view().sign_texts()
+            let sign_texts: Vec<(crate::planet::EntityPos, [String; 3])> = self
+                .runtime
+                .view()
+                .sign_texts()
                 .map(|(pos, st)| (pos.entity_center(), st.lines.clone()))
                 .collect();
             for (at, lines) in sign_texts {
@@ -361,6 +365,5 @@ impl Game {
             }
             self.draw_roster_overlay(&mut *ui, w);
         }
-
     }
 }

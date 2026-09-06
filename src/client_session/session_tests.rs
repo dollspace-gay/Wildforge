@@ -5,11 +5,12 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use super::GuestSession;
+use crate::chunk::Chunk;
 use crate::client_session::{ContentMap, PresentationRequirement};
 use crate::net::Snapshot;
 use crate::planet::{EntityPos, Face};
 use crate::registry::{self, Registry};
-use crate::world::World;
+use crate::world::{ReplicaWorld, ReplicationTarget, TerrainRead};
 
 fn reg() -> Arc<Registry> {
     Arc::new(registry::load(Path::new("/nonexistent-mods-dir")))
@@ -33,21 +34,17 @@ fn session(reg: &Arc<Registry>, requirement: PresentationRequirement) -> GuestSe
     session
 }
 
-fn replica(reg: &Arc<Registry>) -> World {
-    // Remote storage never saves. No test creates or reads terrain at this path.
-    let directory =
-        std::env::temp_dir().join(format!("wildforge-session-fixture-{}", std::process::id()));
-    assert!(!directory.exists());
-    let mut world = World::new(42, directory, Arc::clone(reg));
-    world.set_remote(true);
-    world
+fn replica(reg: &Arc<Registry>) -> ReplicaWorld {
+    ReplicaWorld::new(42, Arc::clone(reg), 0.0)
 }
 
-fn chunk_bytes(reg: &Arc<Registry>) -> Vec<u8> {
-    let mut source = replica(reg);
-    let center = spawn().chunk().unwrap();
-    source.insert_empty_chunks_for_test([center]);
-    source.chunk_rle(center).unwrap()
+fn chunk_bytes(_reg: &Arc<Registry>) -> Vec<u8> {
+    crate::world::encode_chunk_for_test(&Chunk::new())
+}
+
+fn seed_empty(world: &mut ReplicaWorld, center: crate::chunk::ChunkPos) {
+    let bytes = chunk_bytes(world.registry());
+    world.insert_remote_chunks([(center, bytes.as_slice())], &[]);
 }
 
 #[test]
@@ -68,7 +65,7 @@ fn welcome_replaces_maps_receivers_and_both_kinds_of_queued_terrain() {
         Instant::now(),
     );
     let mut next_world = replica(&reg);
-    next_world.insert_empty_chunks_for_test([center]);
+    seed_empty(&mut next_world, center);
     assert!(!session.has_queued_chunk(center));
     assert!(session.apply_terrain(&mut next_world, 8).is_empty());
     assert_eq!(next_world.get_block_at(block), registry::AIR);
@@ -144,7 +141,7 @@ fn content_reload_resolves_queued_wire_blocks_against_the_replacement_registry()
     let changed = Arc::new(changed);
     session.rebind_content(Arc::clone(&changed));
     let mut world = replica(&changed);
-    world.insert_empty_chunks_for_test([center]);
+    seed_empty(&mut world, center);
     session.apply_terrain(&mut world, 2);
     assert_eq!(world.get_block_at(block), dirt);
     assert_eq!(changed.block(world.get_block_at(block)).name, "base:stone");
@@ -158,7 +155,7 @@ fn invalid_manifest_discards_queued_mutations_and_later_chunks_cannot_reopen_it(
     let stone = reg.block_id("base:stone").unwrap();
     let mut session = session(&reg, PresentationRequirement::TerrainOnly);
     let mut world = replica(&reg);
-    world.insert_empty_chunks_for_test([center]);
+    seed_empty(&mut world, center);
     session.queue_chunk(center, chunk_bytes(&reg));
     session.queue_block(block, stone.0, 0, 0, 0);
     assert!(session.manifest(spawn(), vec![], &world).is_err());
@@ -209,7 +206,7 @@ fn a_later_chunk_supersedes_an_earlier_block_edit() {
     let stone = reg.block_id("base:stone").unwrap();
     let mut session = session(&reg, PresentationRequirement::TerrainOnly);
     let mut world = replica(&reg);
-    world.insert_empty_chunks_for_test([center]);
+    seed_empty(&mut world, center);
     session.queue_block(block, stone.0, 0, 0, 0);
     session.queue_chunk(center, chunk_bytes(&reg));
     session.apply_terrain(&mut world, 2);

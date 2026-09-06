@@ -1,12 +1,16 @@
 //! Scalar, categorical, and direction atlas map export.
 
-use crate::planet_atlas::{AtlasError, PlanetAtlas};
-use crate::planet_atlas::diagnostics::{FACE_LAYOUT};
-use std::path::{Path};
 use super::catalog::{LayerKind, LayerSpec};
+use super::images::{categorical_color, direction_color, scalar_color, write_png};
 use super::values::layer_value;
-use super::images::{write_png, scalar_color, categorical_color, direction_color};
-pub(in crate::planet_atlas::diagnostics) fn export_layer(atlas: &PlanetAtlas, spec: LayerSpec, output: &Path) -> Result<(), AtlasError> {
+use crate::planet_atlas::diagnostics::FACE_LAYOUT;
+use crate::planet_atlas::{AtlasError, PlanetAtlas};
+use std::path::Path;
+pub(in crate::planet_atlas::diagnostics) fn export_layer(
+    atlas: &PlanetAtlas,
+    spec: LayerSpec,
+    output: &Path,
+) -> Result<(), AtlasError> {
     let side = u32::from(atlas.side());
     let width = side * 3;
     let height = side * 2;

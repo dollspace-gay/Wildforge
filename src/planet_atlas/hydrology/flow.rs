@@ -1,8 +1,8 @@
 //! Ordered drainage traversal, discharge accumulation, and channel order.
 
-use std::collections::BinaryHeap;
 use crate::planet::geodesic_distance;
-use crate::planet_atlas::{AtlasError, AtlasGrid, AtlasPos, GeometryCell, CLIMATE_SEASONS};
+use crate::planet_atlas::{AtlasError, AtlasGrid, AtlasPos, CLIMATE_SEASONS, GeometryCell};
+use std::collections::BinaryHeap;
 
 pub(super) fn topological_order(receiver: &[u32]) -> Result<Vec<usize>, AtlasError> {
     let mut upstream = vec![0u32; receiver.len()];

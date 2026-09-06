@@ -1,11 +1,17 @@
 //! Deterministic island, watershed, and distance-weighted country nuclei.
 
-use crate::chunk::{SEA_LEVEL};
-use crate::planet::{geodesic_distance};
-use crate::planet_atlas::{ATLAS_FACE_SIDE, AtlasGrid, AtlasPos, BiomeCell, GeometryCell, HydrologyCell, TerrainCell};
-use crate::planet_atlas::identity::{cell_hash};
-use std::collections::{BTreeMap};
-use super::{BIOME_DESERT, BIOME_FOREST, BIOME_JUNGLE, BIOME_MOUNTAINS, BIOME_PLAINS, BIOME_SAVANNA, BIOME_TAIGA, BIOME_TUNDRA, HABITAT_AQUATIC_BRACKISH, HABITAT_AQUATIC_FRESH, HABITAT_AQUATIC_SALT};
+use super::{
+    BIOME_DESERT, BIOME_FOREST, BIOME_JUNGLE, BIOME_MOUNTAINS, BIOME_PLAINS, BIOME_SAVANNA,
+    BIOME_TAIGA, BIOME_TUNDRA, HABITAT_AQUATIC_BRACKISH, HABITAT_AQUATIC_FRESH,
+    HABITAT_AQUATIC_SALT,
+};
+use crate::chunk::SEA_LEVEL;
+use crate::planet::geodesic_distance;
+use crate::planet_atlas::identity::cell_hash;
+use crate::planet_atlas::{
+    ATLAS_FACE_SIDE, AtlasGrid, AtlasPos, BiomeCell, GeometryCell, HydrologyCell, TerrainCell,
+};
+use std::collections::BTreeMap;
 
 fn seed_weight(index: usize, biomes: &[BiomeCell], terrain: &[TerrainCell]) -> f32 {
     let biome = biomes[index].baseline_biome;

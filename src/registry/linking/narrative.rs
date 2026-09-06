@@ -1,8 +1,11 @@
 //! Link dialogue nodes and quest rewards against the complete content roster.
 
-use crate::registry::{Registry, DialogueDef, DialogueNode, DialogueChoice, ScriptHook, QuestDef, QuestObjective, QuestReward, qualify};
-use crate::registry::schema::{DialogueToml, QuestToml, RecipeToml};
 use super::lookups::lookup_item;
+use crate::registry::schema::{DialogueToml, QuestToml, RecipeToml};
+use crate::registry::{
+    DialogueChoice, DialogueDef, DialogueNode, QuestDef, QuestObjective, QuestReward, Registry,
+    ScriptHook, qualify,
+};
 
 pub(super) fn dialogues(reg: &mut Registry, pending_dialogues: Vec<(String, DialogueToml)>) {
     // Dialogue and quest definitions resolve by name after every npc/item
@@ -39,7 +42,12 @@ pub(super) fn dialogues(reg: &mut Registry, pending_dialogues: Vec<(String, Dial
     }
 }
 
-pub(super) fn quests(reg: &mut Registry, pending_quests: Vec<(String, QuestToml)>, pending_recipes: &[(String, RecipeToml)], settlement_errors: &mut Vec<String>) {
+pub(super) fn quests(
+    reg: &mut Registry,
+    pending_quests: Vec<(String, QuestToml)>,
+    pending_recipes: &[(String, RecipeToml)],
+    settlement_errors: &mut Vec<String>,
+) {
     for (modid, q) in pending_quests {
         let id = qualify(&modid, &q.id);
         if reg.quests.iter().any(|x| x.id == id) {

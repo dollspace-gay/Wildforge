@@ -1,9 +1,15 @@
 //! Initial finite water reservoirs derived from immutable atlas layers.
 
-use std::collections::BTreeMap;
+use super::{
+    AquiferLayer, HYDRO_UNITS_PER_VISIBLE_LEVEL, ReservoirMass, SparseAquiferState, SpringState,
+    SurfaceReservoirKind, SurfaceReservoirState, WaterCell, WaterCycleState, WaterLedger,
+    surface_reservoir_id, surface_reservoir_parts,
+};
 use crate::chunk::SEA_LEVEL;
-use crate::planet_atlas::{AtlasError, AtlasGrid, AtlasPos, BasinKind, GenesisLayers, HydrologyModel, HABITAT_SPRING};
-use super::{AquiferLayer, ReservoirMass, SparseAquiferState, SpringState, SurfaceReservoirKind, SurfaceReservoirState, WaterCell, WaterCycleState, WaterLedger, HYDRO_UNITS_PER_VISIBLE_LEVEL, surface_reservoir_id, surface_reservoir_parts};
+use crate::planet_atlas::{
+    AtlasError, AtlasGrid, AtlasPos, BasinKind, GenesisLayers, HABITAT_SPRING, HydrologyModel,
+};
+use std::collections::BTreeMap;
 
 pub(in crate::planet_atlas) fn initial_water_cycle(
     side: u16,

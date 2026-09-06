@@ -1,17 +1,14 @@
 //! Trade capture scene construction.
 
-use crate::world::TerrainRead;
-use crate::inventory::ItemStack;
-use crate::registry::AIR;
-use crate::world;
-use glam::Vec3;
+use super::DemoChart;
 use crate::game::Game;
 use crate::game::navigation::Screen;
-use crate::planet::{BlockPos, EntityPos, Face, SurfacePos};
-use super::DemoChart;
+use crate::inventory::ItemStack;
+use crate::planet::EntityPos;
+use crate::registry::AIR;
 
 impl Game {
-    pub(in crate::game) fn stage_capture_trade(&mut self, spawn: EntityPos, chart: DemoChart) {
+    pub(super) fn stage_capture_trade(&mut self, spawn: EntityPos, chart: DemoChart) {
         // Dev: a dusk campsite for the README hero shot — torch posts
         // throwing hard shadows across the grass, a blue-glass lantern
         // staining its pool, a chest and anvil for life.
@@ -24,7 +21,10 @@ impl Game {
             let bz = spawn.z as i32;
             for dx in [-16i32, 0, 16] {
                 for dz in [-16i32, 0, 16] {
-                    self.runtime.local_mut().world.ensure_chunk(chart.chunk(bx + dx, bz + dz));
+                    self.runtime
+                        .local_mut()
+                        .world
+                        .ensure_chunk(chart.chunk(bx + dx, bz + dz));
                 }
             }
             let y = demo_height!(self.runtime.local().world, chart, bx, bz);
@@ -48,13 +48,41 @@ impl Game {
             {
                 let (sx, sz) = (bx - 4, bz + 6);
 
-                demo_set!(self.runtime.local_mut().world, chart, sx, y + 1, sz, counter);
+                demo_set!(
+                    self.runtime.local_mut().world,
+                    chart,
+                    sx,
+                    y + 1,
+                    sz,
+                    counter
+                );
                 for side in [-1i32, 1] {
-                    demo_set!(self.runtime.local_mut().world, chart, sx + side, y + 1, sz, log);
-                    demo_set!(self.runtime.local_mut().world, chart, sx + side, y + 2, sz, log);
+                    demo_set!(
+                        self.runtime.local_mut().world,
+                        chart,
+                        sx + side,
+                        y + 1,
+                        sz,
+                        log
+                    );
+                    demo_set!(
+                        self.runtime.local_mut().world,
+                        chart,
+                        sx + side,
+                        y + 2,
+                        sz,
+                        log
+                    );
                 }
                 for i in -1i32..=1 {
-                    demo_set!(self.runtime.local_mut().world, chart, sx + i, y + 3, sz, planks);
+                    demo_set!(
+                        self.runtime.local_mut().world,
+                        chart,
+                        sx + i,
+                        y + 3,
+                        sz,
+                        planks
+                    );
                 }
                 let mut st = crate::world::StallState {
                     owner: [7; 16],
@@ -77,7 +105,14 @@ impl Game {
             }
             // A sign and a named waystone.
             if let Some(sign) = b("base:sign") {
-                demo_set!(self.runtime.local_mut().world, chart, bx, y + 1, bz + 6, sign);
+                demo_set!(
+                    self.runtime.local_mut().world,
+                    chart,
+                    bx,
+                    y + 1,
+                    bz + 6,
+                    sign
+                );
                 demo_insert!(
                     self.runtime.local_mut().world,
                     chart,
@@ -92,7 +127,14 @@ impl Game {
                 );
             }
             if let Some(ws) = b("base:waystone") {
-                demo_set!(self.runtime.local_mut().world, chart, bx + 3, y + 1, bz + 6, ws);
+                demo_set!(
+                    self.runtime.local_mut().world,
+                    chart,
+                    bx + 3,
+                    y + 1,
+                    bz + 6,
+                    ws
+                );
                 demo_insert!(
                     self.runtime.local_mut().world,
                     chart,
@@ -124,8 +166,22 @@ impl Game {
                     for dz in 0..=3i32 {
                         // A sealed bowl: solid under the water so the
                         // pond can't drain into a cave.
-                        demo_set!(self.runtime.local_mut().world, chart, bx + dx, y - 1, bz + dz, dirt);
-                        demo_set!(self.runtime.local_mut().world, chart, bx + dx, y, bz + dz, water);
+                        demo_set!(
+                            self.runtime.local_mut().world,
+                            chart,
+                            bx + dx,
+                            y - 1,
+                            bz + dz,
+                            dirt
+                        );
+                        demo_set!(
+                            self.runtime.local_mut().world,
+                            chart,
+                            bx + dx,
+                            y,
+                            bz + dz,
+                            water
+                        );
                     }
                 }
                 let mut boat = demo_mob!(
@@ -164,7 +220,10 @@ impl Game {
                         0.01,
                         &mut rng,
                     );
-                    let id = self.runtime.view().mobs()
+                    let id = self
+                        .runtime
+                        .view()
+                        .mobs()
                         .iter()
                         .find(|m| m.cargo.is_some() && m.id != 0)
                         .map(|m| m.id);
@@ -179,10 +238,11 @@ impl Game {
                         }
                         for count in [24, 8] {
                             if let Some(salt) = reg2.item_id("base:salt_crystal")
-                                && let Err(error) = self.runtime.local_mut().world.record_external_stack(
-                                    ItemStack::new(&reg2, salt, count),
-                                    "development capture animal cargo",
-                                )
+                                && let Err(error) =
+                                    self.runtime.local_mut().world.record_external_stack(
+                                        ItemStack::new(&reg2, salt, count),
+                                        "development capture animal cargo",
+                                    )
                             {
                                 eprintln!("materials: capture cargo source failed: {error}");
                             }

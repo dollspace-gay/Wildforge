@@ -1,14 +1,23 @@
 //! Dialogue journal layout and UI composition.
 
-use crate::ui::UiBatch;
 use crate::game::Game;
+use crate::ui::UiBatch;
 
 impl Game {
-    pub(in crate::game) fn draw_dialog_screen(&mut self, ui: &mut UiBatch, w: f32, h: f32, npc: u32, node_id: String) {
-
+    pub(in crate::game) fn draw_dialog_screen(
+        &mut self,
+        ui: &mut UiBatch,
+        w: f32,
+        h: f32,
+        npc: u32,
+        node_id: String,
+    ) {
         ui.rect(0.0, 0.0, w, h, [0.0, 0.0, 0.0, 0.55]);
         let mob_id = npc;
-        let name = self.runtime.view().npc_by_mob(mob_id)
+        let name = self
+            .runtime
+            .view()
+            .npc_by_mob(mob_id)
             .and_then(|n| self.content.reg.npcs.get(n.def))
             .map(|d| d.label.clone())
             .unwrap_or_else(|| "…".to_string());
@@ -58,9 +67,8 @@ impl Game {
                 [1.0; 4],
             );
         }
-        }
+    }
     pub(in crate::game) fn draw_journal_screen(&mut self, ui: &mut UiBatch, w: f32, h: f32) {
-
         ui.rect(0.0, 0.0, w, h, [0.0, 0.0, 0.0, 0.55]);
         let title = "QUEST JOURNAL";
         let tw = UiBatch::text_width(3.0, title);
@@ -99,5 +107,5 @@ impl Game {
                 [0.8, 0.8, 0.8, 1.0],
             );
         }
-        }
+    }
 }

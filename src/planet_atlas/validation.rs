@@ -1,14 +1,20 @@
 //! Layer dimensions, physical values, and complete snapshot consistency.
 
-use crate::planet_atlas::{ATLAS_HISTORY_VERSION, AtlasError, AtlasGrid, BIOME_OCEAN, BiomeCell, ClimateCell, DynamicLayers, GenesisLayers, GeometryCell, GroundCell, HydrologyCell, PlanetAtlas, ReservoirMass, TectonicCell, TerrainCell, dynamic_water_total, encode_water_cycle};
-use crate::planet_atlas::codec::{FILE_HEADER_BYTES};
-use crate::planet_atlas::codec::dynamic::{encode_dynamic};
-use crate::planet_atlas::codec::genesis::{encode_genesis};
-use crate::planet_atlas::codec::models::{encode_biomes, encode_geology, encode_history, encode_hydrology};
-use crate::planet_atlas::grid::{atlas_count};
-use crate::planet_atlas::identity::{stable_hash};
-use crate::planet_atlas::manifest::{validate_manifest};
-use glam::{Vec3};
+use crate::planet_atlas::codec::FILE_HEADER_BYTES;
+use crate::planet_atlas::codec::dynamic::encode_dynamic;
+use crate::planet_atlas::codec::genesis::encode_genesis;
+use crate::planet_atlas::codec::models::{
+    encode_biomes, encode_geology, encode_history, encode_hydrology,
+};
+use crate::planet_atlas::grid::atlas_count;
+use crate::planet_atlas::identity::stable_hash;
+use crate::planet_atlas::manifest::validate_manifest;
+use crate::planet_atlas::{
+    ATLAS_HISTORY_VERSION, AtlasError, AtlasGrid, BIOME_OCEAN, BiomeCell, ClimateCell,
+    DynamicLayers, GenesisLayers, GeometryCell, GroundCell, HydrologyCell, PlanetAtlas,
+    ReservoirMass, TectonicCell, TerrainCell, dynamic_water_total, encode_water_cycle,
+};
+use glam::Vec3;
 
 impl PlanetAtlas {
     pub fn validate(&self) -> Result<(), AtlasError> {
@@ -107,7 +113,9 @@ impl PlanetAtlas {
     }
 }
 
-pub(in crate::planet_atlas) fn validate_geometry(grid: &AtlasGrid<GeometryCell>) -> Result<(), AtlasError> {
+pub(in crate::planet_atlas) fn validate_geometry(
+    grid: &AtlasGrid<GeometryCell>,
+) -> Result<(), AtlasError> {
     if grid.values().iter().any(|cell| {
         !cell.latitude_radians.is_finite()
             || !cell.physical_area.is_finite()
@@ -122,7 +130,9 @@ pub(in crate::planet_atlas) fn validate_geometry(grid: &AtlasGrid<GeometryCell>)
     Ok(())
 }
 
-pub(in crate::planet_atlas) fn validate_tectonics(grid: &AtlasGrid<TectonicCell>) -> Result<(), AtlasError> {
+pub(in crate::planet_atlas) fn validate_tectonics(
+    grid: &AtlasGrid<TectonicCell>,
+) -> Result<(), AtlasError> {
     if grid.values().iter().any(|cell| cell.plate_id >= 24) {
         return Err(AtlasError::Corrupt(
             "tectonic layer contains an invalid plate identifier".into(),
@@ -131,7 +141,9 @@ pub(in crate::planet_atlas) fn validate_tectonics(grid: &AtlasGrid<TectonicCell>
     Ok(())
 }
 
-pub(in crate::planet_atlas) fn validate_terrain(grid: &AtlasGrid<TerrainCell>) -> Result<(), AtlasError> {
+pub(in crate::planet_atlas) fn validate_terrain(
+    grid: &AtlasGrid<TerrainCell>,
+) -> Result<(), AtlasError> {
     if grid.values().iter().any(|cell| {
         !cell.base_elevation.is_finite()
             || !cell.eroded_elevation.is_finite()
@@ -145,7 +157,9 @@ pub(in crate::planet_atlas) fn validate_terrain(grid: &AtlasGrid<TerrainCell>) -
     Ok(())
 }
 
-pub(in crate::planet_atlas) fn validate_climate(grid: &AtlasGrid<ClimateCell>) -> Result<(), AtlasError> {
+pub(in crate::planet_atlas) fn validate_climate(
+    grid: &AtlasGrid<ClimateCell>,
+) -> Result<(), AtlasError> {
     if grid.values().iter().any(|cell| {
         !cell.mean_temperature.is_finite()
             || !cell.seasonality.is_finite()
@@ -180,7 +194,9 @@ pub(in crate::planet_atlas) fn validate_climate(grid: &AtlasGrid<ClimateCell>) -
     Ok(())
 }
 
-pub(in crate::planet_atlas) fn validate_hydrology(grid: &AtlasGrid<HydrologyCell>) -> Result<(), AtlasError> {
+pub(in crate::planet_atlas) fn validate_hydrology(
+    grid: &AtlasGrid<HydrologyCell>,
+) -> Result<(), AtlasError> {
     if grid.values().iter().any(|cell| {
         (cell.drainage_receiver != u32::MAX && cell.drainage_receiver as usize >= grid.len())
             || !cell.spill_elevation.is_finite()
@@ -213,7 +229,9 @@ pub(in crate::planet_atlas) fn validate_hydrology(grid: &AtlasGrid<HydrologyCell
     Ok(())
 }
 
-pub(in crate::planet_atlas) fn validate_ground(grid: &AtlasGrid<GroundCell>) -> Result<(), AtlasError> {
+pub(in crate::planet_atlas) fn validate_ground(
+    grid: &AtlasGrid<GroundCell>,
+) -> Result<(), AtlasError> {
     if grid
         .values()
         .iter()
@@ -226,7 +244,9 @@ pub(in crate::planet_atlas) fn validate_ground(grid: &AtlasGrid<GroundCell>) -> 
     Ok(())
 }
 
-pub(in crate::planet_atlas) fn validate_biomes(grid: &AtlasGrid<BiomeCell>) -> Result<(), AtlasError> {
+pub(in crate::planet_atlas) fn validate_biomes(
+    grid: &AtlasGrid<BiomeCell>,
+) -> Result<(), AtlasError> {
     if grid
         .values()
         .iter()

@@ -1,6 +1,7 @@
 //! Protocol codecs and loopback host/guest behavior.
 
 use super::*;
+use crate::world::{ReplicaWorld, ReplicationTarget, TerrainRead};
 
 fn prepare_test_entry(session: &mut crate::mp::HostSession, sim: &crate::server::Server) {
     let y = sim.world.surface_height(8, 8) as f32 + 1.0;
@@ -628,12 +629,11 @@ fn loopback_join_stream_and_edit() {
         rle.starts_with(b"WFC9"),
         "live terrain carries the host's settled light field"
     );
-    let mut remote = World::new(1, tmp_dir("mpguest"), reg.clone());
-    remote.set_remote(true);
+    let mut remote = ReplicaWorld::new(1, reg.clone(), 0.0);
     let content = crate::client_session::ContentMap::new(reg.clone(), palette, Vec::new());
-    remote.insert_remote_chunk(pos, &rle, content.blocks());
+    remote.insert_remote_chunks([(pos, rle.as_slice())], content.blocks());
     let host_chunk = sim.world.chunks().get(&pos).unwrap();
-    let guest_chunk = remote.chunks().get(&pos).unwrap();
+    let guest_chunk = remote.chunk(pos).unwrap();
     assert_eq!(
         host_chunk.raw(),
         guest_chunk.raw(),
@@ -673,8 +673,8 @@ fn loopback_join_stream_and_edit() {
         "host and guest agree on detailed/coarse ownership"
     );
     // Remote worlds never generate on their own.
-    assert!(!remote.ensure_chunk(tchunk(90, 90)));
-    assert!(!remote.chunks().contains_key(&tchunk(90, 90)));
+    assert!(remote.chunk(tchunk(90, 90)).is_none());
+    assert!(!remote.has_chunk(tchunk(90, 90)));
 
     // Guest breaks a block: host applies it authoritatively and echoes.
     let y = sim.world.surface_height(9, 9);

@@ -295,10 +295,21 @@ impl Agent {
     }
 
     fn apply(&mut self, msg: net::S2C) {
-        let Some(msg) = self.session.apply_world_message(msg, &mut self.world, &mut self.time_of_day) else {
+        let Some(msg) =
+            self.session
+                .apply_world_message(msg, &mut self.world, &mut self.time_of_day)
+        else {
             return;
         };
         match msg {
+            // These replies were consumed by the shared replica dispatcher above.
+            net::S2C::TimeIre { .. }
+            | net::S2C::WeatherCells { .. }
+            | net::S2C::ArcaneCue { .. }
+            | net::S2C::ArcaneItems { .. }
+            | net::S2C::SignText { .. }
+            | net::S2C::SwitchState { .. } => {}
+
             net::S2C::Challenge { .. } => {}
             net::S2C::ModFiles(files) => {
                 let cache = PathBuf::from("saves/.agents/.remote-mods");
@@ -397,7 +408,8 @@ impl Agent {
                         continue;
                     }
                     let name = self
-                        .session.roster()
+                        .session
+                        .roster()
                         .get(&id)
                         .map(|presence| presence.display_name.clone())
                         .unwrap_or_else(|| format!("P{id}"));

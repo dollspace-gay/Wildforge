@@ -1,9 +1,9 @@
 //! Incoming replica mutations shared by guest protocol adapters.
 
+use super::{BlockEntity, ReplicaObservations, TerrainRead};
 use crate::chunk::ChunkPos;
 use crate::planet::BlockPos;
 use crate::registry::BlockId;
-use super::{BlockEntity, ReplicaObservations, TerrainRead};
 
 /// The bounded incoming surface used by GuestSession. Only ReplicaWorld
 /// implements it. Read-only consumers depend on TerrainRead and never receive

@@ -1,15 +1,18 @@
 //! Scene precipitation in the graphical frame pipeline.
 
-use crate::world::TerrainRead;
+use super::Geometry;
 use crate::atlas;
-use crate::mesher;
-use crate::world;
-use glam::Vec3;
 use crate::game::Game;
-use super::{Geometry};
+use crate::mesher;
+use crate::world::TerrainRead;
+use glam::Vec3;
 
 impl Game {
-    pub(in crate::game) fn emit_scene_precipitation(&mut self, geometry: &mut Geometry, local_weather: Option<crate::planet_atlas::LocalWeatherSample>) {
+    pub(in crate::game) fn emit_scene_precipitation(
+        &mut self,
+        geometry: &mut Geometry,
+        local_weather: Option<crate::planet_atlas::LocalWeatherSample>,
+    ) {
         // Precipitation: a cylinder of falling quads around the camera.
         // Each streak owns a column; roofed columns stay dry.
         if local_weather.is_some_and(|weather| weather.kind.precipitating()) {

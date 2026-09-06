@@ -1,14 +1,16 @@
 //! Point lights in the graphical frame pipeline.
 
-use crate::world::TerrainRead;
 use crate::audio::Sfx;
+use crate::game::Game;
 use crate::lights;
 use crate::registry::ItemId;
 use glam::Vec3;
-use crate::game::Game;
 
 impl Game {
-    pub(in crate::game) fn prepare_frame_point_lights(&mut self, dt: f32) -> Vec<crate::renderer::PointLight> {
+    pub(in crate::game) fn prepare_frame_point_lights(
+        &mut self,
+        dt: f32,
+    ) -> Vec<crate::renderer::PointLight> {
         // Point lights: promote nearby emitters + the dynamic set.
         let mut dyn_lights = self.presentation.demo_lights.clone();
         self.presentation
@@ -50,7 +52,10 @@ impl Game {
         if self.in_world
             && let Some(stack) = self.inventory.slots[self.input.hotbar_sel]
         {
-            let glow = self.runtime.view().implement_visual(stack)
+            let glow = self
+                .runtime
+                .view()
+                .implement_visual(stack)
                 .and_then(|visual| self.implement_glow(visual))
                 .or_else(|| self.held_glow(stack.item));
             if let Some((color, range)) = glow {
@@ -78,7 +83,9 @@ impl Game {
         // warms the hue and a nearby strained vessel gives a sparse warning
         // envelope even when nobody has a frame screen open.
         let apparatus_cues = if self.in_world {
-            self.runtime.view().apparatus_cues_near(self.player.pos, 48.0)
+            self.runtime
+                .view()
+                .apparatus_cues_near(self.player.pos, 48.0)
         } else {
             Vec::new()
         };
@@ -204,7 +211,8 @@ impl Game {
             let spare = lights::MAX_DYNAMIC.saturating_sub(dyn_lights.len());
             dyn_lights.extend(tail.into_iter().take(spare).map(|(_, l)| l));
         }
-        let point_lights = if self.in_world && self.config.lights > 0 {
+
+        if self.in_world && self.config.lights > 0 {
             self.presentation.lights.frame(
                 self.camera.pos,
                 &dyn_lights,
@@ -213,7 +221,6 @@ impl Game {
             )
         } else {
             Vec::new()
-        };
-        point_lights
+        }
     }
 }

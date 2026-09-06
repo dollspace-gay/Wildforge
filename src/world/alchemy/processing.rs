@@ -1,22 +1,22 @@
 //! Processing alchemy transaction coordination.
 
+use super::process_failure;
+use super::result_for;
+use super::separate_brine_distillate;
 use crate::alchemy::AgitationKind;
 use crate::alchemy::AlchemyAuditEvent;
 use crate::alchemy::AlchemyCueKind;
 use crate::alchemy::AlchemyRequest;
 use crate::alchemy::AlchemyResult;
 use crate::alchemy::ApparatusKind;
-use crate::arcane::ArcaneOwner;
 use crate::alchemy::BatchFailure;
 use crate::alchemy::BatchOutcome;
-use crate::world::BlockEntity;
-use crate::planet::BlockPos;
 use crate::alchemy::ProcessObservation;
 use crate::alchemy::ProcessStep;
+use crate::arcane::ArcaneOwner;
+use crate::planet::BlockPos;
+use crate::world::BlockEntity;
 use crate::world::World;
-use super::process_failure;
-use super::result_for;
-use super::separate_brine_distillate;
 
 impl World {
     pub(super) fn alchemy_set_heat(

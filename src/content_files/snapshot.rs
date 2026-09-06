@@ -29,12 +29,19 @@ impl AssetSnapshot {
 
     fn allocate(cache: &Path) -> io::Result<Self> {
         static NEXT: AtomicU64 = AtomicU64::new(0);
-        let name = cache.file_name().ok_or_else(|| io::Error::new(
-            io::ErrorKind::InvalidInput, "content cache has no directory name"))?;
+        let name = cache.file_name().ok_or_else(|| {
+            io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "content cache has no directory name",
+            )
+        })?;
         for _ in 0..64 {
             let mut sibling = OsString::from(name);
-            sibling.push(format!(".reader-{}-{}", std::process::id(),
-                NEXT.fetch_add(1, Ordering::Relaxed)));
+            sibling.push(format!(
+                ".reader-{}-{}",
+                std::process::id(),
+                NEXT.fetch_add(1, Ordering::Relaxed)
+            ));
             let root = cache.with_file_name(sibling);
             match fs::create_dir(&root) {
                 Ok(()) => return Ok(Self { root }),
@@ -42,8 +49,10 @@ impl AssetSnapshot {
                 Err(error) => return Err(error),
             }
         }
-        Err(io::Error::new(io::ErrorKind::AlreadyExists,
-            "could not allocate an unused content snapshot directory"))
+        Err(io::Error::new(
+            io::ErrorKind::AlreadyExists,
+            "could not allocate an unused content snapshot directory",
+        ))
     }
 
     pub(crate) fn root(&self) -> &Path {

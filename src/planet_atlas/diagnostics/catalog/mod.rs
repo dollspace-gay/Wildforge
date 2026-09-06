@@ -1,11 +1,9 @@
 //! Ordered registry of diagnostic map domains.
 
-
-
-mod geology;
-mod climate;
-mod hydrology;
 mod biomes;
+mod climate;
+mod geology;
+mod hydrology;
 mod resources;
 mod weather;
 

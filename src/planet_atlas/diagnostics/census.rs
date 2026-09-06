@@ -1,11 +1,11 @@
 //! Census coordination and sparse model/resource summaries.
 
-use crate::chunk::{SEA_LEVEL};
-use crate::planet::{Face, geodesic_distance};
-use crate::planet_atlas::{AtlasError, AtlasPos, MineralKind, PlanetAtlas};
-use crate::planet_atlas::diagnostics::{AtlasCensus};
-use std::collections::{BTreeMap};
 use super::census_cells::DenseCensus;
+use crate::chunk::SEA_LEVEL;
+use crate::planet::{Face, geodesic_distance};
+use crate::planet_atlas::diagnostics::AtlasCensus;
+use crate::planet_atlas::{AtlasError, AtlasPos, MineralKind, PlanetAtlas};
+use std::collections::BTreeMap;
 impl PlanetAtlas {
     pub fn census(&self) -> Result<AtlasCensus, AtlasError> {
         self.validate()?;

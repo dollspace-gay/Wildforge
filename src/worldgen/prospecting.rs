@@ -82,5 +82,4 @@ impl Generator {
         }
         None
     }
-
 }

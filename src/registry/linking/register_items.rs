@@ -1,9 +1,14 @@
 //! Register items in provider order with owned deferred references.
 
+use super::super::{
+    arcane_def, arcane_ecology_def, discovery_item_def, inferred_material_class, observation_def,
+    salvage_def,
+};
 use super::Registration;
-use crate::registry::{ArmorSlot, BowDef, FoodDef, ItemDef, ItemId, NUTRIENTS, Registry, ToolKind, qualify};
 use crate::registry::schema::{CharmToml, RawMod};
-use super::super::{arcane_def, arcane_ecology_def, discovery_item_def, inferred_material_class, observation_def, salvage_def};
+use crate::registry::{
+    ArmorSlot, BowDef, FoodDef, ItemDef, ItemId, NUTRIENTS, Registry, ToolKind, qualify,
+};
 
 impl Registration {
     pub(super) fn items(&mut self, reg: &mut Registry, raw: &RawMod, errs: &mut Vec<String>) {

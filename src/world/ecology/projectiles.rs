@@ -1,9 +1,9 @@
 //! Projectile ownership adapters, collision, damage, and vessel settlement.
 
-use crate::world::World;
 use crate::inventory::ItemStack;
 use crate::mobs::ProjHit;
 use crate::mobs::Projectile;
+use crate::world::World;
 
 impl World {
     pub fn projectiles(&self) -> &[Projectile] {
@@ -14,6 +14,7 @@ impl World {
         self.population.spawn_projectile(projectile)
     }
 
+    #[cfg(test)]
     pub fn replace_projectiles(&mut self, projectiles: Vec<Projectile>) {
         self.population.replace_projectiles(projectiles)
     }

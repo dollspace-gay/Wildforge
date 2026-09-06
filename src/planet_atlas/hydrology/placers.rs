@@ -1,8 +1,11 @@
 //! Conserved downstream placement of finite geological resource deposits.
 
-use crate::chunk::SEA_LEVEL;
-use crate::planet_atlas::{AtlasGrid, AtlasPos, BedrockFamily, DepositRecord, GeologyModel, HydrologyCell, MineralKind, ResourceCell, TectonicCell, TerrainCell};
 use super::{HYDRO_DELTA, HYDRO_FLOODPLAIN};
+use crate::chunk::SEA_LEVEL;
+use crate::planet_atlas::{
+    AtlasGrid, AtlasPos, BedrockFamily, DepositRecord, GeologyModel, HydrologyCell, MineralKind,
+    ResourceCell, TectonicCell, TerrainCell,
+};
 
 pub(in crate::planet_atlas) fn route_placer_deposits(
     side: u16,

@@ -1,16 +1,14 @@
 //! Ecology capture scene construction.
 
-use crate::world::TerrainRead;
+use super::DemoChart;
+use crate::game::Game;
 use crate::inventory::ItemStack;
+use crate::planet::EntityPos;
 use crate::registry::AIR;
 use crate::world;
-use glam::Vec3;
-use crate::game::Game;
-use crate::planet::{BlockPos, EntityPos, Face, SurfacePos};
-use super::DemoChart;
 
 impl Game {
-    pub(in crate::game) fn stage_capture_magic_ecology(&mut self, spawn: EntityPos, chart: DemoChart) {
+    pub(super) fn stage_capture_magic_ecology(&mut self, spawn: EntityPos, chart: DemoChart) {
         // Dev: plant the base magical ecology through the real cultivation
         // path around the prepared doorstep. This is deliberately not a row
         // of authored decorative blocks: each placement registers a distinct
@@ -46,7 +44,11 @@ impl Game {
                 let Some(item) = self.content.reg.item_id(item_name) else {
                     continue;
                 };
-                if self.runtime.local_mut().world.place_item_block_at(pos, ItemStack::new(&self.content.reg, item, 1))
+                if self
+                    .runtime
+                    .local_mut()
+                    .world
+                    .place_item_block_at(pos, ItemStack::new(&self.content.reg, item, 1))
                 {
                     planted += 1;
                 }
@@ -55,7 +57,7 @@ impl Game {
         }
     }
 
-    pub(in crate::game) fn stage_capture_wildlife(&mut self, spawn: EntityPos, chart: DemoChart) {
+    pub(super) fn stage_capture_wildlife(&mut self, spawn: EntityPos, chart: DemoChart) {
         // Dev: the wild arc in one frame — a smoking rack curing cuts
         // over a torch, and a watcher warden at the treeline.
         if std::env::var("WILDFORGE_DEMO_WILD").is_ok() {
@@ -78,8 +80,22 @@ impl Game {
                 }
             }
             if let (Some(rack), Some(torch)) = (b("base:smoking_rack"), b("base:torch")) {
-                demo_set!(self.runtime.local_mut().world, chart, bx - 2, y + 1, bz + 4, torch);
-                demo_set!(self.runtime.local_mut().world, chart, bx - 2, y + 2, bz + 4, rack);
+                demo_set!(
+                    self.runtime.local_mut().world,
+                    chart,
+                    bx - 2,
+                    y + 1,
+                    bz + 4,
+                    torch
+                );
+                demo_set!(
+                    self.runtime.local_mut().world,
+                    chart,
+                    bx - 2,
+                    y + 2,
+                    bz + 4,
+                    rack
+                );
                 let mut sm = crate::world::SmokerState::default();
                 if let (Some(raw), Some(smoked)) = (
                     reg2.item_id("base:raw_venison"),
@@ -103,7 +119,14 @@ impl Game {
             }
             if let Some(torch) = b("base:torch") {
                 for dx in [0i32, 3, 6] {
-                    demo_set!(self.runtime.local_mut().world, chart, bx + dx, y + 1, bz + 11, torch);
+                    demo_set!(
+                        self.runtime.local_mut().world,
+                        chart,
+                        bx + dx,
+                        y + 1,
+                        bz + 11,
+                        torch
+                    );
                 }
             }
             if let Some(ti) = reg2.animals.iter().position(|a| a.hostile) {
@@ -121,7 +144,7 @@ impl Game {
         }
     }
 
-    pub(in crate::game) fn stage_capture_heart(&mut self, spawn: EntityPos, chart: DemoChart) {
+    pub(super) fn stage_capture_heart(&mut self, spawn: EntityPos, chart: DemoChart) {
         if std::env::var("WILDFORGE_DEMO_HEART").is_ok() {
             // The three forms, alive/failing/dead, in a row — and one
             // ruined site with its ground raised ready for a seed.
@@ -186,7 +209,7 @@ impl Game {
         }
     }
 
-    pub(in crate::game) fn stage_capture_steward(&mut self, spawn: EntityPos, chart: DemoChart) {
+    pub(super) fn stage_capture_steward(&mut self, spawn: EntityPos, chart: DemoChart) {
         // Dev: stewardship showcase — offering stone with gifts, a planted
         // sapling, and a grown oak (verification).
         if std::env::var("WILDFORGE_DEMO_STEWARD").is_ok() {
@@ -208,10 +231,20 @@ impl Game {
             }
             if let Some(sap) = reg.block_id("base:oak_sapling") {
                 let y = demo_height!(self.runtime.local().world, chart, sx + 2, sz - 6) + 1;
-                demo_set!(self.runtime.local_mut().world, chart, sx + 2, y, sz - 6, sap);
+                demo_set!(
+                    self.runtime.local_mut().world,
+                    chart,
+                    sx + 2,
+                    y,
+                    sz - 6,
+                    sap
+                );
             }
             let ty = demo_height!(self.runtime.local().world, chart, sx + 6, sz - 8) + 1;
-            self.runtime.local_mut().world.grow_tree_at(chart.block(sx + 6, ty, sz - 8), "oak", 3);
+            self.runtime
+                .local_mut()
+                .world
+                .grow_tree_at(chart.block(sx + 6, ty, sz - 8), "oak", 3);
             for name in ["base:bedroll", "base:oak_sapling"] {
                 if let Some(item) = reg.item_id(name) {
                     self.give_dev_item(&reg, item, 1);

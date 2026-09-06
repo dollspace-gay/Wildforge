@@ -1,8 +1,8 @@
 //! Configuration graphical session adapter.
 
-use crate::world;
 use crate::game::Game;
 use crate::game::navigation::Screen;
+use crate::world;
 
 impl Game {
     pub(in crate::game) fn apply_config(&mut self) {

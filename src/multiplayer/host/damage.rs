@@ -1,9 +1,10 @@
 //! Damage for the authoritative host session.
 
-use super::{HostSession, ItemStack, ProfileStore, S2C, Server, refresh_held, server_item_armor_points};
+use super::{
+    HostSession, ItemStack, ProfileStore, S2C, Server, refresh_held, server_item_armor_points,
+};
 
 impl HostSession {
-
     /// Apply simulation damage to server-owned survival state. The `Hit`
     /// packet is presentation; the following `PlayerState` is the authority.
     pub fn hurt_guest(

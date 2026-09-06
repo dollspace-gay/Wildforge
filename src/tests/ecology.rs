@@ -376,7 +376,7 @@ fn the_polar_bear_needs_no_reason() {
 fn the_desperate_winter_wolf_sizes_you_up_and_breaks_off() {
     let reg = base_reg();
     let mut w = test_world_with("wolf", reg.clone());
-    w.day = 3 * crate::world::SEASON_DAYS; // deep winter
+    w.set_calendar_day(3 * crate::world::SEASON_DAYS); // deep winter
     let h = w.surface_height(8, 8);
     pad(&mut w, &reg, 0, 20, 0, 20, h);
     let wolf_si = reg.animal_id("base:wolf").unwrap();
@@ -505,7 +505,7 @@ fn a_starving_wolf_prefers_available_prey_to_a_player() {
     let mut world = World::new(42, tmp_dir("wolf-available-prey"), reg.clone());
     world.insert_empty_chunks_for_test([tchunk(0, 0)]);
     pad(&mut world, &reg, 0, 15, 0, 15, 100);
-    world.day = 3 * crate::world::SEASON_DAYS;
+    world.set_calendar_day(3 * crate::world::SEASON_DAYS);
     let mut wolf = beast(&reg, "base:wolf", Vec3::new(6.5, 101.0, 8.5));
     wolf.belly = crate::mobs::BELLY_DESPERATE - 100.0;
     world.spawn_mob(wolf);
@@ -1365,7 +1365,7 @@ fn wolf_hunt_fixture(tag: &str, belly: f32) -> (World, crate::server::PlayerCtx)
     let mut world = World::new(42, tmp_dir(tag), reg.clone());
     world.insert_empty_chunks_for_test([tchunk(0, 0)]);
     pad(&mut world, &reg, 0, 15, 0, 15, 100);
-    world.day = 3 * crate::world::SEASON_DAYS;
+    world.set_calendar_day(3 * crate::world::SEASON_DAYS);
     let mut wolf = beast(&reg, "base:wolf", Vec3::new(6.5, 101.0, 8.5));
     wolf.belly = belly;
     world.spawn_mob(wolf);

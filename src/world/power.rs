@@ -193,9 +193,7 @@ impl World {
             let src = if wheel.contains(&Some(b)) {
                 // Live water or banked momentum: the dress tick keeps
                 // the installation-owned spin-down clock.
-                if self.wheel_live_at(p) > 0.0
-                    || self.installations.work_at(p) > 0.0
-                {
+                if self.wheel_live_at(p) > 0.0 || self.installations.work_at(p) > 0.0 {
                     1.0
                 } else {
                     0.0

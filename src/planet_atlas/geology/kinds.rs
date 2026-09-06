@@ -1,7 +1,7 @@
 //! Stable tectonic, basin, and bedrock classifications used by the atlas codec.
 
-use serde::{Deserialize, Serialize};
 use crate::planet_atlas::{AtlasError, BoundaryClass};
+use serde::{Deserialize, Serialize};
 
 #[derive(
     Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize, Deserialize,

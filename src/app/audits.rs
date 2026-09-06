@@ -1,7 +1,7 @@
 //! Persisted ledger audits. Each domain retains its own qualification criteria.
 
-use std::path::PathBuf;
 use crate::{alchemy, arcane, discovery, dross, implements, materials, planet_atlas, workings};
+use std::path::PathBuf;
 
 pub(super) fn alchemy(args: &[String], i: usize) {
     let Some(world) = args.get(i + 1).map(PathBuf::from) else {

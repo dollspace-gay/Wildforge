@@ -1,9 +1,9 @@
 //! Water/salt accounting, ownership consistency, and read-only audit reports.
 
-use std::collections::BTreeMap;
-use crate::planet_atlas::{AtlasError, PlanetAtlas, dynamic_water_total};
-use crate::planet_atlas::grid::atlas_count;
 use super::{ReservoirMass, WaterCycleState};
+use crate::planet_atlas::grid::atlas_count;
+use crate::planet_atlas::{AtlasError, PlanetAtlas, dynamic_water_total};
+use std::collections::BTreeMap;
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct WaterAudit {

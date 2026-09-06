@@ -1,12 +1,10 @@
 //! Alchemy context interaction adapter.
 
-use crate::world::TerrainRead;
 use crate::audio::Sfx;
-use crate::world;
 use crate::game::Game;
+use crate::world::TerrainRead;
 
 impl Game {
-
     /// Contextual laboratory controls keep every operation explicit while
     /// avoiding a shapeless crafting screen. Empty-hand mortar use selects a
     /// visible recipe; held ingredients/carriers/vessels perform their one
@@ -19,8 +17,7 @@ impl Game {
 
         let held_slot = self.input.hotbar_sel;
         let held = self.inventory.slots[held_slot];
-        let apparatus = self.runtime.view().alchemy_apparatus_at(pos)
-            .cloned();
+        let apparatus = self.runtime.view().alchemy_apparatus_at(pos).cloned();
         let interaction = self
             .content
             .reg
@@ -46,8 +43,7 @@ impl Game {
             .as_ref()
             .and_then(|apparatus| apparatus.batch.as_ref())
         else {
-            if let Some(job) = self.runtime.view().ordinary_alchemy_job_at(pos)
-            {
+            if let Some(job) = self.runtime.view().ordinary_alchemy_job_at(pos) {
                 let action = match job.kind {
                     crate::alchemy::OrdinaryProcessKind::FermentAlcohol => {
                         ApparatusAction::FermentAlcohol {

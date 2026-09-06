@@ -1,6 +1,9 @@
 //! Placement coordinator for the authoritative world.
 
-use super::{AIR, BlockEntity, BlockId, BlockPos, ChargeVesselState, DepotState, ItemStack, MachineInstance, SurveyFolioState, World, soil};
+use super::{
+    AIR, BlockEntity, BlockId, BlockPos, ChargeVesselState, DepotState, ItemStack, MachineInstance,
+    SurveyFolioState, World, soil,
+};
 
 impl World {
     #[cfg(test)]

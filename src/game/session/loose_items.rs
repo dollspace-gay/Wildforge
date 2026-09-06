@@ -1,11 +1,9 @@
 //! Loose items graphical session adapter.
 
 use crate::entity::ItemEntity;
-use crate::identity;
-use crate::inventory::ItemStack;
-use crate::world;
-use glam::Vec3;
 use crate::game::Game;
+use crate::inventory::ItemStack;
+use glam::Vec3;
 
 impl Game {
     pub(super) fn save_loose_items(&self, world: &std::path::Path) -> std::io::Result<()> {
@@ -27,7 +25,10 @@ impl Game {
             version: u32,
             drop: Vec<StoredDrop>,
         }
-        let drop = self.runtime.view().loose_items()
+        let drop = self
+            .runtime
+            .view()
+            .loose_items()
             .iter()
             .map(|entity| StoredDrop {
                 stable_id: entity.stable_id,
@@ -116,7 +117,11 @@ impl Game {
                     durability: entity.durability,
                     arcane_id: stored.arcane_id,
                 };
-                if self.runtime.local_mut().world.ensure_charm_instance_at(
+                if self
+                    .runtime
+                    .local_mut()
+                    .world
+                    .ensure_charm_instance_at(
                         at,
                         &mut stack,
                         "explicit planetary loose-item charm migration",

@@ -1,8 +1,8 @@
 //! Persisted hydrology classifications, named records, and reservoir curves.
 
-use serde::{Deserialize, Serialize};
 use crate::planet::FACE_BLOCKS;
 use crate::planet_atlas::{AtlasError, AtlasPos};
+use serde::{Deserialize, Serialize};
 
 #[derive(
     Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize, Deserialize,

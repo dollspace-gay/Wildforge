@@ -1,18 +1,18 @@
 //! Filter load alchemy transaction coordination.
 
+use super::result_for;
+use super::take_exact_slot;
 use crate::alchemy::AlchemyAuditEvent;
 use crate::alchemy::AlchemyCueKind;
 use crate::alchemy::AlchemyRequest;
 use crate::alchemy::AlchemyResult;
 use crate::alchemy::ApparatusKind;
+use crate::alchemy::ProcessStep;
 use crate::arcane::ArcaneOwner;
-use crate::planet::BlockPos;
 use crate::arcane::Current;
 use crate::inventory::Inventory;
-use crate::alchemy::ProcessStep;
+use crate::planet::BlockPos;
 use crate::world::World;
-use super::result_for;
-use super::take_exact_slot;
 
 impl World {
     pub(super) fn alchemy_load_filter(

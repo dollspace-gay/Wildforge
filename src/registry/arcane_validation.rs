@@ -94,4 +94,3 @@ pub(super) fn validate_arcane_graph(reg: &mut Registry) {
     }
     reg.arcane_errors.extend(errors);
 }
-

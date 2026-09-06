@@ -17,9 +17,16 @@ pub(crate) struct MeleeDamage {
 /// cooldowns, mode-specific eligibility, and presentation remain with the actor.
 pub(crate) fn melee_damage(base: f32, heavy: bool, backstab: bool) -> MeleeDamage {
     let mut amount = base;
-    if heavy { amount *= HEAVY_MULT; }
-    if backstab { amount *= BACKSTAB_MULT; }
-    MeleeDamage { amount, critical: heavy || backstab }
+    if heavy {
+        amount *= HEAVY_MULT;
+    }
+    if backstab {
+        amount *= BACKSTAB_MULT;
+    }
+    MeleeDamage {
+        amount,
+        critical: heavy || backstab,
+    }
 }
 
 /// The attacker lies behind the mob's facing in its local tangent frame.
@@ -27,7 +34,9 @@ pub(crate) fn mob_facing_away(yaw: f32, mob_pos: EntityPos, from: EntityPos) -> 
     let delta = mob_pos.local_delta_to(from);
     let to = Vec2::new(delta.x, delta.z);
     let len = to.length();
-    if len < 1e-4 { return false; }
+    if len < 1e-4 {
+        return false;
+    }
     let to = to / len;
     let forward = Vec2::new(yaw.sin(), yaw.cos());
     forward.dot(to) < BACKSTAB_CONE_DEG.to_radians().cos()

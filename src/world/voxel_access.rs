@@ -1,6 +1,10 @@
 //! Voxel access coordinator for the authoritative world.
 
-use super::{AIR, BlockId, CHUNK_Y, Chunk, ChunkPos, HashMap, TerrainRead, World};
+use super::{BlockId, CHUNK_Y, ChunkPos, TerrainRead, World};
+#[cfg(test)]
+use crate::{chunk::Chunk, registry::AIR};
+#[cfg(test)]
+use std::collections::HashMap;
 
 impl World {
     pub fn dirty_chunks(&self) -> Vec<ChunkPos> {
@@ -69,14 +73,16 @@ impl World {
 
     #[cfg(test)]
     pub fn live_water_audit(&self) -> Option<crate::planet_atlas::WaterAudit> {
-        self.weather_state.live()
+        self.weather_state
+            .live()
             .map(crate::planet_atlas::PlanetaryWeather::water_audit)
     }
 
     #[cfg(test)]
     pub fn ecology_soil_water_hu_at(&self, surface: crate::planet::SurfacePos) -> Option<u64> {
         let atlas = self.planet_atlas.as_ref()?;
-        self.weather_state.live()
+        self.weather_state
+            .live()
             .map(|weather| weather.ecology_soil_water_hu(atlas.atlas_pos(surface)))
     }
 

@@ -1,28 +1,32 @@
 //! Charm binding implements transaction coordination.
 
+use super::add_current;
+use super::charm_resonance_preference;
+use super::physical_component;
+use super::transaction_from_maps;
 use crate::arcane::ArcaneOwner;
-use std::collections::BTreeMap;
-use crate::world::BlockEntity;
-use crate::planet::BlockPos;
 use crate::arcane::Current;
+use crate::arcane::LinkedFileReplacement;
 use crate::implements::FrameResult;
 use crate::implements::ImplementAuditEvent;
 use crate::implements::ImplementCue;
 use crate::implements::ImplementInstance;
 use crate::implements::ImplementKind;
-use crate::inventory::ItemStack;
-use crate::arcane::LinkedFileReplacement;
 use crate::implements::STRUCTURAL_SPARK_UNITS;
+use crate::inventory::ItemStack;
+use crate::planet::BlockPos;
+use crate::world::BlockEntity;
 use crate::world::World;
-use super::add_current;
-use super::charm_resonance_preference;
-use super::physical_component;
-use super::transaction_from_maps;
+use std::collections::BTreeMap;
 
 impl World {
     // Every frame verb below shares this host-authoritative surface and the
     // same finite-ledger transaction rules.
-    pub(super) fn bind_charm_at_frame(&mut self, pos: BlockPos, actor: &str) -> Result<FrameResult, String> {
+    pub(super) fn bind_charm_at_frame(
+        &mut self,
+        pos: BlockPos,
+        actor: &str,
+    ) -> Result<FrameResult, String> {
         let layout = self.binding_frame_layout(pos);
         if !layout.valid {
             return Err(layout.problems.join(" "));

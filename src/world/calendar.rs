@@ -1,10 +1,7 @@
 //! Seasons, weather locality, ire, offerings, and renewable growth.
 use crate::world::World;
 
-
-
 impl World {
-
     /// Industrial response gradient (capability E12): running machines
     /// feed regional ire alongside extraction — the valley feels a
     /// bloomery's smoke as surely as the mine that fed it. Charged once
@@ -16,18 +13,16 @@ impl World {
     pub const INDUSTRIAL_BUILDING_IRE: f32 = 0.5;
 }
 
-
-mod observations;
-mod weather;
-mod water_reconciliation;
-mod seasons;
-mod regional_ire;
+mod clock_access;
 mod depots;
 mod industrial_ire;
-mod reciprocity;
-mod lightning;
 mod ire_tick;
+mod lightning;
+mod observations;
 mod offerings;
+mod reciprocity;
+mod regional_ire;
 mod renewable_growth;
-mod clock_access;
-
+mod seasons;
+mod water_reconciliation;
+mod weather;

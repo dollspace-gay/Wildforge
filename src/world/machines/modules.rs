@@ -1,10 +1,10 @@
 //! Modules machines transaction coordination.
 
-use crate::registry::BlockId;
+use super::slot_of_instance_at;
 use crate::planet::BlockPos;
+use crate::registry::BlockId;
 use crate::world::World;
 use crate::world::multiblock::modules_in_category;
-use super::slot_of_instance_at;
 
 impl World {
     /// Find the `(anchor, category)` of the instance whose matched shell
@@ -12,12 +12,6 @@ impl World {
     /// every candidate before its (more expensive) shape re-match.
     pub(super) fn slot_of_instance_at(&self, pos: BlockPos) -> Option<(BlockPos, &'static str)> {
         slot_of_instance_at(self, pos)
-    }
-
-    /// The module category installed at `pos`, if `pos` is a slot cell of
-    /// a registered machine's shell. The game reads this to offer a swap.
-    pub fn slot_category_at(&self, pos: BlockPos) -> Option<&'static str> {
-        self.slot_of_instance_at(pos).map(|(_, category)| category)
     }
 
     /// Swap the module installed in a slot cell in place (spec Part 1.3).

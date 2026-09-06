@@ -986,7 +986,7 @@ fn environmental_exposure_is_bounded_reversible_and_does_not_change_ire() {
     let _ = world
         .tick_preparation_statuses(actor, polluted_pos, initial)
         .unwrap();
-    world.clock += 20.0;
+    world.set_simulation_clock(world.clock() + 20.0);
     let exposed = world
         .tick_preparation_statuses(actor, polluted_pos, initial)
         .unwrap();
@@ -997,7 +997,7 @@ fn environmental_exposure_is_bounded_reversible_and_does_not_change_ire() {
     assert!(exposed.modifiers.stamina_permille < 1_000);
     assert_eq!(world.ire, ire);
 
-    world.clock += 120.0;
+    world.set_simulation_clock(world.clock() + 120.0);
     let recovered = world
         .tick_preparation_statuses(actor, clean_pos, exposed.physiology)
         .unwrap();

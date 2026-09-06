@@ -1,8 +1,8 @@
 //! Assign sediment basins, host rocks, and stable stratigraphic stacks.
 
-use crate::planet_atlas::TectonicCell;
-use crate::chunk::SEA_LEVEL;
 use super::{BasinKind, BedrockFamily, DetailedBoundary, StratigraphicStackRecord};
+use crate::chunk::SEA_LEVEL;
+use crate::planet_atlas::TectonicCell;
 
 pub(super) fn basin_for(cell: TectonicCell, elevation: f32) -> BasinKind {
     if elevation <= SEA_LEVEL as f32 - 18.0 {

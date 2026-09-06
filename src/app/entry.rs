@@ -1,8 +1,8 @@
 //! Offline spawn preparation followed by durable water/material qualification.
 
-use std::{path::PathBuf, sync::Arc};
-use crate::{materials, planet_atlas, registry};
 use crate::world::World;
+use crate::{materials, planet_atlas, registry};
+use std::{path::PathBuf, sync::Arc};
 
 pub(super) fn validate(args: &[String], i: usize) {
     let Some(world_arg) = args.get(i + 1).map(PathBuf::from) else {

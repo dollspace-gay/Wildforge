@@ -1,12 +1,12 @@
 //! Item browser layout, drawing, search, and navigation.
 
+use super::Game;
+use super::navigation::Screen;
 use super::widgets;
 use crate::inventory::ItemStack;
 use crate::registry::ItemId;
 use crate::registry::Registry;
 use crate::ui::UiBatch;
-use super::Game;
-use super::navigation::Screen;
 
 impl Game {
     pub(super) fn browser_origin(&self) -> (f32, f32) {
@@ -335,4 +335,3 @@ pub(crate) fn browser_items(reg: &Registry, search: &str, creative: bool) -> Vec
         })
         .collect()
 }
-

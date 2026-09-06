@@ -1,9 +1,9 @@
 //! Material fixed-point inference and exact transformation balance validation.
 
-use super::{BlockId, Ingredient, ItemId, MaterialClass, MaterialVector, Registry, SalvageDef};
-use super::salvage::register_salvage_content;
 use super::arcane_validation::validate_arcane_graph;
 use super::ecology_validation::{validate_arcane_ecology_graph, validate_dross_scar_graph};
+use super::salvage::register_salvage_content;
+use super::{BlockId, Ingredient, ItemId, MaterialClass, MaterialVector, Registry, SalvageDef};
 
 fn add_materials(into: &mut MaterialVector, from: &MaterialVector, multiplier: u64) {
     for (material, units) in from {
@@ -298,4 +298,3 @@ fn validate_material_graph(reg: &mut Registry) {
     }
     reg.material_errors = errors;
 }
-

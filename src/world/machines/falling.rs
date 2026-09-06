@@ -1,19 +1,15 @@
 //! Falling machines transaction coordination.
 
+use crate::chunk::CHUNK_Y;
+use crate::inventory::ItemStack;
 use crate::registry::AIR;
 use crate::registry::BlockId;
-use crate::chunk::CHUNK_Y;
 use crate::world::FallingBlock;
-use crate::inventory::ItemStack;
 use crate::world::World;
 
 impl World {
     pub fn falling_blocks(&self) -> &[FallingBlock] {
         &self.falling
-    }
-
-    pub fn replace_falling_blocks(&mut self, falling: Vec<FallingBlock>) {
-        self.falling = falling;
     }
 
     /// Lift a block out of the grid and into the air (atomically: the

@@ -1,14 +1,14 @@
 //! Portable items in the ordered graphical action pipeline.
 
-use crate::game::Game;
-use crate::world::TerrainRead;
+use super::ActionFrame;
 use crate::audio::Sfx;
+use crate::game::Game;
 use crate::inventory::ItemStack;
 use crate::mobs;
 use crate::net;
 use crate::raycast;
 use crate::registry::AIR;
-use super::ActionFrame;
+use crate::world::TerrainRead;
 
 impl Game {
     pub(in crate::game) fn interact_portable_items(&mut self, frame: &ActionFrame) -> bool {
@@ -29,7 +29,9 @@ impl Game {
                 self.reach(),
             )
         {
-            if self.reject_guest_action() { return true; }
+            if self.reject_guest_action() {
+                return true;
+            }
             let pos = w.block;
             if reg.is_water(self.runtime.view().get_block_at(pos))
                 && let Some(bi) = reg.animal_id("base:boat")
@@ -71,7 +73,10 @@ impl Game {
                 let b = self.runtime.view().get_block_at(pos);
                 // Either fluid fills the bucket — a full cell only.
                 if reg.fluid_volume(b) == Some(8) {
-                    let water_class = self.runtime.view().water_mass_at(pos)
+                    let water_class = self
+                        .runtime
+                        .view()
+                        .water_mass_at(pos)
                         .map(|mass| mass.water_class());
                     let full_item = if reg.is_lava(b) {
                         reg.item_id("base:bucket_lava")
@@ -95,7 +100,7 @@ impl Game {
                     };
                     if moved && let Some(full) = full_item {
                         self.inventory.slots[self.input.hotbar_sel] =
-                            Some(ItemStack::new(&reg, full, 1));
+                            Some(ItemStack::new(reg, full, 1));
                     }
                     self.input.action_cooldown = 0.25;
                     self.sfx(Sfx::Splash);
@@ -118,19 +123,22 @@ impl Game {
                 && let Some(h) = &hit
             {
                 let pos = h.adjacent;
-                if self.runtime.view().get_block_at(pos) == AIR && !self.player.overlaps_block_at(pos)
+                if self.runtime.view().get_block_at(pos) == AIR
+                    && !self.player.overlaps_block_at(pos)
                 {
                     if let Some(r) = &self.multiplayer.remote {
                         r.session.send(&net::C2S::Place { pos });
                     } else {
                         crate::player_ops::terrain::Placement::Water(water_class).apply(
-                            &mut self.runtime.local_mut().world, pos,
-                            self.inventory.slots[self.input.hotbar_sel], self.creative,
+                            &mut self.runtime.local_mut().world,
+                            pos,
+                            self.inventory.slots[self.input.hotbar_sel],
+                            self.creative,
                         );
                     }
                     if let Some(empty) = reg.item_id("base:bucket") {
                         self.inventory.slots[self.input.hotbar_sel] =
-                            Some(ItemStack::new(&reg, empty, 1));
+                            Some(ItemStack::new(reg, empty, 1));
                     }
                     self.input.action_cooldown = 0.25;
                     self.sfx(Sfx::Splash);
@@ -144,19 +152,22 @@ impl Game {
                 && let Some(h) = &hit
             {
                 let pos = h.adjacent;
-                if self.runtime.view().get_block_at(pos) == AIR && !self.player.overlaps_block_at(pos)
+                if self.runtime.view().get_block_at(pos) == AIR
+                    && !self.player.overlaps_block_at(pos)
                 {
                     if let Some(r) = &self.multiplayer.remote {
                         r.session.send(&net::C2S::Place { pos });
                     } else {
                         crate::player_ops::terrain::Placement::Lava(reg.lava_for_volume(8)).apply(
-                            &mut self.runtime.local_mut().world, pos,
-                            self.inventory.slots[self.input.hotbar_sel], self.creative,
+                            &mut self.runtime.local_mut().world,
+                            pos,
+                            self.inventory.slots[self.input.hotbar_sel],
+                            self.creative,
                         );
                     }
                     if let Some(empty) = reg.item_id("base:bucket") {
                         self.inventory.slots[self.input.hotbar_sel] =
-                            Some(ItemStack::new(&reg, empty, 1));
+                            Some(ItemStack::new(reg, empty, 1));
                     }
                     self.input.action_cooldown = 0.25;
                     self.sfx(Sfx::Splash);
@@ -164,7 +175,6 @@ impl Game {
             }
             return true;
         }
-
 
         false
     }

@@ -1,22 +1,22 @@
 //! Flow capture scene construction.
 
-use crate::world::TerrainRead;
-use crate::lights;
-use crate::registry::AIR;
-use crate::world;
-use glam::Vec3;
-use crate::game::Game;
-use crate::planet::{BlockPos, EntityPos, Face, SurfacePos};
 use super::DemoChart;
+use crate::game::Game;
+use crate::planet::EntityPos;
+use crate::registry::AIR;
+use glam::Vec3;
 
 impl Game {
-    pub(in crate::game) fn stage_capture_water(&mut self, spawn: EntityPos, chart: DemoChart) {
+    pub(super) fn stage_capture_water(&mut self, spawn: EntityPos, chart: DemoChart) {
         // Dev: drop a water source on a pillar ahead of spawn to watch it flow.
         if std::env::var("WILDFORGE_DEMO_WATER").is_ok() {
             let (bx, bz) = (spawn.x as i32 - 6, spawn.z as i32 - 14);
             for cx in -1..=1 {
                 for cz in -1..=1 {
-                    self.runtime.local_mut().world.ensure_chunk(chart.chunk(bx, bz).offset(cx, cz));
+                    self.runtime
+                        .local_mut()
+                        .world
+                        .ensure_chunk(chart.chunk(bx, bz).offset(cx, cz));
                 }
             }
             let by = demo_height!(self.runtime.local().world, chart, bx, bz);
@@ -34,7 +34,7 @@ impl Game {
         }
     }
 
-    pub(in crate::game) fn stage_capture_fire(&mut self, spawn: EntityPos, chart: DemoChart) {
+    pub(super) fn stage_capture_fire(&mut self, spawn: EntityPos, chart: DemoChart) {
         // Dev: a stand of trees over grass, lit at one corner, so a
         // burn can be watched running rather than inferred from a
         // test's counters. WILDFORGE_DEMO_FIRE=mine lights it as a
@@ -104,7 +104,7 @@ impl Game {
         }
     }
 
-    pub(in crate::game) fn stage_capture_lava(&mut self, spawn: EntityPos, chart: DemoChart) -> bool {
+    pub(super) fn stage_capture_lava(&mut self, spawn: EntityPos, chart: DemoChart) -> bool {
         // Dev: a volcano flank — a staircase with a vent at the crest,
         // so a flow can be watched settling instead of guessed at.
         if std::env::var("WILDFORGE_DEMO_LAVA").is_ok() {

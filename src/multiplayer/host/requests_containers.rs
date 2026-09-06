@@ -1,10 +1,14 @@
 //! Authenticated containers request adapter.
 
-use super::{BlockEntity, C2S, HostSession, ItemStack, MachineInstance, REACH, S2C, Server, refresh_held};
+use super::{
+    BlockEntity, C2S, HostSession, ItemStack, MachineInstance, REACH, S2C, Server, refresh_held,
+};
 
 impl HostSession {
     pub(super) fn request_containers(&mut self, server: &mut Server, id: u32, msg: C2S) {
-        let Some(guest) = self.guests.get_mut(&id) else { return; };
+        let Some(guest) = self.guests.get_mut(&id) else {
+            return;
+        };
         match msg {
             C2S::OpenContainer { pos } => {
                 if guest.pos.distance_to(pos.entity_center()) > REACH {

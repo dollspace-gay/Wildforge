@@ -1,6 +1,6 @@
 //! Qualification site selection for geology.
 
-use crate::chunk::{SEA_LEVEL};
+use crate::chunk::SEA_LEVEL;
 use crate::planet_atlas::{AtlasPos, DetailedBoundary, PlanetAtlas, VolcanoSource};
 
 pub(super) fn collect(atlas: &PlanetAtlas, insert: &mut impl FnMut(&str, AtlasPos, String)) {
@@ -189,5 +189,4 @@ pub(super) fn collect(atlas: &PlanetAtlas, insert: &mut impl FnMut(&str, AtlasPo
             ),
         );
     }
-
 }

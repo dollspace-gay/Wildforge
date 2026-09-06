@@ -1,16 +1,14 @@
 //! Bounce capture scene construction.
 
-use crate::world::TerrainRead;
+use super::DemoChart;
+use crate::game::Game;
+use crate::planet::EntityPos;
 use crate::registry::AIR;
-use crate::world;
 use crate::world::World;
 use glam::Vec3;
-use crate::game::Game;
-use crate::planet::{BlockPos, EntityPos, Face, SurfacePos};
-use super::DemoChart;
 
 impl Game {
-    pub(in crate::game) fn stage_capture_bounce_room(&mut self, spawn: EntityPos, chart: DemoChart) {
+    pub(super) fn stage_capture_bounce_room(&mut self, spawn: EntityPos, chart: DemoChart) {
         // Dev: the bounce-light room. A sealed white-plaster box with one high
         // window in the east wall and two saturated bands laid across the
         // floor. The morning sun throws a single bright quad through the
@@ -31,7 +29,10 @@ impl Game {
             let center = chart.chunk(bx, bz);
             for cx in -2..=2 {
                 for cz in -2..=2 {
-                    self.runtime.local_mut().world.ensure_chunk(center.offset(cx, cz));
+                    self.runtime
+                        .local_mut()
+                        .world
+                        .ensure_chunk(center.offset(cx, cz));
                 }
             }
             let fy = demo_height!(self.runtime.local().world, chart, bx, bz);
@@ -54,7 +55,13 @@ impl Game {
             for dx in -12..=16 {
                 for dz in -12..=12 {
                     for dy in 1..=22 {
-                        place(&mut self.runtime.local_mut().world, bx + dx, fy + dy, bz + dz, AIR);
+                        place(
+                            &mut self.runtime.local_mut().world,
+                            bx + dx,
+                            fy + dy,
+                            bz + dz,
+                            AIR,
+                        );
                     }
                 }
             }
@@ -67,7 +74,13 @@ impl Game {
                         let shell =
                             dx == -6 || dx == 6 || dz == -6 || dz == 6 || dy == 0 || dy == 7;
                         let b = if shell { white } else { AIR };
-                        place(&mut self.runtime.local_mut().world, bx + dx, fy + dy, bz + dz, b);
+                        place(
+                            &mut self.runtime.local_mut().world,
+                            bx + dx,
+                            fy + dy,
+                            bz + dz,
+                            b,
+                        );
                     }
                 }
             }
@@ -83,7 +96,13 @@ impl Game {
             // spot to follow.
             for wy in 3..=5 {
                 for wz in 1..=4 {
-                    place(&mut self.runtime.local_mut().world, bx + 6, fy + wy, bz + wz, AIR);
+                    place(
+                        &mut self.runtime.local_mut().world,
+                        bx + 6,
+                        fy + wy,
+                        bz + wz,
+                        AIR,
+                    );
                 }
             }
             if mode != "plain"
@@ -98,10 +117,22 @@ impl Game {
                 // capture sweep in docs/, not a derivation.
                 for dz in -5..=5 {
                     for dx in -4..=-2 {
-                        place(&mut self.runtime.local_mut().world, bx + dx, fy, bz + dz, red);
+                        place(
+                            &mut self.runtime.local_mut().world,
+                            bx + dx,
+                            fy,
+                            bz + dz,
+                            red,
+                        );
                     }
                     for dx in 1..=3 {
-                        place(&mut self.runtime.local_mut().world, bx + dx, fy, bz + dz, blue);
+                        place(
+                            &mut self.runtime.local_mut().world,
+                            bx + dx,
+                            fy,
+                            bz + dz,
+                            blue,
+                        );
                     }
                 }
             }

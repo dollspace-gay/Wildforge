@@ -1,13 +1,13 @@
 //! Frame dispatch implements transaction coordination.
 
-use crate::world::BlockEntity;
-use crate::planet::BlockPos;
 use crate::implements::ComponentRole;
 use crate::implements::FrameAction;
 use crate::implements::FrameResult;
 use crate::implements::ImplementCue;
 use crate::implements::ImplementKind;
 use crate::inventory::ItemStack;
+use crate::planet::BlockPos;
+use crate::world::BlockEntity;
 use crate::world::World;
 
 impl World {
@@ -81,7 +81,11 @@ impl World {
         }
     }
 
-    pub(super) fn contextual_frame_action(&self, pos: BlockPos, held: Option<ItemStack>) -> FrameAction {
+    pub(super) fn contextual_frame_action(
+        &self,
+        pos: BlockPos,
+        held: Option<ItemStack>,
+    ) -> FrameAction {
         if let Some(stack) = held {
             let definition = self.reg.item(stack.item);
             if definition
@@ -214,7 +218,10 @@ impl World {
         })
     }
 
-    pub(super) fn frame_preview(&self, pos: BlockPos) -> Result<crate::implements::ResolvedWand, String> {
+    pub(super) fn frame_preview(
+        &self,
+        pos: BlockPos,
+    ) -> Result<crate::implements::ResolvedWand, String> {
         let Some(BlockEntity::BindingFrame(frame)) = self.installations.get(&pos) else {
             return Err("The frame has no mounts.".into());
         };

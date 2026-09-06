@@ -1,9 +1,8 @@
 //! Cargo graphical containers adapter.
 
+use crate::game::Game;
 use crate::inventory;
 use crate::net;
-use crate::world;
-use crate::game::Game;
 
 impl Game {
     /// One click in a mob's pack: local worlds mutate directly;

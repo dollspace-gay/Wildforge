@@ -1,6 +1,6 @@
 //! Bedrock response and climate-normal runoff partitioning.
 
-use crate::planet_atlas::{BedrockFamily, ClimateCell, TectonicCell, CLIMATE_SEASONS};
+use crate::planet_atlas::{BedrockFamily, CLIMATE_SEASONS, ClimateCell, TectonicCell};
 
 pub(super) fn bedrock_resistance(cell: TectonicCell) -> f32 {
     match BedrockFamily::from_id(cell.bedrock_family) {

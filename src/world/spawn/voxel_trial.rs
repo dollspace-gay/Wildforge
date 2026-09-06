@@ -1,17 +1,5 @@
 //! Voxel trial for the common spawn contract.
 
-use crate::chunk::CHUNK_X;
-use crate::chunk::CHUNK_Y;
-use crate::chunk::CHUNK_Z;
-use crate::chunk::Chunk;
-use crate::chunk::ChunkPos;
-use std::collections::HashMap;
-use std::collections::HashSet;
-use crate::planet_atlas::PlanetAtlas;
-use crate::registry::Registry;
-use crate::chunk::SEA_LEVEL;
-use crate::planet::SurfacePos;
-use std::collections::VecDeque;
 use super::FRESH_WATER_REACH_BLOCKS;
 use super::LOCAL_RESOURCE_REACH_BLOCKS;
 use super::SPAWN_VERIFICATION_VERSION;
@@ -20,6 +8,18 @@ use super::TrialColumn;
 use super::TrialQualification;
 use super::TrialReject;
 use super::entry_chunks;
+use crate::chunk::CHUNK_X;
+use crate::chunk::CHUNK_Y;
+use crate::chunk::CHUNK_Z;
+use crate::chunk::Chunk;
+use crate::chunk::ChunkPos;
+use crate::chunk::SEA_LEVEL;
+use crate::planet::SurfacePos;
+use crate::planet_atlas::PlanetAtlas;
+use crate::registry::Registry;
+use std::collections::HashMap;
+use std::collections::HashSet;
+use std::collections::VecDeque;
 
 pub(super) fn qualify_trial_region(
     reg: &Registry,
@@ -241,4 +241,3 @@ pub(super) fn qualify_trial_region(
         })
     }
 }
-

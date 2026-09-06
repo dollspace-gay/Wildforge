@@ -1,11 +1,10 @@
 //! Writing panel layout and UI composition.
 
-use crate::ui::UiBatch;
 use crate::game::Game;
+use crate::ui::UiBatch;
 
 impl Game {
     pub(in crate::game) fn draw_sign_edit_screen(&mut self, ui: &mut UiBatch, w: f32, h: f32) {
-
         ui.rect(0.0, 0.0, w, h, [0.0, 0.0, 0.0, 0.6]);
         let title = "WRITE";
         let tw = UiBatch::text_width(3.0, title);

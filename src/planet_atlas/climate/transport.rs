@@ -1,8 +1,8 @@
 //! Conservative atmosphere transport stencils and bounded overflow redistribution.
 
-use glam::DVec3;
-use crate::planet_atlas::{AtlasPos, DynamicCell, AtlasError};
 use crate::planet::surface_to_unit;
+use crate::planet_atlas::{AtlasError, AtlasPos, DynamicCell};
+use glam::DVec3;
 
 pub(super) fn chart_components(pos: AtlasPos, side: u16, vector: DVec3) -> [f32; 2] {
     let frame = crate::planet::local_frame(pos.center(side));
@@ -75,7 +75,11 @@ pub(super) fn transport_stencil(pos: AtlasPos, side: u16, wind: DVec3) -> Transp
     stencil
 }
 
-pub(super) fn distribute_u32(amount: u32, stencil: TransportStencil, mut add: impl FnMut(usize, u32)) {
+pub(super) fn distribute_u32(
+    amount: u32,
+    stencil: TransportStencil,
+    mut add: impl FnMut(usize, u32),
+) {
     let len = usize::from(stencil.len);
     let mut remaining = amount;
     for (slot, target) in stencil.targets[..len].iter().enumerate() {
@@ -89,7 +93,11 @@ pub(super) fn distribute_u32(amount: u32, stencil: TransportStencil, mut add: im
     }
 }
 
-pub(super) fn spill_vapor(cells: &mut [DynamicCell], start: usize, mut amount: u32) -> Result<(), AtlasError> {
+pub(super) fn spill_vapor(
+    cells: &mut [DynamicCell],
+    start: usize,
+    mut amount: u32,
+) -> Result<(), AtlasError> {
     for offset in 0..cells.len() {
         let index = (start + offset) % cells.len();
         let room = u32::MAX - cells[index].atmospheric_vapor;
@@ -105,7 +113,11 @@ pub(super) fn spill_vapor(cells: &mut [DynamicCell], start: usize, mut amount: u
     ))
 }
 
-pub(super) fn spill_cloud(cells: &mut [DynamicCell], start: usize, mut amount: u32) -> Result<(), AtlasError> {
+pub(super) fn spill_cloud(
+    cells: &mut [DynamicCell],
+    start: usize,
+    mut amount: u32,
+) -> Result<(), AtlasError> {
     for offset in 0..cells.len() {
         let index = (start + offset) % cells.len();
         let room = u32::MAX - cells[index].cloud_water;

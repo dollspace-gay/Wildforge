@@ -1,7 +1,9 @@
 use super::*;
 
 fn settle_channel(world: &mut World, id: u64) -> crate::workings::WorkingResult {
-    world.clock += f64::from(crate::workings::MIN_WAND_SETTLE_SECONDS) + 0.01;
+    world.set_simulation_clock(
+        world.clock() + f64::from(crate::workings::MIN_WAND_SETTLE_SECONDS) + 0.01,
+    );
     world.activate_working(id).unwrap()
 }
 
@@ -73,7 +75,7 @@ fn storm_cordial_prices_real_wand_current_and_keeps_its_warning_visible() {
         workings_world("workings-storm-cordial-ordinary");
     let (mut storm, storm_source, storm_wand) = workings_world("workings-storm-cordial-active");
     let definition = storm.reg.preparations["base:storm_cordial"].clone();
-    let now = (storm.clock.max(0.0) * 20.0).round() as u64;
+    let now = (storm.clock().max(0.0) * 20.0).round() as u64;
     let (source_batch, status_id) = {
         let state = storm.alchemy_state.as_mut().unwrap();
         (
@@ -154,7 +156,7 @@ fn storm_cordial_prices_real_wand_current_and_keeps_its_warning_visible() {
     );
     assert!(storm_transaction.reserved_current.total() > ordinary_charge);
 
-    storm.clock = (now + 41) as f64 / 20.0;
+    storm.set_simulation_clock((now + 41) as f64 / 20.0);
     let ticked = storm
         .tick_preparation_statuses(actor, storm_source, Default::default())
         .unwrap();
@@ -1198,7 +1200,7 @@ fn rootwake_cannot_override_dead_hearts_winter_or_missing_habitat_inputs() {
     );
     winter_world.set_block_at(winter_plant, b(&winter_world.reg, "base:wheat_seeds"));
     winter_world.set_block_water_at(winter_water, winter_world.reg.water_block(0), 0, 0);
-    winter_world.long_winter = true;
+    winter_world.set_long_winter_for_test(true);
     let winter_current_before = winter_world
         .arcane_ledger
         .as_ref()
@@ -1238,7 +1240,7 @@ fn rootwake_cannot_override_dead_hearts_winter_or_missing_habitat_inputs() {
         winter_current_before
     );
 
-    winter_world.long_winter = false;
+    winter_world.set_long_winter_for_test(false);
     winter_world.set_block_at(winter_water, AIR);
     let refusal = winter_world
         .begin_rootwake_working(
@@ -1804,7 +1806,7 @@ fn holdfast_only_slows_real_elapsed_age_and_ends_on_schedule() {
     ));
     assert!(second <= 20, "Holdfast may never reverse elapsed age");
 
-    world.clock = 61.0;
+    world.set_simulation_clock(61.0);
     let outcomes = world.tick_workings();
     assert_eq!(outcomes.len(), 1);
     assert_eq!(outcomes[0].0.stable_id, started.stable_id);
@@ -2048,7 +2050,7 @@ fn gleam_is_a_releasable_temporary_cue_and_never_places_a_light_block() {
         .unwrap();
     settle_channel(&mut depleted_world, depleted.stable_id);
     let due = depleted_world.workings_state.as_ref().unwrap().active[&depleted.stable_id].due_tick;
-    depleted_world.clock = due as f64 / 20.0 + 0.01;
+    depleted_world.set_simulation_clock(due as f64 / 20.0 + 0.01);
     let outcomes = depleted_world.tick_workings();
     assert_eq!(outcomes.len(), 1);
     assert_eq!(outcomes[0].0.stable_id, depleted.stable_id);
@@ -2137,7 +2139,7 @@ fn transfer_circle_moves_only_exact_adjacent_charge_with_lower_bounded_loss() {
         _ => panic!("transfer circle reserved the wrong typed effect"),
     };
     settle_channel(&mut world, started.stable_id);
-    world.clock = 5.0;
+    world.set_simulation_clock(5.0);
     let outcomes = world.tick_workings();
     assert_eq!(outcomes.len(), 1);
     assert_eq!(outcomes[0].0.cue, crate::workings::WorkingCueKind::Complete);
@@ -2204,7 +2206,7 @@ fn rooting_bed_advances_loaded_or_unloaded_only_after_reserving_real_budgets() {
     save_world(&mut world);
     world.unload_chunk(plant.chunk());
     assert!(world.chunk(plant.chunk()).is_none());
-    world.clock = 13.0;
+    world.set_simulation_clock(13.0);
     let outcomes = world.tick_workings();
     assert_eq!(outcomes.len(), 1);
     assert_eq!(outcomes[0].0.stable_id, started.stable_id);
@@ -2267,7 +2269,7 @@ fn active_unloaded_ritual_resumes_after_process_restart_and_settles_once() {
     assert_eq!(resumed.phase, crate::workings::WorkingPhase::Active);
     assert_eq!(resumed.due_tick, due_tick);
     assert!(reloaded.chunk(plant.chunk()).is_none());
-    reloaded.clock = due_tick as f64 / 20.0 + 0.1;
+    reloaded.set_simulation_clock(due_tick as f64 / 20.0 + 0.1);
     let outcomes = reloaded.tick_workings();
     assert_eq!(outcomes.len(), 1);
     assert_eq!(outcomes[0].0.stable_id, started.stable_id);
@@ -2409,7 +2411,9 @@ fn ward_is_closed_supplied_ire_costed_and_breaks_without_rewriting_construction(
     assert!(geography.foul_ambient(region, 128).unwrap() > 0);
     geography.begin_wake(vec![region], 64, 64, 1).unwrap();
     let next_step = geography.dynamic.completed_steps + 1;
-    world.clock = (next_step * crate::arcane_geography::ARCANE_GEOGRAPHY_SIMULATION_SECONDS) as f64;
+    world.set_simulation_clock(
+        (next_step * crate::arcane_geography::ARCANE_GEOGRAPHY_SIMULATION_SECONDS) as f64,
+    );
     for _ in 0..8 {
         world.tick_arcane_geography(4_096).unwrap();
         if world

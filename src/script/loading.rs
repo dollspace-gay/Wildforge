@@ -23,7 +23,10 @@ impl ScriptErrors {
     }
 
     fn check(mods: &[ScriptMod]) -> Result<(), Self> {
-        let diagnostics: Vec<_> = mods.iter().filter_map(|script| script.error.clone()).collect();
+        let diagnostics: Vec<_> = mods
+            .iter()
+            .filter_map(|script| script.error.clone())
+            .collect();
         if diagnostics.is_empty() {
             Ok(())
         } else {
@@ -46,7 +49,10 @@ impl std::error::Error for ScriptErrors {}
 
 impl ScriptHost {
     /// Compile every provider without executing scripts or changing live ASTs.
-    pub fn prepare_mods(&self, mods: &[(String, PathBuf)]) -> Result<PreparedScripts, ScriptErrors> {
+    pub fn prepare_mods(
+        &self,
+        mods: &[(String, PathBuf)],
+    ) -> Result<PreparedScripts, ScriptErrors> {
         let mods = self.compile_mods(mods, true);
         ScriptErrors::check(&mods)?;
         Ok(PreparedScripts { mods })
@@ -67,7 +73,10 @@ impl ScriptHost {
         let mut next = self.compile_mods(mods, false);
         for script in &mut next {
             if script.error.is_some() {
-                script.ast = self.mods.iter_mut().find(|old| old.id == script.id)
+                script.ast = self
+                    .mods
+                    .iter_mut()
+                    .find(|old| old.id == script.id)
                     .and_then(|old| old.ast.take());
             }
         }
@@ -79,11 +88,21 @@ impl ScriptHost {
         for (id, dir) in mods {
             let source = match std::fs::read_to_string(dir.join("main.rhai")) {
                 Ok(source) => Ok(source),
-                Err(error) if error.kind() == io::ErrorKind::NotFound && !require_present => continue,
+                Err(error) if error.kind() == io::ErrorKind::NotFound && !require_present => {
+                    continue;
+                }
                 Err(error) => Err(error.to_string()),
             };
-            match source.and_then(|source| self.engine.compile(&source).map_err(|error| error.to_string())) {
-                Ok(ast) => next.push(ScriptMod { id: id.clone(), ast: Some(ast), error: None }),
+            match source.and_then(|source| {
+                self.engine
+                    .compile(&source)
+                    .map_err(|error| error.to_string())
+            }) {
+                Ok(ast) => next.push(ScriptMod {
+                    id: id.clone(),
+                    ast: Some(ast),
+                    error: None,
+                }),
                 Err(error) => next.push(ScriptMod {
                     id: id.clone(),
                     ast: None,

@@ -1,13 +1,11 @@
 //! Arcane geography inspection, exports, and explicit retrogen commands.
 
-use std::path::PathBuf;
 use crate::{arcane_ecology, arcane_geography, planet_atlas, registry};
+use std::path::PathBuf;
 
 pub(super) fn dross_atlas(args: &[String], i: usize) {
     let Some(world) = args.get(i + 1).map(PathBuf::from) else {
-        eprintln!(
-            "usage: wildforge --arcane-atlas <world> --layer dross [--output <directory>]"
-        );
+        eprintln!("usage: wildforge --arcane-atlas <world> --layer dross [--output <directory>]");
         std::process::exit(2);
     };
     let layer = args
@@ -24,8 +22,7 @@ pub(super) fn dross_atlas(args: &[String], i: usize) {
         .and_then(|index| args.get(index + 1))
         .map_or_else(|| world.join("diagnostics/arcane-atlas"), PathBuf::from);
     let result = (|| -> Result<Vec<String>, String> {
-        let atlas =
-            planet_atlas::PlanetAtlas::load(&world).map_err(|error| error.to_string())?;
+        let atlas = planet_atlas::PlanetAtlas::load(&world).map_err(|error| error.to_string())?;
         let geography = arcane_geography::ArcaneGeography::load(&world, &atlas)
             .map_err(|error| error.to_string())?;
         geography
@@ -71,8 +68,7 @@ pub(super) fn ecology(args: &[String], i: usize) {
         std::process::exit(2);
     };
     let result = (|| -> Result<(arcane_ecology::EcologyAudit, bool), String> {
-        let atlas =
-            planet_atlas::PlanetAtlas::load(&world).map_err(|error| error.to_string())?;
+        let atlas = planet_atlas::PlanetAtlas::load(&world).map_err(|error| error.to_string())?;
         let registry = registry::load_validated(std::path::Path::new("mods"))
             .map_err(|error| error.to_string())?;
         let geography = arcane_geography::ArcaneGeography::load(&world, &atlas)
@@ -138,8 +134,7 @@ pub(super) fn retrogen(args: &[String], i: usize) {
         std::process::exit(2);
     };
     let result = (|| -> Result<usize, String> {
-        let atlas =
-            planet_atlas::PlanetAtlas::load(&world).map_err(|error| error.to_string())?;
+        let atlas = planet_atlas::PlanetAtlas::load(&world).map_err(|error| error.to_string())?;
         let registry = registry::load_validated(std::path::Path::new("mods"))
             .map_err(|error| error.to_string())?;
         let mut geography = arcane_geography::ArcaneGeography::load(&world, &atlas)

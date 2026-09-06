@@ -1,6 +1,8 @@
 //! Load entities transaction coordination.
 
 use super::schema::{FileT, SlotT};
+use crate::inventory::ItemStack;
+use crate::registry::Registry;
 use crate::world::AnvilState;
 use crate::world::BindingFrameState;
 use crate::world::BlockEntity;
@@ -10,11 +12,8 @@ use crate::world::ChestState;
 use crate::world::ClampState;
 use crate::world::DiscoveryApparatusState;
 use crate::world::FurnaceState;
-use crate::inventory::ItemStack;
 use crate::world::MachineInstance;
-use crate::world::multiblock::MachineKind;
 use crate::world::OfferingState;
-use crate::registry::Registry;
 use crate::world::STEAM_SECS_PER_WATER;
 use crate::world::SignState;
 use crate::world::SmokerState;
@@ -23,6 +22,7 @@ use crate::world::SteamState;
 use crate::world::SurveyFolioState;
 use crate::world::SwitchState;
 use crate::world::World;
+use crate::world::multiblock::MachineKind;
 use std::fs;
 
 impl World {
@@ -80,8 +80,7 @@ impl World {
                     });
                 }
             }
-            self.installations
-                .insert(ch.pos, BlockEntity::Chest(state));
+            self.installations.insert(ch.pos, BlockEntity::Chest(state));
         }
         for of in parsed.offering {
             let mut state = OfferingState::default();
@@ -175,8 +174,7 @@ impl World {
                     }
                 }
             }
-            self.installations
-                .insert(st.pos, BlockEntity::Stall(state));
+            self.installations.insert(st.pos, BlockEntity::Stall(state));
         }
         for sm in parsed.smoker {
             let mut state = SmokerState {

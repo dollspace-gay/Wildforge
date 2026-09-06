@@ -1,11 +1,11 @@
 //! Atlas binary schema constants and private encoding adapters.
 
-pub(super) mod primitives;
 pub(super) mod container;
-pub(super) mod genesis;
 pub(super) mod dynamic;
-pub(super) mod models;
 pub(super) mod fingerprints;
+pub(super) mod genesis;
+pub(super) mod models;
+pub(super) mod primitives;
 
 pub(in crate::planet_atlas) const GENESIS_MAGIC: &[u8; 4] = b"WFA6";
 pub(in crate::planet_atlas) const DYNAMIC_MAGIC: &[u8; 4] = b"WFD3";

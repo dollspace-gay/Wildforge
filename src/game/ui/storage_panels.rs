@@ -1,14 +1,19 @@
 //! Storage panels layout and UI composition.
 
+use crate::game::Game;
 use crate::game::widgets;
 use crate::inventory::ItemStack;
 use crate::ui::UiBatch;
 use crate::world;
-use crate::game::Game;
 
 impl Game {
-    pub(in crate::game) fn draw_stall_screen(&mut self, ui: &mut UiBatch, w: f32, h: f32, pos: crate::planet::BlockPos) {
-
+    pub(in crate::game) fn draw_stall_screen(
+        &mut self,
+        ui: &mut UiBatch,
+        w: f32,
+        h: f32,
+        pos: crate::planet::BlockPos,
+    ) {
         ui.rect(0.0, 0.0, w, h, [0.0, 0.0, 0.0, 0.55]);
         let mine = self.multiplayer.remote.is_none() && self.stall_is_mine(pos);
         let (slots, owner_name, remote_mine) = {
@@ -53,15 +58,28 @@ impl Game {
             widgets::button(&mut *ui, br, "BUY", self.hit(br));
         }
         self.draw_player_inventory(&mut *ui);
-        widgets::held_stack(&self.content.reg, &mut *ui, self.input.ui_cursor, self.ui_state.held_stack);
+        widgets::held_stack(
+            &self.content.reg,
+            &mut *ui,
+            self.input.ui_cursor,
+            self.ui_state.held_stack,
+        );
     }
-    pub(in crate::game) fn draw_mob_cargo_screen(&mut self, ui: &mut UiBatch, w: f32, h: f32, id: u32) {
-
+    pub(in crate::game) fn draw_mob_cargo_screen(
+        &mut self,
+        ui: &mut UiBatch,
+        w: f32,
+        h: f32,
+        id: u32,
+    ) {
         ui.rect(0.0, 0.0, w, h, [0.0, 0.0, 0.0, 0.55]);
         let title = "SADDLEBAGS";
         let tw = UiBatch::text_width(3.0, title);
         ui.text_shadow((w - tw) / 2.0, h / 2.0 - 300.0, 3.0, title, [1.0; 4]);
-        let slots: [Option<ItemStack>; 12] = self.runtime.view().mob_by_id(id)
+        let slots: [Option<ItemStack>; 12] = self
+            .runtime
+            .view()
+            .mob_by_id(id)
             .and_then(|m| m.cargo.as_deref().copied())
             .unwrap_or_default();
         for (i, s) in slots.iter().enumerate() {
@@ -69,10 +87,20 @@ impl Game {
             widgets::slot(&self.content.reg, &mut *ui, r, *s, false, self.hit(r));
         }
         self.draw_player_inventory(&mut *ui);
-        widgets::held_stack(&self.content.reg, &mut *ui, self.input.ui_cursor, self.ui_state.held_stack);
+        widgets::held_stack(
+            &self.content.reg,
+            &mut *ui,
+            self.input.ui_cursor,
+            self.ui_state.held_stack,
+        );
     }
-    pub(in crate::game) fn draw_chest_screen(&mut self, ui: &mut UiBatch, w: f32, h: f32, pos: crate::planet::BlockPos) {
-
+    pub(in crate::game) fn draw_chest_screen(
+        &mut self,
+        ui: &mut UiBatch,
+        w: f32,
+        h: f32,
+        pos: crate::planet::BlockPos,
+    ) {
         ui.rect(0.0, 0.0, w, h, [0.0, 0.0, 0.0, 0.55]);
         let title = "CHEST";
         let tw = UiBatch::text_width(3.0, title);
@@ -87,10 +115,20 @@ impl Game {
         }
         self.draw_player_inventory(&mut *ui);
         self.draw_browser(&mut *ui);
-        widgets::held_stack(&self.content.reg, &mut *ui, self.input.ui_cursor, self.ui_state.held_stack);
+        widgets::held_stack(
+            &self.content.reg,
+            &mut *ui,
+            self.input.ui_cursor,
+            self.ui_state.held_stack,
+        );
     }
-    pub(in crate::game) fn draw_offering_screen(&mut self, ui: &mut UiBatch, w: f32, h: f32, pos: crate::planet::BlockPos) {
-
+    pub(in crate::game) fn draw_offering_screen(
+        &mut self,
+        ui: &mut UiBatch,
+        w: f32,
+        h: f32,
+        pos: crate::planet::BlockPos,
+    ) {
         ui.rect(0.0, 0.0, w, h, [0.0, 0.0, 0.0, 0.55]);
         let title = "OFFERING STONE";
         let tw = UiBatch::text_width(3.0, title);
@@ -105,7 +143,10 @@ impl Game {
             [0.7, 0.85, 0.65, 1.0],
         );
         // The stone states the season's appetite plainly.
-        let (_, want_line) = self.runtime.view().season_want_at_surface(self.player.pos.surface());
+        let (_, want_line) = self
+            .runtime
+            .view()
+            .season_want_at_surface(self.player.pos.surface());
         let want_line = want_line.to_uppercase();
         let ww = UiBatch::text_width(1.5, &want_line);
         ui.text_shadow(
@@ -125,6 +166,11 @@ impl Game {
         }
         self.draw_player_inventory(&mut *ui);
         self.draw_browser(&mut *ui);
-        widgets::held_stack(&self.content.reg, &mut *ui, self.input.ui_cursor, self.ui_state.held_stack);
+        widgets::held_stack(
+            &self.content.reg,
+            &mut *ui,
+            self.input.ui_cursor,
+            self.ui_state.held_stack,
+        );
     }
 }

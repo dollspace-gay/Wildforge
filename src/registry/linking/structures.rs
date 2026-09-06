@@ -1,9 +1,12 @@
 //! Link loot, templates, pieces, pools, and assemblies in dependency order.
 
+use super::lookups::{lookup_block, lookup_item, lookup_piece, parse_direction4};
+use crate::registry::schema::{AssemblyToml, LootToml, PieceToml, PoolToml, StructureToml};
+use crate::registry::{
+    AssemblyDef, DungeonDef, LootEntry, PieceChest, PieceConnector, PieceDef, PieceMarker, PoolDef,
+    PoolEntry, Registry, StructureDef, TerrainAdaptation, qualify,
+};
 use std::collections::HashMap;
-use crate::registry::{Registry, LootEntry, StructureDef, PieceConnector, PieceMarker, PieceChest, PieceDef, PoolEntry, PoolDef, AssemblyDef, TerrainAdaptation, DungeonDef, qualify};
-use crate::registry::schema::{LootToml, StructureToml, PieceToml, PoolToml, AssemblyToml};
-use super::lookups::{lookup_item, lookup_block, lookup_piece, parse_direction4};
 
 pub(super) fn loot(reg: &mut Registry, pending_loots: Vec<(String, LootToml)>) {
     for (modid, lt) in pending_loots {

@@ -1,8 +1,8 @@
 //! Diagnostic stage of GPU frame encoding.
 
-use crate::renderer::{Renderer, FrameInput, GpuChunk, frustum_planes, chunk_visible};
-use crate::chunk::ChunkPos;
 use super::DiagnosticReadback;
+use crate::chunk::ChunkPos;
+use crate::renderer::{FrameInput, GpuChunk, Renderer, chunk_visible, frustum_planes};
 
 impl Renderer {
     pub(in crate::renderer) fn encode_diagnostic_replay(
@@ -229,5 +229,4 @@ impl Renderer {
             padded_bytes_per_row,
         }
     }
-
 }

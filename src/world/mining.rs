@@ -1,6 +1,8 @@
 //! Mining coordinator for the authoritative world.
 
-use super::{AIR, BlockBreak, BlockPos, ItemId, ItemStack, World, cancel_unapplied_material_operation};
+use super::{
+    AIR, BlockBreak, BlockPos, ItemId, ItemStack, World, cancel_unapplied_material_operation,
+};
 
 impl World {
     pub fn break_block_at(

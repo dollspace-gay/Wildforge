@@ -1,8 +1,11 @@
 //! Link declarative conserved Current and ecology contracts.
 
-use std::collections::BTreeMap;
-use crate::registry::{ArcaneContentDef, ArcaneEcologyDef, ArcaneEcologyKind, EcologyRole, EcologySource, ReproductionMode, qualify};
 use crate::registry::schema::{ArcaneContentToml, ArcaneEcologyToml};
+use crate::registry::{
+    ArcaneContentDef, ArcaneEcologyDef, ArcaneEcologyKind, EcologyRole, EcologySource,
+    ReproductionMode, qualify,
+};
+use std::collections::BTreeMap;
 
 pub(in crate::registry) fn arcane_def(
     raw: Option<&ArcaneContentToml>,
@@ -250,4 +253,3 @@ pub(in crate::registry) fn arcane_ecology_def(
         preserving_tool_tier: raw.preserving_tool_tier,
     }))
 }
-

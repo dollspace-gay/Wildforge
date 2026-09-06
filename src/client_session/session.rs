@@ -77,7 +77,10 @@ impl GuestSession {
 
     pub(crate) fn set_roster(&mut self, players: Vec<crate::net::PlayerPresence>) {
         if self.admission.receives_world() {
-            self.roster = players.into_iter().map(|presence| (presence.id, presence)).collect();
+            self.roster = players
+                .into_iter()
+                .map(|presence| (presence.id, presence))
+                .collect();
         }
     }
 
@@ -219,7 +222,11 @@ impl GuestSession {
         local
     }
 
-    pub(crate) fn apply_terrain(&mut self, world: &mut impl ReplicationTarget, budget: usize) -> Vec<ChunkPos> {
+    pub(crate) fn apply_terrain(
+        &mut self,
+        world: &mut impl ReplicationTarget,
+        budget: usize,
+    ) -> Vec<ChunkPos> {
         let attempted = self.terrain.apply(world, &self.content, budget);
         for &position in &attempted {
             if world.has_chunk(position) {

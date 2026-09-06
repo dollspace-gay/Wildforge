@@ -1,10 +1,15 @@
 //! Scene stage of GPU frame encoding.
 
-use crate::renderer::{Renderer, FrameInput, GpuChunk, frustum_planes, chunk_visible};
 use crate::chunk::ChunkPos;
+use crate::renderer::{FrameInput, GpuChunk, Renderer, chunk_visible, frustum_planes};
 
 impl Renderer {
-    pub(in crate::renderer) fn encode_world(&self, encoder: &mut wgpu::CommandEncoder, f: &FrameInput<'_>, visible: &[(&ChunkPos, &GpuChunk)]) {
+    pub(in crate::renderer) fn encode_world(
+        &self,
+        encoder: &mut wgpu::CommandEncoder,
+        f: &FrameInput<'_>,
+        visible: &[(&ChunkPos, &GpuChunk)],
+    ) {
         let outline = f.outline;
         {
             let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
@@ -91,9 +96,12 @@ impl Renderer {
                 pass.draw(0..24, 0..1);
             }
         }
-
     }
-    pub(in crate::renderer) fn encode_hand(&self, encoder: &mut wgpu::CommandEncoder, f: &FrameInput<'_>) {
+    pub(in crate::renderer) fn encode_hand(
+        &self,
+        encoder: &mut wgpu::CommandEncoder,
+        f: &FrameInput<'_>,
+    ) {
         // The first-person hand draws over the world (its own cleared depth)
         // into the same HDR target, so it tonemaps and blooms with the scene.
         {
@@ -132,6 +140,5 @@ impl Renderer {
                 pass.draw_indexed(0..f.hand_idx.len() as u32, 0, 0..1);
             }
         }
-
     }
 }

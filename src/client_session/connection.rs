@@ -28,10 +28,14 @@ impl GuestSession {
     }
 
     pub(crate) fn send(&self, message: &C2S) {
-        if let Some(client) = &self.connection { client.send(message); }
+        if let Some(client) = &self.connection {
+            client.send(message);
+        }
     }
 
     pub(crate) fn send_datagram(&self, message: &C2S) {
-        if let Some(client) = &self.connection { client.send_datagram(message); }
+        if let Some(client) = &self.connection {
+            client.send_datagram(message);
+        }
     }
 }

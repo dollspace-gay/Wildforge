@@ -1,12 +1,12 @@
 //! Versioned atlas containers, checksums, and payload size contracts.
 
-use crate::planet_atlas::{AtlasError};
-use crate::planet_atlas::codec::{DYNAMIC_MAGIC, DYNAMIC_PREFIX_BYTES, FILE_HEADER_BYTES};
+use crate::planet_atlas::AtlasError;
 use crate::planet_atlas::codec::primitives::{ByteReader, put_u16, put_u32, put_u64};
-use crate::planet_atlas::grid::{atlas_count};
-use crate::planet_atlas::identity::{stable_hash};
-use crate::planet_atlas::storage::{read_bounded};
-use std::path::{Path};
+use crate::planet_atlas::codec::{DYNAMIC_MAGIC, DYNAMIC_PREFIX_BYTES, FILE_HEADER_BYTES};
+use crate::planet_atlas::grid::atlas_count;
+use crate::planet_atlas::identity::stable_hash;
+use crate::planet_atlas::storage::read_bounded;
+use std::path::Path;
 
 pub(in crate::planet_atlas) fn container_bytes(
     magic: &[u8; 4],

@@ -1,17 +1,21 @@
 //! Derived lighting over resident chunks; no world authority is available.
 
-use std::collections::{HashMap, VecDeque};
-use std::sync::Arc;
+use super::TerrainStore;
 use crate::chunk::{CHUNK_X, CHUNK_Y, CHUNK_Z, ChunkPos};
 use crate::planet::{BlockPos, Direction6, step6};
 use crate::registry::Registry;
-use super::TerrainStore;
+use std::collections::{HashMap, VecDeque};
+use std::sync::Arc;
 
 impl TerrainStore {
     /// Recompute both light channels for one chunk from scratch: sky column
     /// scan, then BFS from emitters and lit cells, seeded across chunk
     /// borders from loaded neighbors. Returns true if any value changed.
-    pub(in crate::world) fn relight_chunk(&mut self, registry: &Arc<Registry>, pos: ChunkPos) -> bool {
+    pub(in crate::world) fn relight_chunk(
+        &mut self,
+        registry: &Arc<Registry>,
+        pos: ChunkPos,
+    ) -> bool {
         const NX: usize = CHUNK_X;
         const NY: usize = CHUNK_Y;
         const NZ: usize = CHUNK_Z;

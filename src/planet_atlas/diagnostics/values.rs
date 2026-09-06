@@ -1,11 +1,20 @@
 //! Read-only mapping from registered layer names to atlas values.
 
-use crate::chunk::{SEA_LEVEL};
+use crate::chunk::SEA_LEVEL;
 use crate::planet::{FACE_BLOCKS, PLANET_RADIUS, SurfacePos};
-use crate::planet_atlas::{AtlasPos, BIOME_JUNGLE, GraftCompatibility, HABITAT_AQUATIC_BRACKISH, HABITAT_AQUATIC_FRESH, HABITAT_AQUATIC_SALT, HABITAT_BEACH_DUNE, HABITAT_FLOODPLAIN, HABITAT_LAKESHORE, HABITAT_RIPARIAN, HABITAT_SALT_MARSH, HABITAT_WETLAND, HYDRO_DELTA, HYDRO_ESTUARY, HYDRO_FLOODPLAIN, HYDRO_WETLAND, PlanetAtlas, SurfaceReservoirKind, surface_reservoir_id};
-use glam::{DVec3};
+use crate::planet_atlas::{
+    AtlasPos, BIOME_JUNGLE, GraftCompatibility, HABITAT_AQUATIC_BRACKISH, HABITAT_AQUATIC_FRESH,
+    HABITAT_AQUATIC_SALT, HABITAT_BEACH_DUNE, HABITAT_FLOODPLAIN, HABITAT_LAKESHORE,
+    HABITAT_RIPARIAN, HABITAT_SALT_MARSH, HABITAT_WETLAND, HYDRO_DELTA, HYDRO_ESTUARY,
+    HYDRO_FLOODPLAIN, HYDRO_WETLAND, PlanetAtlas, SurfaceReservoirKind, surface_reservoir_id,
+};
+use glam::DVec3;
 
-pub(in crate::planet_atlas::diagnostics) fn layer_value(atlas: &PlanetAtlas, id: &str, pos: AtlasPos) -> f64 {
+pub(in crate::planet_atlas::diagnostics) fn layer_value(
+    atlas: &PlanetAtlas,
+    id: &str,
+    pos: AtlasPos,
+) -> f64 {
     let geometry = atlas
         .genesis
         .geometry

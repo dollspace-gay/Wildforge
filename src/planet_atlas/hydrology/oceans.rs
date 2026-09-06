@@ -1,11 +1,11 @@
 //! Ocean components, inter-basin sills, and marine reservoir records.
 
-use std::collections::{BinaryHeap, VecDeque};
-use crate::chunk::SEA_LEVEL;
-use crate::planet_atlas::{AtlasError, AtlasGrid, GeometryCell, mix64};
 use super::OceanBasinRecord;
 use super::flood::{FloodEntry, neighbors8_indices};
 use super::records::{generated_word, storage_curve};
+use crate::chunk::SEA_LEVEL;
+use crate::planet_atlas::{AtlasError, AtlasGrid, GeometryCell, mix64};
+use std::collections::{BinaryHeap, VecDeque};
 
 pub(super) fn label_oceans(side: u16, elevations: &[f32]) -> Result<(Vec<u16>, u16), AtlasError> {
     let mut labels = vec![0u16; elevations.len()];

@@ -1,18 +1,15 @@
 //! Overrides capture scene construction.
 
-use crate::world::TerrainRead;
-use crate::inventory::Inventory;
-use crate::inventory::ItemStack;
-use crate::world;
-use crate::world::World;
-use glam::Vec3;
+use super::DemoChart;
 use crate::game::Game;
 use crate::game::navigation::Screen;
-use crate::planet::{BlockPos, EntityPos, Face, SurfacePos};
-use super::DemoChart;
+use crate::inventory::ItemStack;
+use crate::planet::{EntityPos, Face};
+use crate::world;
+use glam::Vec3;
 
 impl Game {
-    pub(in crate::game) fn stage_capture_presentation(&mut self) {
+    pub(super) fn stage_capture_presentation(&mut self) {
         // Dev/headless: the in-world screens can only be reached by
         // playing, which a shot run cannot do. This makes the paper
         // doll and the slot grid verifiable from a capture.
@@ -76,13 +73,20 @@ impl Game {
             {
                 Some(item) => {
                     if let Some(previous) = self.inventory.slots[self.input.hotbar_sel]
-                        && let Err(error) = self.runtime.local_mut().world.record_admin_stack_deletion(previous)
+                        && let Err(error) = self
+                            .runtime
+                            .local_mut()
+                            .world
+                            .record_admin_stack_deletion(previous)
                     {
                         eprintln!("materials: held-item override deletion failed: {error}");
                     }
                     let mut stack = ItemStack::new(&reg, item, 1);
                     let accepted = self.player.pos.block().is_none_or(|at| {
-                        self.runtime.local_mut().world.bind_arcane_stack_at(at, &mut stack, "development held-item override")
+                        self.runtime
+                            .local_mut()
+                            .world
+                            .bind_arcane_stack_at(at, &mut stack, "development held-item override")
                             .map_err(|error| {
                                 eprintln!("arcane: held-item override rejected: {error}");
                                 error
@@ -90,7 +94,11 @@ impl Game {
                             .is_ok()
                     });
                     if accepted {
-                        if let Err(error) = self.runtime.local_mut().world.record_external_stack(stack, "development held-item override")
+                        if let Err(error) = self
+                            .runtime
+                            .local_mut()
+                            .world
+                            .record_external_stack(stack, "development held-item override")
                         {
                             eprintln!("materials: held-item override source failed: {error}");
                         }
@@ -117,7 +125,10 @@ impl Game {
                 let cp = target_chart.chunk(p[0] as i32, p[2] as i32);
                 for dx in -2..=2 {
                     for dz in -2..=2 {
-                        self.runtime.local_mut().world.ensure_chunk(cp.offset(dx, dz));
+                        self.runtime
+                            .local_mut()
+                            .world
+                            .ensure_chunk(cp.offset(dx, dz));
                     }
                 }
                 self.player.pos =
@@ -136,7 +147,7 @@ impl Game {
         }
     }
 
-    pub(in crate::game) fn stage_capture_juice(&mut self, spawn: EntityPos, chart: DemoChart) {
+    pub(super) fn stage_capture_juice(&mut self, spawn: EntityPos, chart: DemoChart) {
         // Dev: a glassworks yard - kiln stack, quern, minerals, sand.
         // Dev: stage the juice layer for screenshots — a trodden snow
         // trail, low health (heart wobble + vignette), and a debris
@@ -148,13 +159,31 @@ impl Game {
                 let sy = demo_height!(self.runtime.local().world, chart, sx, sz);
                 for rx in 0..6i32 {
                     for rz in -2..=2i32 {
-                        demo_set!(self.runtime.local_mut().world, chart, sx + rx, sy, sz + rz, dirt);
-                        demo_set!(self.runtime.local_mut().world, chart, sx + rx, sy + 1, sz + rz, layer);
+                        demo_set!(
+                            self.runtime.local_mut().world,
+                            chart,
+                            sx + rx,
+                            sy,
+                            sz + rz,
+                            dirt
+                        );
+                        demo_set!(
+                            self.runtime.local_mut().world,
+                            chart,
+                            sx + rx,
+                            sy + 1,
+                            sz + rz,
+                            layer
+                        );
                     }
                 }
                 // A walker crossed the field on the diagonal.
                 for i in 0..5i32 {
-                    self.runtime.local_mut().world.tread_at(chart.block(sx + i, sy + 1, sz - 2 + i));
+                    self.runtime.local_mut().world.tread_at(chart.block(
+                        sx + i,
+                        sy + 1,
+                        sz - 2 + i,
+                    ));
                 }
                 // A break mid-burst, sparks and all; the tick re-stamps
                 // the moment so any capture frame lands mid-effect.
@@ -163,15 +192,15 @@ impl Game {
                     .render_pos();
                 self.presentation.demo_burst =
                     Some((center, self.content.reg.block(dirt).tiles[0]));
-                self.presentation.burst(center, self.content.reg.block(dirt).tiles[0], 10, 2.2);
+                self.presentation
+                    .burst(center, self.content.reg.block(dirt).tiles[0], 10, 2.2);
             }
             self.survival.health = 5.0;
             self.survival.damage_flash = 0.35;
         }
-
     }
 
-    pub(in crate::game) fn stage_capture_environment(&mut self) {
+    pub(super) fn stage_capture_environment(&mut self) {
         // Dev: WILDFORGE_IRE=N forces the wild's ire (spawn testing).
         if let Ok(v) = std::env::var("WILDFORGE_IRE")
             && let Ok(v) = v.parse::<f32>()
@@ -188,7 +217,10 @@ impl Game {
         if let Ok(v) = std::env::var("WILDFORGE_SEASON")
             && let Ok(v) = v.parse::<u32>()
         {
-            self.runtime.local_mut().world.set_calendar_day((v % 4) * world::SEASON_DAYS);
+            self.runtime
+                .local_mut()
+                .world
+                .set_calendar_day((v % 4) * world::SEASON_DAYS);
         }
         // Calendar overrides must move the authoritative simulation clock too.
         // Local astronomy and climate sample `World::clock`; leaving it at the
@@ -208,7 +240,7 @@ impl Game {
         }
     }
 
-    pub(in crate::game) fn stage_capture_inventory(&mut self) {
+    pub(super) fn stage_capture_inventory(&mut self) {
         // Dev/headless: open the inventory for UI verification.
         if std::env::var("WILDFORGE_SCREEN").as_deref() == Ok("inventory") {
             self.interaction.craft_size = 2;

@@ -1,9 +1,9 @@
 //! Atlas creation, storage, validation, and compatibility errors.
 
-use crate::planet::{Face};
+use crate::planet::Face;
 
-use std::{fmt};
-use std::path::{PathBuf};
+use std::fmt;
+use std::path::PathBuf;
 
 #[derive(Debug)]
 pub enum AtlasError {

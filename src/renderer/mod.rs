@@ -10,9 +10,9 @@ use crate::chunk::ChunkPos;
 use crate::mesher::{ChunkMesh, Vertex};
 use crate::ui::UiVertex;
 
+mod device;
 mod frame;
 mod point_shadows;
-mod device;
 mod post;
 mod resources;
 mod setup;

@@ -1,8 +1,13 @@
 //! Deterministic immutable-layer fingerprints in persisted field order.
 
-use crate::planet_atlas::{AtlasGrid, BiomeCell, ClimateCell, GeometryCell, GroundCell, HydrologyCell, PlanetAtlas, ResourceCell, TectonicCell, TerrainCell};
-use crate::planet_atlas::codec::primitives::{put_f32, put_i16, put_i32, put_u16, put_u32, put_u64, put_u8};
-use crate::planet_atlas::identity::{stable_hash};
+use crate::planet_atlas::codec::primitives::{
+    put_f32, put_i16, put_i32, put_u8, put_u16, put_u32, put_u64,
+};
+use crate::planet_atlas::identity::stable_hash;
+use crate::planet_atlas::{
+    AtlasGrid, BiomeCell, ClimateCell, GeometryCell, GroundCell, HydrologyCell, PlanetAtlas,
+    ResourceCell, TectonicCell, TerrainCell,
+};
 
 impl PlanetAtlas {
     pub fn immutable_fingerprint(&self, layer: &str) -> Option<u64> {

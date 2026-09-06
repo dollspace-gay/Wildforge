@@ -3,17 +3,10 @@
 //! The selector is deliberately renderer- and transport-independent: solo,
 //! windowed hosts, and dedicated hosts must all begin at the same doorstep.
 
-use std::collections::{HashMap, HashSet, VecDeque};
-use std::sync::Arc;
-
-use super::preparation::{check_cancelled, generate_trial_region};
-
-use crate::world::{World, Chunk, ChunkPos, Registry, SEA_LEVEL, CHUNK_X, CHUNK_Y, CHUNK_Z, Generator, TerrainRead};
-use crate::planet::{FACE_BLOCKS, Face, SurfacePos};
-use crate::planet_atlas::{
-    BIOME_FOREST, BIOME_JUNGLE, BIOME_TAIGA, EDAPHIC_SHALLOW_ROCK, MineralKind, PlanetAtlas,
-    WaterBodyKind,
-};
+use crate::planet::{Face, SurfacePos};
+use crate::world::{Chunk, ChunkPos};
+#[cfg(test)]
+use crate::{planet::BlockPos, registry::AIR, world::BlockEntity};
 use serde::{Deserialize, Serialize};
 
 const FRESH_WATER_ATLAS_STEPS: u16 = 3;
@@ -215,21 +208,28 @@ impl SpawnVerification {
     }
 }
 
-
 mod atlas_selection;
-mod voxel_trial;
-mod saved_validation;
 mod discovery_sites;
 mod entry;
 mod position;
-use atlas_selection::{fresh_water_distances, traversable_component_sizes, qualified_atlas_candidates, spawn_candidate_portfolio};
-use voxel_trial::qualify_trial_region;
+mod saved_validation;
+mod voxel_trial;
+use atlas_selection::{qualified_atlas_candidates, spawn_candidate_portfolio};
 use saved_validation::{prepared_chunk_digest, validate_spawn_ledgers};
+use voxel_trial::qualify_trial_region;
 
 #[cfg(test)]
 mod tests {
+    use super::atlas_selection::fresh_water_distances;
     use super::*;
     use crate::planet_atlas::AtlasPos;
+    use crate::{
+        chunk::{CHUNK_X, CHUNK_Z},
+        planet::FACE_BLOCKS,
+        planet_atlas::{PlanetAtlas, WaterBodyKind},
+        world::World,
+    };
+    use std::{collections::HashMap, sync::Arc};
 
     #[test]
     fn freshwater_distance_crosses_cube_face_edges() {
@@ -470,8 +470,8 @@ mod tests {
         let cracked = reg.block_id("base:cracked_masonry").unwrap();
         let remnants = world
             .chunks
-            .values()
-            .map(|chunk| {
+            .iter()
+            .map(|(_, chunk)| {
                 (0..CHUNK_X)
                     .flat_map(|x| (0..CHUNK_Z).map(move |z| (x, z)))
                     .flat_map(|(x, z)| (67..72).map(move |y| (x, y, z)))

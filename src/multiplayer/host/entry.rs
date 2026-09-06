@@ -3,7 +3,6 @@
 use super::{BlockPos, Guest, HashSet, HostSession, Refusal, RefusalCode, S2C, Server, roster};
 
 impl HostSession {
-
     pub(super) fn try_finish_pending_entry(&mut self, server: &mut Server, id: u32) {
         let Some(mut pending) = self.pending_guests.remove(&id) else {
             return;

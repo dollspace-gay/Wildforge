@@ -1,9 +1,9 @@
 //! Screen state and ordered cross-domain screen transitions.
 
 use super::Game;
-use crate::{identity, net};
 use crate::inventory::ItemStack;
 use crate::registry::ItemId;
+use crate::{identity, net};
 
 #[derive(Clone, PartialEq)]
 pub(super) enum Screen {

@@ -1,10 +1,6 @@
 //! Authoritative bridge between sparse dross transaction owners and the
 //! dense, weather-coupled planetary subledger.
 
-
-
-
-
 const MAX_DROSS_IMPORT_ACCOUNTS: usize = 12;
 
 #[derive(Clone)]
@@ -25,12 +21,10 @@ struct ScarManifestCandidate {
     site_slot: u8,
 }
 
-
-mod exposure;
 mod ambient_import;
-mod tick;
-mod manifestation;
-mod scar_staging;
 mod excavation;
+mod exposure;
+mod manifestation;
 mod release;
-
+mod scar_staging;
+mod tick;

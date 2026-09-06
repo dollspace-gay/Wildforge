@@ -1,18 +1,16 @@
 //! Block machines in the ordered graphical action pipeline.
 
-use crate::game::Game;
-use crate::world::TerrainRead;
+use super::ActionFrame;
 use crate::audio::Sfx;
+use crate::game::Game;
+use crate::game::navigation::Screen;
 use crate::inventory::ItemStack;
 use crate::net;
 use crate::raycast;
 use crate::world;
-use crate::game::navigation::Screen;
-use super::ActionFrame;
 
 impl Game {
     pub(in crate::game) fn use_sign_block(&mut self, h: &raycast::PlanetHit) -> bool {
-
         // Reopen the editor with what's written.
         self.input.action_cooldown = 0.3;
         self.input.right_held = false;
@@ -26,13 +24,11 @@ impl Game {
         true
     }
     pub(in crate::game) fn use_waystone_block(&mut self, h: &raycast::PlanetHit) -> bool {
-
         self.input.action_cooldown = 0.4;
         self.read_waystone(h.block);
         true
     }
     pub(in crate::game) fn use_survey_block(&mut self, h: &raycast::PlanetHit) -> bool {
-
         // A raised cairn is bought knowledge: anyone reads
         // the surveyor's ground, no pick required — and a
         // country's heart is the first thing worth knowing.
@@ -43,7 +39,12 @@ impl Game {
         self.input.action_cooldown = 0.6;
         true
     }
-    pub(in crate::game) fn use_worked_station_block(&mut self, frame: &ActionFrame, h: &raycast::PlanetHit, st: &str) -> bool {
+    pub(in crate::game) fn use_worked_station_block(
+        &mut self,
+        frame: &ActionFrame,
+        h: &raycast::PlanetHit,
+        st: &str,
+    ) -> bool {
         let reg = &frame.reg;
         let held = frame.held;
 
@@ -81,7 +82,7 @@ impl Game {
                 return true;
             }
             if let Some(st) = self.runtime.local_mut().world.anvil_take_at(h.block) {
-                let left = self.inventory.add_stack(&reg, st);
+                let left = self.inventory.add_stack(reg, st);
                 if left > 0 {
                     self.drop_stack(ItemStack { count: left, ..st });
                 }
@@ -91,11 +92,18 @@ impl Game {
         }
         true
     }
-    pub(in crate::game) fn use_separator_block(&mut self, frame: &ActionFrame, h: &raycast::PlanetHit, interaction: &str) -> bool {
+    pub(in crate::game) fn use_separator_block(
+        &mut self,
+        frame: &ActionFrame,
+        h: &raycast::PlanetHit,
+        interaction: &str,
+    ) -> bool {
         let reg = &frame.reg;
         let held = frame.held;
 
-        if self.reject_guest_action() { return true; }
+        if self.reject_guest_action() {
+            return true;
+        }
         // Powder and fuel in by hand; bare hands take the
         // split back out (smoker rules, no screen).
         self.input.action_cooldown = 0.3;
@@ -125,8 +133,7 @@ impl Game {
                 self.toast("The hopper is full.".to_string());
                 return true;
             }
-            if self.creative || self.inventory.take_one(self.input.hotbar_sel).is_some()
-            {
+            if self.creative || self.inventory.take_one(self.input.hotbar_sel).is_some() {
                 if let Some(world::BlockEntity::Multiblock(sp)) =
                     self.runtime.local_mut().world.block_entity_mut_at(&h.block)
                 {
@@ -144,8 +151,7 @@ impl Game {
                 self.toast("The firebed is full.".to_string());
                 return true;
             }
-            if self.creative || self.inventory.take_one(self.input.hotbar_sel).is_some()
-            {
+            if self.creative || self.inventory.take_one(self.input.hotbar_sel).is_some() {
                 if let Some(world::BlockEntity::Multiblock(sp)) =
                     self.runtime.local_mut().world.block_entity_mut_at(&h.block)
                 {
@@ -172,9 +178,9 @@ impl Game {
                 if n > 0
                     && let Some(item) = reg.item_id(name)
                 {
-                    let mut st = ItemStack::new(&reg, item, 1);
+                    let mut st = ItemStack::new(reg, item, 1);
                     st.count = n;
-                    let left = self.inventory.add_stack(&reg, st);
+                    let left = self.inventory.add_stack(reg, st);
                     if left > 0 {
                         self.drop_stack(ItemStack { count: left, ..st });
                     }
@@ -184,18 +190,25 @@ impl Game {
         }
         true
     }
-    pub(in crate::game) fn use_firebox_block(&mut self, frame: &ActionFrame, h: &raycast::PlanetHit) -> bool {
+    pub(in crate::game) fn use_firebox_block(
+        &mut self,
+        frame: &ActionFrame,
+        h: &raycast::PlanetHit,
+    ) -> bool {
         let reg = &frame.reg;
         let held = frame.held;
 
-        if self.reject_guest_action() { return true; }
+        if self.reject_guest_action() {
+            return true;
+        }
         // Coal in at the door; bare hands read the gauges.
         self.input.action_cooldown = 0.3;
         let fuel = held.and_then(|i| reg.fuel_value(i));
-        let e = self.runtime.local_mut().world.ensure_block_entity_at(
-            h.block,
-            world::BlockEntity::Steam(Default::default()),
-        );
+        let e = self
+            .runtime
+            .local_mut()
+            .world
+            .ensure_block_entity_at(h.block, world::BlockEntity::Steam(Default::default()));
         let world::BlockEntity::Steam(s) = e else {
             return true;
         };
@@ -204,15 +217,12 @@ impl Game {
                 self.toast("The firebox is banked full.".to_string());
                 return true;
             }
-            if self.creative || self.inventory.take_one(self.input.hotbar_sel).is_some()
-            {
+            if self.creative || self.inventory.take_one(self.input.hotbar_sel).is_some() {
                 if let Some(item) = held
                     && let Some(ledger) = &mut self.runtime.local_mut().world.material_ledger
                 {
-                    let materials = crate::materials::stack_materials(
-                        &reg,
-                        ItemStack::new(&reg, item, 1),
-                    );
+                    let materials =
+                        crate::materials::stack_materials(reg, ItemStack::new(reg, item, 1));
                     if let Err(error) = ledger.record_consumption(&materials) {
                         eprintln!("materials: firebox fuel accounting failed: {error}");
                     }
@@ -226,8 +236,7 @@ impl Game {
             return true;
         }
         let f = s.fuel as u32;
-        let blocks =
-            s.water.water_hu as f64 / crate::planet_atlas::HYDRO_UNITS_PER_BLOCK as f64;
+        let blocks = s.water.water_hu as f64 / crate::planet_atlas::HYDRO_UNITS_PER_BLOCK as f64;
         let salinity = s.water.salinity();
         self.toast(format!(
             "Fire banked {f}s; boiler water {blocks:.2} blocks (salinity {}).",
@@ -235,7 +244,12 @@ impl Game {
         ));
         true
     }
-    pub(in crate::game) fn use_fire_station_block(&mut self, frame: &ActionFrame, h: &raycast::PlanetHit, interaction: &str) -> bool {
+    pub(in crate::game) fn use_fire_station_block(
+        &mut self,
+        frame: &ActionFrame,
+        h: &raycast::PlanetHit,
+        interaction: &str,
+    ) -> bool {
         let reg = &frame.reg;
 
         self.input.action_cooldown = 0.3;
@@ -256,11 +270,19 @@ impl Game {
             kind,
             ..Default::default()
         });
-        self.runtime.local_mut().world.ensure_block_entity_at(h.block, default);
+        self.runtime
+            .local_mut()
+            .world
+            .ensure_block_entity_at(h.block, default);
         self.set_screen(screen);
         true
     }
-    pub(in crate::game) fn use_recipe_station_block(&mut self, frame: &ActionFrame, h: &raycast::PlanetHit, interaction: &str) -> bool {
+    pub(in crate::game) fn use_recipe_station_block(
+        &mut self,
+        frame: &ActionFrame,
+        h: &raycast::PlanetHit,
+        interaction: &str,
+    ) -> bool {
         let reg = &frame.reg;
 
         // A recipe-list station (the workbench pattern): the
@@ -278,7 +300,10 @@ impl Game {
             kind,
             ..Default::default()
         });
-        self.runtime.local_mut().world.ensure_block_entity_at(h.block, default);
+        self.runtime
+            .local_mut()
+            .world
+            .ensure_block_entity_at(h.block, default);
         self.set_screen(Screen::Workbench(h.block));
         true
     }

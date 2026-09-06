@@ -1,5 +1,6 @@
 //! Apparatus helpers shared alchemy rules.
 
+use super::APPARATUS_REACH;
 use crate::alchemy::AgitationKind;
 use crate::alchemy::AlchemyApparatusState;
 use crate::alchemy::AlchemyCue;
@@ -7,16 +8,14 @@ use crate::alchemy::AlchemyCueKind;
 use crate::alchemy::AlchemyError;
 use crate::alchemy::AlchemyResult;
 use crate::alchemy::ApparatusKind;
-use crate::arcane::ArcaneOwner;
-use std::collections::BTreeMap;
 use crate::alchemy::BatchFailure;
 use crate::alchemy::BatchOutcome;
-use crate::planet::BlockPos;
-use crate::arcane::Current;
-use crate::registry::MaterialVector;
 use crate::alchemy::ProducedStack;
-use super::produced;
-use super::APPARATUS_REACH;
+use crate::arcane::ArcaneOwner;
+use crate::arcane::Current;
+use crate::planet::BlockPos;
+use crate::registry::MaterialVector;
+use std::collections::BTreeMap;
 
 pub(super) fn add_current_map(
     map: &mut BTreeMap<ArcaneOwner, Current>,
@@ -44,7 +43,10 @@ pub(super) fn next_block_key<T>(
         .or_else(|| map.first_key_value().map(|(key, _)| *key))
 }
 
-pub(super) fn next_u64_key<T>(map: &std::collections::BTreeMap<u64, T>, cursor: u64) -> Option<u64> {
+pub(super) fn next_u64_key<T>(
+    map: &std::collections::BTreeMap<u64, T>,
+    cursor: u64,
+) -> Option<u64> {
     use std::ops::Bound::{Excluded, Unbounded};
 
     map.range((Excluded(cursor), Unbounded))
@@ -162,4 +164,3 @@ pub(super) fn result_for(
         produced,
     })
 }
-

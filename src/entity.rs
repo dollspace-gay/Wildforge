@@ -27,10 +27,15 @@ pub struct ItemEntity {
 /// Rebind loose-item definitions during atomic content publication. Missing
 /// items retain the existing removal policy; quantities and instance IDs stay.
 pub(crate) fn remap_items(items: &mut Vec<ItemEntity>, old: &Registry, registry: &Registry) {
-    items.retain_mut(|entity| match registry.item_id(&old.item(entity.item).name) {
-        Some(item) => { entity.item = item; true }
-        None => false,
-    });
+    items.retain_mut(
+        |entity| match registry.item_id(&old.item(entity.item).name) {
+            Some(item) => {
+                entity.item = item;
+                true
+            }
+            None => false,
+        },
+    );
 }
 
 const SIZE: f32 = 0.25;
@@ -84,7 +89,8 @@ impl ItemEntity {
         let below = EntityPos::new(next.face(), next.u(), by as f32, next.v())
             .ok()
             .and_then(EntityPos::block);
-        if below.is_some_and(|pos| world.registry().is_solid(world.get_block_at(pos))) && self.vel.y < 0.0
+        if below.is_some_and(|pos| world.registry().is_solid(world.get_block_at(pos)))
+            && self.vel.y < 0.0
         {
             next = EntityPos::new(next.face(), next.u(), by as f32 + 1.0 + half, next.v())
                 .expect("item floor resolution remains inside the shell");

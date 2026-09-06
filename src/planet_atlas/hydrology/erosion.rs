@@ -1,11 +1,11 @@
 //! Bounded erosion iterations over the ordered drainage graph.
 
-use crate::chunk::SEA_LEVEL;
-use crate::planet_atlas::{AtlasError, AtlasGrid, ClimateCell, GeometryCell, TectonicCell};
-use super::{MAX_EROSION_ITERATIONS, EROSION_CONVERGENCE_BLOCKS};
 use super::flood::priority_flood;
 use super::flow::{accumulate_flow, edge_distance};
 use super::runoff::{bedrock_resistance, local_runoff};
+use super::{EROSION_CONVERGENCE_BLOCKS, MAX_EROSION_ITERATIONS};
+use crate::chunk::SEA_LEVEL;
+use crate::planet_atlas::{AtlasError, AtlasGrid, ClimateCell, GeometryCell, TectonicCell};
 
 pub(super) struct ErosionResult {
     pub(super) elevations: Vec<f32>,

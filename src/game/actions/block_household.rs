@@ -1,22 +1,28 @@
 //! Block household in the ordered graphical action pipeline.
 
-use crate::game::Game;
-use crate::world::TerrainRead;
+use super::ActionFrame;
 use crate::audio::Sfx;
+use crate::game::Game;
+use crate::game::navigation::Screen;
 use crate::identity;
 use crate::inventory::ItemStack;
 use crate::net;
 use crate::raycast;
 use crate::world;
-use crate::game::navigation::Screen;
-use super::ActionFrame;
+use crate::world::TerrainRead;
 
 impl Game {
-    pub(in crate::game) fn use_heart_block(&mut self, frame: &ActionFrame, h: &raycast::PlanetHit) -> bool {
+    pub(in crate::game) fn use_heart_block(
+        &mut self,
+        frame: &ActionFrame,
+        h: &raycast::PlanetHit,
+    ) -> bool {
         let reg = &frame.reg;
         let held = frame.held;
 
-        if self.reject_guest_action() { return true; }
+        if self.reject_guest_action() {
+            return true;
+        }
         self.input.action_cooldown = 0.5;
         self.input.right_held = false;
         let carried = held.and_then(|i| world::seed_nature(&reg.item(i).name));
@@ -25,16 +31,27 @@ impl Game {
         // carry across the world to wake a dead country.
         if !holding_seed
             && let Some(seed) = reg.item_id(world::seed_of_form(world::heart_form(
-                self.runtime.local().world.generator.biome_at(h.block.surface()),
+                self.runtime
+                    .local()
+                    .world
+                    .generator
+                    .biome_at(h.block.surface()),
             )))
-            && self.runtime.local_mut().world.take_heart_cutting_at(h.block.surface())
+            && self
+                .runtime
+                .local_mut()
+                .world
+                .take_heart_cutting_at(h.block.surface())
         {
-            let left = self.inventory.add(&reg, seed, 1);
+            let left = self.inventory.add(reg, seed, 1);
             if left > 0 {
-                self.drop_stack(ItemStack::new(&reg, seed, left));
+                self.drop_stack(ItemStack::new(reg, seed, left));
             }
             // Taking from the wild is taking, even gently.
-            self.runtime.local_mut().world.add_ire_at_surface(h.block.surface(), 1.0);
+            self.runtime
+                .local_mut()
+                .world
+                .add_ire_at_surface(h.block.surface(), 1.0);
             self.toast(
                 "A cutting comes away in your hand. This country will \
                  remember that you took it."
@@ -57,14 +74,16 @@ impl Game {
             // kind reawakens, a stranger's replaces.
             let seed_stack = self.inventory.slots[self.input.hotbar_sel]
                 .expect("holding_seed was derived from this authoritative slot");
-            match self.runtime.local_mut().world.plant_heart_seed_stack_at(h.block, seed_stack)
+            match self
+                .runtime
+                .local_mut()
+                .world
+                .plant_heart_seed_stack_at(h.block, seed_stack)
             {
                 Some(refusal) => self.toast(refusal),
                 None => {
                     self.inventory.take_one(self.input.hotbar_sel);
-                    self.toast(
-                        "You plant it in the ruin of the old heart.".to_string(),
-                    );
+                    self.toast("You plant it in the ruin of the old heart.".to_string());
                     self.sfx(Sfx::Place);
                 }
             }
@@ -115,19 +134,25 @@ impl Game {
         self.sfx(Sfx::Click);
         true
     }
-    pub(in crate::game) fn use_compost_block(&mut self, frame: &ActionFrame, h: &raycast::PlanetHit) -> bool {
+    pub(in crate::game) fn use_compost_block(
+        &mut self,
+        frame: &ActionFrame,
+        h: &raycast::PlanetHit,
+    ) -> bool {
         let reg = &frame.reg;
         let held = frame.held;
 
-        if self.reject_guest_action() { return true; }
+        if self.reject_guest_action() {
+            return true;
+        }
         self.input.action_cooldown = 0.3;
         // A ripened heap hands over its compost bare-handed;
         // a fresh one eats greens item by item.
         if self.runtime.local_mut().world.compost_take_at(h.block) {
             if let Some(c) = reg.item_id("base:compost") {
-                let left = self.inventory.add(&reg, c, 2);
+                let left = self.inventory.add(reg, c, 2);
                 if left > 0 {
-                    self.drop_stack(ItemStack::new(&reg, c, left));
+                    self.drop_stack(ItemStack::new(reg, c, left));
                 }
             }
             self.sfx(Sfx::Pickup);
@@ -135,13 +160,20 @@ impl Game {
         }
         if let Some(hi) = held {
             let name = reg.item(hi).name.clone();
-            if self.runtime.local_mut().world.compost_fill_at(h.block, &name) {
-                if let Some(consumed) =
-                    self.inventory.take_one_stack(self.input.hotbar_sel)
+            if self
+                .runtime
+                .local_mut()
+                .world
+                .compost_fill_at(h.block, &name)
+            {
+                if let Some(consumed) = self.inventory.take_one_stack(self.input.hotbar_sel)
                     && self.multiplayer.remote.is_none()
                 {
-                    if let Err(error) =
-                        self.runtime.local_mut().world.record_consumed_stacks([consumed])
+                    if let Err(error) = self
+                        .runtime
+                        .local_mut()
+                        .world
+                        .record_consumed_stacks([consumed])
                     {
                         eprintln!("materials: compost feed accounting failed: {error}");
                     }
@@ -167,21 +199,19 @@ impl Game {
         true
     }
     pub(in crate::game) fn use_offering_block(&mut self, h: &raycast::PlanetHit) -> bool {
-
         self.input.action_cooldown = 0.3;
         if let Some(rc) = &self.multiplayer.remote {
             rc.session.send(&net::C2S::OpenContainer { pos: h.block });
             return true;
         }
-        self.runtime.local_mut().world.ensure_block_entity_at(
-            h.block,
-            world::BlockEntity::Offering(Default::default()),
-        );
+        self.runtime
+            .local_mut()
+            .world
+            .ensure_block_entity_at(h.block, world::BlockEntity::Offering(Default::default()));
         self.set_screen(Screen::Offering(h.block));
         true
     }
     pub(in crate::game) fn use_stall_block(&mut self, h: &raycast::PlanetHit) -> bool {
-
         self.input.action_cooldown = 0.3;
         self.input.right_held = false;
         if let Some(rc) = &self.multiplayer.remote {
@@ -197,10 +227,11 @@ impl Game {
         .map(|p| p.0)
         .unwrap_or([0; 16]);
         let my_name = self.config.display_name.clone();
-        let e = self.runtime.local_mut().world.ensure_block_entity_at(
-            h.block,
-            world::BlockEntity::Stall(Default::default()),
-        );
+        let e = self
+            .runtime
+            .local_mut()
+            .world
+            .ensure_block_entity_at(h.block, world::BlockEntity::Stall(Default::default()));
         if let world::BlockEntity::Stall(st) = e
             && st.owner == [0; 16]
         {
@@ -210,37 +241,39 @@ impl Game {
         self.set_screen(Screen::Stall(h.block));
         true
     }
-    pub(in crate::game) fn use_smoker_block(&mut self, frame: &ActionFrame, h: &raycast::PlanetHit) -> bool {
+    pub(in crate::game) fn use_smoker_block(
+        &mut self,
+        frame: &ActionFrame,
+        h: &raycast::PlanetHit,
+    ) -> bool {
         let reg = &frame.reg;
         let held = frame.held;
 
-        if self.reject_guest_action() { return true; }
+        if self.reject_guest_action() {
+            return true;
+        }
         self.input.action_cooldown = 0.35;
         let raws = reg.tags.get("base:raw_meats").cloned().unwrap_or_default();
         let holding_raw = held.is_some_and(|h| raws.contains(&h));
-        let e = self.runtime.local_mut().world.ensure_block_entity_at(
-            h.block,
-            world::BlockEntity::Smoker(Default::default()),
-        );
+        let e = self
+            .runtime
+            .local_mut()
+            .world
+            .ensure_block_entity_at(h.block, world::BlockEntity::Smoker(Default::default()));
         let world::BlockEntity::Smoker(sm) = e else {
             return true;
         };
         if holding_raw {
             if let Some(slot) = sm.meat.iter_mut().find(|s| s.is_none()) {
                 let item = held.unwrap();
-                if self.creative
-                    || self.inventory.take_one(self.input.hotbar_sel).is_some()
-                {
-                    *slot = Some(ItemStack::new(&reg, item, 1));
+                if self.creative || self.inventory.take_one(self.input.hotbar_sel).is_some() {
+                    *slot = Some(ItemStack::new(reg, item, 1));
                     self.sfx(Sfx::Place);
                     let torch_below = h.block.offset(0, -1, 0).is_some_and(|below| {
-                        Some(self.runtime.view().get_block_at(below))
-                            == reg.block_id("base:torch")
+                        Some(self.runtime.view().get_block_at(below)) == reg.block_id("base:torch")
                     });
                     if !torch_below {
-                        self.toast(
-                            "The rack wants a torch burning beneath.".to_string(),
-                        );
+                        self.toast("The rack wants a torch burning beneath.".to_string());
                     }
                 }
             } else {
@@ -250,14 +283,18 @@ impl Game {
         }
         // Empty-handed (or otherwise): take the cuts back.
         let mut took: Option<ItemStack> = None;
-        if let world::BlockEntity::Smoker(sm) =
-            self.runtime.local_mut().world.block_entity_mut_at(&h.block).unwrap()
+        if let world::BlockEntity::Smoker(sm) = self
+            .runtime
+            .local_mut()
+            .world
+            .block_entity_mut_at(&h.block)
+            .unwrap()
             && let Some(slot) = sm.meat.iter_mut().rev().find(|s| s.is_some())
         {
             took = slot.take();
         }
         if let Some(st) = took {
-            let left = self.inventory.add_stack(&reg, st);
+            let left = self.inventory.add_stack(reg, st);
             if left > 0 {
                 self.drop_stack(ItemStack { count: left, ..st });
             }

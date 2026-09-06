@@ -1,17 +1,17 @@
 //! Drain alchemy transaction coordination.
 
+use super::add_materials;
+use super::result_for;
 use crate::alchemy::AlchemyAuditEvent;
 use crate::alchemy::AlchemyCueKind;
 use crate::alchemy::AlchemyRequest;
 use crate::alchemy::AlchemyResult;
-use crate::arcane::ArcaneOwner;
-use crate::planet::BlockPos;
-use crate::arcane::Current;
 use crate::alchemy::DisposalRoute;
+use crate::arcane::ArcaneOwner;
+use crate::arcane::Current;
+use crate::planet::BlockPos;
 use crate::registry::MaterialVector;
 use crate::world::World;
-use super::add_materials;
-use super::result_for;
 
 impl World {
     pub(super) fn alchemy_drain(

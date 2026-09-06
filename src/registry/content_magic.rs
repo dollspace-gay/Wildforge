@@ -1,7 +1,7 @@
 //! Content material classes and declarative magic/ecology contracts.
 
 use serde::{Deserialize, Serialize};
-use std::collections::{BTreeMap};
+use std::collections::BTreeMap;
 
 /// Economically meaningful material classes. Every content definition has
 /// one, even when it does not participate in the exact finite-material
@@ -184,4 +184,3 @@ pub enum RetrogenPolicy {
     WorldEvent,
     NoRetrogen,
 }
-

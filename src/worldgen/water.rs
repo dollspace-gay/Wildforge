@@ -1,11 +1,11 @@
 //! Materialize finite atlas water/salt allocation after all terrain decoration.
 
 use super::Generator;
+use crate::chunk::HydrologyVolumeRecord;
 use crate::chunk::{CHUNK_X, CHUNK_Y, CHUNK_Z, Chunk, ChunkPos};
 use crate::registry::AIR;
-use std::collections::BTreeMap;
-use crate::chunk::HydrologyVolumeRecord;
 use crate::registry::Registry;
+use std::collections::BTreeMap;
 
 impl Generator {
     pub(super) fn finish_water(&self, pos: ChunkPos, c: &mut Chunk, reg: &Registry) {
@@ -120,6 +120,5 @@ impl Generator {
                 .collect();
             c.set_hydrology_volumes(records);
         }
-
     }
 }

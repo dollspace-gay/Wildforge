@@ -1,8 +1,8 @@
 //! Persisted country routes and soil/composition summaries.
 
-use crate::planet_atlas::{AtlasPos};
+use crate::planet_atlas::AtlasPos;
 use serde::{Deserialize, Serialize};
-use std::collections::{BTreeMap};
+use std::collections::BTreeMap;
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct CountrySoilComposition {

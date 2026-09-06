@@ -1,9 +1,9 @@
 //! Raw recipes content schema; no runtime mutation.
 
-use super::{one_u32};
-use crate::registry::{MaterialVector};
+use super::one_u32;
+use crate::registry::MaterialVector;
 use serde::Deserialize;
-use std::collections::{HashMap};
+use std::collections::HashMap;
 
 #[derive(Deserialize, Clone)]
 pub(in crate::registry) struct RecipeToml {
@@ -118,7 +118,7 @@ pub(in crate::registry) struct TagToml {
 
 #[derive(Deserialize, Clone)]
 pub(in crate::registry) struct FeatureToml {
-    r#type: String,
+    pub(in crate::registry) r#type: String,
     pub(in crate::registry) block: String,
     #[serde(default)]
     pub(in crate::registry) replaces: Option<String>,
@@ -146,4 +146,3 @@ pub(in crate::registry) struct FeatureToml {
     #[serde(default)]
     pub(in crate::registry) unbreakable_when_locked: Option<bool>,
 }
-

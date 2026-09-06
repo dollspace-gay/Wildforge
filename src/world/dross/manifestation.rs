@@ -1,13 +1,12 @@
 //! Manifestation dross transaction coordination.
 
+use super::ScarManifestCandidate;
 use crate::arcane::ArcaneAuthority;
 use crate::arcane::ArcaneOwner;
 use crate::arcane::ArcaneTransaction;
+use crate::world::World;
 use std::collections::BTreeMap;
 use std::collections::BTreeSet;
-use crate::arcane::Current;
-use crate::world::World;
-use super::ScarManifestCandidate;
 
 impl World {
     pub(super) fn manifest_one_dross_scar(

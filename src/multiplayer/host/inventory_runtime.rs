@@ -8,7 +8,10 @@ pub(super) fn refresh_held(guest: &mut Guest) {
         .unwrap_or(u16::MAX);
 }
 
-pub(super) fn server_item_armor_points(stack: &ItemStack, profiles: Option<&ProfileStore>) -> Option<u32> {
+pub(super) fn server_item_armor_points(
+    stack: &ItemStack,
+    profiles: Option<&ProfileStore>,
+) -> Option<u32> {
     profiles?
         .registry_hint()
         .item(stack.item)
@@ -16,7 +19,10 @@ pub(super) fn server_item_armor_points(stack: &ItemStack, profiles: Option<&Prof
         .map(|(_, points)| points)
 }
 
-pub(super) fn take_item(inventory: &mut crate::inventory::Inventory, item: crate::registry::ItemId) -> bool {
+pub(super) fn take_item(
+    inventory: &mut crate::inventory::Inventory,
+    item: crate::registry::ItemId,
+) -> bool {
     let Some(slot) = inventory
         .slots
         .iter()

@@ -1,10 +1,8 @@
 //! Legacy coordinates machines transaction coordination.
 
-use crate::planet::BlockPos;
-use crate::inventory::ItemStack;
 use crate::world::World;
-use super::check_glassworks_at;
-use super::check_stall_at;
+#[cfg(test)]
+use crate::{inventory::ItemStack, planet::BlockPos};
 
 impl World {
     // Positive-Z adapters exist only for the pre-topology fixture suite.

@@ -1,5 +1,6 @@
 //! Entry failures are observable through the production guest and real wire.
 
+use crate::world::TerrainRead;
 use std::time::{Duration, Instant};
 
 use super::{Agent, TestHost, pump_until};

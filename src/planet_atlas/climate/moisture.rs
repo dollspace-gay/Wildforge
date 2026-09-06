@@ -1,9 +1,11 @@
 //! Seasonal moisture relaxation and its explicit convergence/budget result.
 
-use crate::planet_atlas::{AtlasGrid, AtlasPos, GeometryCell, TerrainCell, CancellationToken, AtlasError};
-use crate::chunk::SEA_LEVEL;
-use super::{CLIMATE_SEASONS, CLIMATE_MAX_ITERATIONS, CLIMATE_CONVERGENCE_TOLERANCE};
 use super::transport::{chart_vector, transport_stencil};
+use super::{CLIMATE_CONVERGENCE_TOLERANCE, CLIMATE_MAX_ITERATIONS, CLIMATE_SEASONS};
+use crate::chunk::SEA_LEVEL;
+use crate::planet_atlas::{
+    AtlasError, AtlasGrid, AtlasPos, CancellationToken, GeometryCell, TerrainCell,
+};
 
 #[derive(Clone, Copy)]
 pub(super) struct SeasonalMoistureInputs<'a> {

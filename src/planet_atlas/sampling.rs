@@ -1,7 +1,10 @@
 //! Read-only atlas interpolation, local fields, and bounded graph queries.
 
-use crate::chunk::{SEA_LEVEL};
-use crate::planet::{Direction4, FACE_BLOCKS, QuarterTurn, SurfacePoint, SurfacePos, canonicalize_surface_point, geodesic_distance};
+use crate::chunk::SEA_LEVEL;
+use crate::planet::{
+    Direction4, FACE_BLOCKS, QuarterTurn, SurfacePoint, SurfacePos, canonicalize_surface_point,
+    geodesic_distance,
+};
 use crate::planet_atlas::{AtlasCell, AtlasError, AtlasGrid, AtlasPos, BoundaryClass, PlanetAtlas};
 use glam::{Vec2, Vec3};
 use std::collections::{BTreeSet, VecDeque};

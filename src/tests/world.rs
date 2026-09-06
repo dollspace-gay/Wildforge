@@ -1,6 +1,7 @@
 //! World persistence, block mutation, ticks, fluids, lighting, and weather.
 
 use super::*;
+use crate::world::{ReplicaWorld, ReplicationTarget, TerrainRead};
 use std::collections::HashMap;
 
 fn ecology_world(tag: &str, seed: u32) -> World {
@@ -778,7 +779,7 @@ fn dross_changes_ire_only_when_it_causes_real_ecology_population_loss() {
         world.ire, ire_before,
         "moving Current into Dross changed Ire"
     );
-    world.day = u32::try_from(completed_before.saturating_add(1)).unwrap();
+    world.set_calendar_day(u32::try_from(completed_before.saturating_add(1)).unwrap());
 
     world.tick_arcane_ecology(usize::MAX).unwrap();
 
@@ -1146,44 +1147,42 @@ fn removing_a_torch_leaves_no_residual_block_light() {
 }
 
 #[test]
-fn remote_world_neither_generates_nor_saves_authoritative_state() {
-    let reg = base_reg();
-    let dir = tmp_dir("remote-authority");
-    let mut w = World::new(7, dir.clone(), reg);
-    w.set_remote(true);
-
-    assert!(!w.ensure_chunk(tchunk(0, 0)));
-    assert!(w.chunks().is_empty());
-    save_world(&mut w);
-
-    assert!(!dir.join("world.toml").exists());
-    assert!(!dir.join("chunks").exists());
+fn replica_queries_do_not_materialize_authoritative_terrain() {
+    let world = ReplicaWorld::new(7, base_reg(), 0.0);
+    let position = bp(8, 90, 8);
+    assert!(!world.has_chunk(position.chunk()));
+    assert_eq!(world.get_block_at(position), AIR);
+    let _ = world.weather_at_surface(position.surface());
+    let _ = world.prospect_at(position.surface());
+    assert_eq!(world.chunk_count(), 0);
+    assert!(world.dirty_chunks().is_empty());
 }
 
 #[test]
 fn replicated_block_burst_preserves_state_and_settles_shared_lighting() {
     let reg = base_reg();
-    let mut world = test_world_with("remote-block-batch", reg.clone());
+    let mut world = ReplicaWorld::new(0, reg.clone(), 0.0);
     let torch = b(&reg, "base:torch");
     let water = b(&reg, "base:water");
     let torch_pos = bp(8, 90, 8);
     let water_pos = bp(9, 90, 8);
-    world.set_remote(true);
-    world.set_remote_arcane_cue([u8::MAX; 2], u8::MAX, None);
+    let bytes = crate::world::encode_chunk_for_test(&crate::chunk::Chunk::new());
+    world.insert_remote_chunks([(torch_pos.chunk(), bytes.as_slice())], &[]);
+    world
+        .observations_mut()
+        .set_arcane_cue([u8::MAX; 2], u8::MAX, None);
     assert_eq!(world.remote_arcane_cue(), [4; 2]);
     assert_eq!(world.remote_arcane_dominant(), 6);
 
-    world.set_remote_arcane_cue(
+    world.observations_mut().set_arcane_cue(
         [2, 1],
         4,
         Some(("Rainbells fold shut beside the marsh.".into(), true)),
     );
-    let ecology = world
-        .perceived_arcane_ecology_at(torch_pos.surface(), 72.0)
-        .expect("remote ecology observation");
+    let ecology = world.arcane_ecology().expect("remote ecology observation");
     assert_eq!(ecology.text, "Rainbells fold shut beside the marsh.");
     assert!(ecology.damped);
-    world.set_remote_arcane_items(vec![(41, 73)]);
+    world.observations_mut().extend_charges(vec![(41, 73)]);
     assert_eq!(world.inspectable_item_current(41), Some(73));
 
     world.apply_remote_block_states([(torch_pos, torch, 0, 0, 0), (water_pos, water, 3, 41, 0)]);
@@ -1383,7 +1382,7 @@ fn crops_grow_on_farmland_via_random_ticks() {
     assert_eq!(item, it(&reg, "base:wheat"));
     assert_eq!(becomes, seed0);
     // Bushes regrow anywhere - but only in season (summer/autumn).
-    w.day = crate::world::SEASON_DAYS; // summer
+    w.set_calendar_day(crate::world::SEASON_DAYS); // summer
     let bare = b(&reg, "base:berry_bush");
     for x in 0..16 {
         for z in 8..11 {
@@ -1762,7 +1761,7 @@ fn random_ticks_budget_stamps_and_persist() {
             w.ensure_chunk(tchunk(x, z));
         }
     }
-    w.clock = 100.0;
+    w.set_simulation_clock(100.0);
     let mut rng = 7u32;
     let burst = w.random_tick(&mut rng);
     assert_eq!(burst, 9 * 256, "long-waited chunks catch up at the cap");
@@ -1784,7 +1783,7 @@ fn random_ticks_visit_a_bounded_cohort() {
         }
     }
     // 81 chunks loaded, all stamped at clock 0; K = 64 caps the visit.
-    w.clock = 5.0;
+    w.set_simulation_clock(5.0);
     let mut rng = 3u32;
     // Five seconds of waiting, at the world's sample rate; the 47
     // chunks already visited this clock fall back to the floor of 8.
@@ -1805,7 +1804,7 @@ fn random_ticks_visit_a_bounded_cohort() {
 fn exposed_water_evaporates_without_a_depth_or_basin_exemption() {
     let reg = base_reg();
     let mut w = test_world_with("evap", reg.clone());
-    w.day = crate::world::SEASON_DAYS; // summer
+    w.set_calendar_day(crate::world::SEASON_DAYS); // summer
     let stone = b(&reg, "base:stone");
     let h = w.surface_height(4, 4);
     let y = h + 8;
@@ -1816,7 +1815,7 @@ fn exposed_water_evaporates_without_a_depth_or_basin_exemption() {
             w.set_block(x, y, z, stone);
         }
     }
-    w.mobs_mut().clear();
+    w.replace_mobs(Vec::new());
     for (x, z) in [(4, 4), (5, 4), (4, 5), (5, 5)] {
         w.set_block(x, y, z, reg.water_block(0));
     }
@@ -1936,8 +1935,8 @@ fn reconcile_catches_up_an_absent_chunk() {
 
     // Reopen the world more than a year later, at the start of local winter.
     let mut w2 = World::load_or_create(dir, reg.clone()).unwrap();
-    w2.day = local_season_day(&w2, anchor, 3) + crate::planet_atlas::YEAR_DAYS;
-    w2.clock = w2.day as f64 * 600.0;
+    w2.set_calendar_day(local_season_day(&w2, anchor, 3) + crate::planet_atlas::YEAR_DAYS);
+    w2.set_simulation_clock(w2.day() as f64 * 600.0);
     ensure_surface_neighborhood(&mut w2, anchor, 1);
     let iced = pool
         .iter()
@@ -1951,7 +1950,7 @@ fn reconcile_catches_up_an_absent_chunk() {
         w2.season_at_surface(anchor),
         w2.generator.climate_at(anchor).t,
         w2.latitude_at_surface(anchor),
-        w2.day
+        w2.day()
     );
     let grown = crops
         .iter()
@@ -2452,19 +2451,19 @@ fn calendar_advances_and_persists_without_a_global_weather_state() {
     for _ in 0..40 {
         sim.advance(0.1, &[], &mut ev); // the hitch cap swallows big steps
     }
-    assert_eq!(sim.world.day, 1, "midnight rolls the calendar");
+    assert_eq!(sim.world.day(), 1, "midnight rolls the calendar");
     sim.sleep_to_dawn();
-    assert_eq!(sim.world.day, 2, "sleeping skips into tomorrow");
+    assert_eq!(sim.world.day(), 2, "sleeping skips into tomorrow");
 
     // Only the calendar rides world.toml. Local weather persists in the
     // dynamic atlas snapshot and has no world-wide enum to serialize.
     let dir = tmp_dir("wx-persist");
     let mut w = World::new(42, dir.clone(), reg.clone());
     let midsummer = crate::world::SEASON_DAYS + crate::world::SEASON_DAYS / 2;
-    w.day = midsummer;
+    w.set_calendar_day(midsummer);
     save_world(&mut w);
     let w2 = World::load_or_create(dir, reg).unwrap();
-    assert_eq!(w2.day, midsummer);
+    assert_eq!(w2.day(), midsummer);
     assert_eq!(w2.season(), 1, "a day and a half of seasons in is summer");
 }
 
@@ -2482,7 +2481,7 @@ fn winter_gates_growth_and_freezes_exposed_water() {
         winter_temperature < -0.5 && w.generator.surface_estimate_at(pos) > SEA_LEVEL + 2
     })
     .expect("seasonally freezing planetary country");
-    w.day = local_season_day(&w, anchor, 3);
+    w.set_calendar_day(local_season_day(&w, anchor, 3));
     ensure_surface_neighborhood(&mut w, anchor, 1);
     let y = 200;
 
@@ -2510,7 +2509,7 @@ fn winter_gates_growth_and_freezes_exposed_water() {
     }
     let mut rng = 7u32;
     for _ in 0..1_000 {
-        w.clock += 100.0;
+        w.set_simulation_clock(w.clock() + 100.0);
         w.random_tick(&mut rng);
     }
     let open_grown = open
@@ -2540,7 +2539,7 @@ fn winter_gates_growth_and_freezes_exposed_water() {
     }
     // (support keeps it a still pool; sky above is open)
     for _ in 0..1_000 {
-        w.clock += 100.0;
+        w.set_simulation_clock(w.clock() + 100.0);
         w.random_tick(&mut rng);
     }
     let iced = pool
@@ -2556,9 +2555,9 @@ fn winter_gates_growth_and_freezes_exposed_water() {
     );
 
     // ...and spring gives them back.
-    w.day = local_season_day(&w, anchor, 0);
+    w.set_calendar_day(local_season_day(&w, anchor, 0));
     for _ in 0..1_000 {
-        w.clock += 100.0;
+        w.set_simulation_clock(w.clock() + 100.0);
         w.random_tick(&mut rng);
     }
     let thawed = pool
@@ -2590,7 +2589,7 @@ fn snow_settles_melts_and_snowballs_fly() {
         (0.32..=0.5).contains(&t) && w.generator.surface_estimate_at(pos) > SEA_LEVEL + 2
     })
     .expect("temperate land on the planet");
-    w.day = local_season_day(&w, cold, 3);
+    w.set_calendar_day(local_season_day(&w, cold, 3));
     w.force_local_weather("precip");
     ensure_surface_neighborhood(&mut w, cold, 1);
     ensure_surface_neighborhood(&mut w, temperate, 1);
@@ -2709,7 +2708,7 @@ fn weather_and_season_touch_the_sim() {
     }
     let y = 140.05f32;
     let breeding_surface = ep(glam::Vec3::new(4.5, y, 4.5)).surface();
-    w.day = local_season_day(&w, breeding_surface, 3);
+    w.set_calendar_day(local_season_day(&w, breeding_surface, 3));
     assert_eq!(w.season_at_surface(breeding_surface), 3);
     let before = w.mob_count();
     for dx in 0..2 {
@@ -2729,7 +2728,7 @@ fn weather_and_season_touch_the_sim() {
     assert!(w.mob_count() <= before + 2, "no winter births");
     // Summer: the same pair bears young. Winter wander drifts them
     // apart, so stand them back side by side first.
-    w.day = local_season_day(&w, breeding_surface, 1);
+    w.set_calendar_day(local_season_day(&w, breeding_surface, 1));
     assert_eq!(w.season_at_surface(breeding_surface), 1);
     for m in w.mobs_mut() {
         m.fed = true;
@@ -2880,16 +2879,18 @@ fn snow_trod_swaps_persists_melts_and_drops() {
         "prints thaw into the same exact meltwater as fresh snow"
     );
 
-    // Guests never tread locally; the host stamps prints for them.
-    let mut wr = test_world_with("snow-trod-remote", reg.clone());
-    wr.set_remote(true);
-    wr.set_block_at(ground, dirt);
-    wr.set_block_at(print, layer);
-    wr.tread_at(print);
+    // Guest movement consumes read-only terrain; the host echo owns tread edits.
+    let mut wr = ReplicaWorld::new(0, reg.clone(), 0.0);
+    let bytes = crate::world::encode_chunk_for_test(&crate::chunk::Chunk::new());
+    wr.insert_remote_chunks([(print.chunk(), bytes.as_slice())], &[]);
+    wr.apply_remote_block_states([(ground, dirt, 0, 0, 0), (print, layer, 0, 0, 0)]);
+    let _ = wr
+        .view()
+        .standable_at(print.surface(), i32::from(print.y()) + 1);
     assert_eq!(
         wr.get_block_at(print),
         layer,
-        "remote worlds wait for the echo"
+        "guest reads wait for the echo"
     );
 }
 
@@ -3202,7 +3203,7 @@ fn breached_pool_pours_over_the_edge() {
     }
     // Then the sun finishes the job: the residue is shallow and open,
     // so it draws down and dries through — the basin empties fully.
-    w.day = crate::world::SEASON_DAYS; // summer
+    w.set_calendar_day(crate::world::SEASON_DAYS); // summer
     let mut rng = 5u32;
     for _ in 0..40_000 {
         w.random_tick(&mut rng);
@@ -3215,7 +3216,7 @@ fn breached_pool_pours_over_the_edge() {
 fn exposed_glaze_and_marsh_films_both_evaporate() {
     let reg = base_reg();
     let mut w = test_world_with("glaze", reg.clone());
-    w.day = 2 * crate::world::SEASON_DAYS; // autumn: not summer, not winter
+    w.set_calendar_day(2 * crate::world::SEASON_DAYS); // autumn: not summer, not winter
     let stone = b(&reg, "base:stone");
     let y = 200;
     // An open film sheet on a flat slab — a drained pool's residue...
@@ -3456,7 +3457,7 @@ fn the_stone_states_its_season_and_doubles_it() {
     use crate::world::{BlockEntity, OfferingState, SEASON_DAYS};
     let reg = base_reg();
     let mut w = test_world_with("wants", reg.clone());
-    w.day = 3 * SEASON_DAYS; // winter: the wild hungers
+    w.set_calendar_day(3 * SEASON_DAYS); // winter: the wild hungers
     let (want, line) = w.season_want();
     assert_eq!(want, 3);
     assert!(line.contains("Food"), "the stone speaks plainly: {line}");
@@ -3489,7 +3490,7 @@ fn the_stone_states_its_season_and_doubles_it() {
         w.regional_ire_at(4, 4)
     );
     // Out of season the same loaves count single.
-    w.day = SEASON_DAYS; // summer wants water, not bread
+    w.set_calendar_day(SEASON_DAYS); // summer wants water, not bread
     let mut o2 = OfferingState::default();
     o2.slots[0] = Some(ItemStack::new(&reg, bread, 2));
     w.insert_block_entity((4, sy + 1, 4), BlockEntity::Offering(o2));
@@ -3505,7 +3506,7 @@ fn the_green_tide_seeds_only_natural_kind_ground() {
     use crate::world::SEASON_DAYS;
     let reg = base_reg();
     let mut w = test_world_with("greentide", reg.clone());
-    w.day = SEASON_DAYS; // summer: growth season
+    w.set_calendar_day(SEASON_DAYS); // summer: growth season
     // Force chunk (0,0) UNMODIFIED after our stage-setting: we build
     // via raw grass/log placement then clear the flag through save.
     let grass = b(&reg, "base:grass");
@@ -3540,7 +3541,7 @@ fn the_green_tide_seeds_only_natural_kind_ground() {
     assert!(saplings <= 8, "but never marches ({saplings})");
     // The same ground, resented: nothing seeds.
     let mut w2 = test_world_with("greentide2", reg.clone());
-    w2.day = SEASON_DAYS;
+    w2.set_calendar_day(SEASON_DAYS);
     for x in 0..16 {
         for z in 0..16 {
             w2.set_block(x, sy, z, grass);

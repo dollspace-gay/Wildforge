@@ -1,8 +1,8 @@
 //! Persisted geological site and provenance records, independent of generation.
 
-use serde::{Deserialize, Serialize};
+use super::{BasinKind, BedrockFamily, IntrusionKind, MagmaChemistry, MineralKind, VolcanoSource};
 use crate::planet_atlas::AtlasPos;
-use super::{VolcanoSource, MagmaChemistry, IntrusionKind, MineralKind, BedrockFamily, BasinKind};
+use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct PlateRecord {

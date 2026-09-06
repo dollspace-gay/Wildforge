@@ -1,12 +1,10 @@
 //! Scene stations in the graphical frame pipeline.
 
-use crate::world::TerrainRead;
+use super::Geometry;
 use crate::atlas;
-use crate::entity;
+use crate::game::Game;
 use crate::mesher;
 use crate::world;
-use crate::game::Game;
-use super::{Geometry};
 
 impl Game {
     pub(in crate::game) fn emit_scene_stations(&mut self, geometry: &mut Geometry) {
@@ -125,7 +123,14 @@ impl Game {
                 }
             }
             for (slot, pos, size, lum) in work {
-                sprite(slot, pos, size, lum, &mut geometry.vertices, &mut geometry.indices);
+                sprite(
+                    slot,
+                    pos,
+                    size,
+                    lum,
+                    &mut geometry.vertices,
+                    &mut geometry.indices,
+                );
             }
         }
     }

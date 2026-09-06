@@ -1,12 +1,10 @@
 //! Skills layout and UI composition.
 
-use crate::ui::UiBatch;
-use crate::world;
 use crate::game::Game;
+use crate::ui::UiBatch;
 
 impl Game {
     pub(in crate::game) fn draw_skills_screen(&mut self, ui: &mut UiBatch, w: f32, h: f32) {
-
         ui.rect(0.0, 0.0, w, h, [0.0, 0.0, 0.0, 0.6]);
         let title = "SKILL TREE";
         let tw = UiBatch::text_width(3.0, title);
@@ -59,13 +57,7 @@ impl Game {
                     };
                     ui.rect(r.0, r.1, r.2, r.3, bg);
                     let lw = UiBatch::text_width(1.6, &b.name);
-                    ui.text_shadow(
-                        r.0 + (r.2 - lw) / 2.0,
-                        r.1 + 8.0,
-                        1.6,
-                        &b.name,
-                        [1.0; 4],
-                    );
+                    ui.text_shadow(r.0 + (r.2 - lw) / 2.0, r.1 + 8.0, 1.6, &b.name, [1.0; 4]);
                 }
                 let nodes: Vec<_> = tree
                     .nodes
@@ -135,5 +127,5 @@ impl Game {
                 );
             }
         }
-        }
+    }
 }

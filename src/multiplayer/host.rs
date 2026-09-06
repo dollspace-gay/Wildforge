@@ -301,22 +301,25 @@ fn moderation_action_allowed(role: Role, action: ModerationAction) -> bool {
         }
 }
 
-
 #[path = "host/inventory_runtime.rs"]
 mod inventory_runtime;
-use inventory_runtime::{refresh_held, server_item_armor_points, take_item, take_ammo};
+use inventory_runtime::{refresh_held, server_item_armor_points, take_ammo, take_item};
 #[path = "host/discovery_context.rs"]
 mod discovery_context;
-use discovery_context::{discovery_reachable, discovery_reachable_from, discovery_holder_id, discovery_holder_capacity, discovery_holder_at_writing_surface, discovery_calibration};
+use discovery_context::{
+    discovery_calibration, discovery_holder_at_writing_surface, discovery_holder_capacity,
+    discovery_holder_id, discovery_reachable,
+};
 #[path = "host/working_context.rs"]
 mod working_context;
-use working_context::{operate_guest_working};
+use working_context::operate_guest_working;
 #[path = "host/observation_packet.rs"]
 mod observation_packet;
-use observation_packet::{inspectable_arcane_items};
+use observation_packet::inspectable_arcane_items;
 
 #[cfg(test)]
 mod identity_tests {
+    use super::discovery_context::discovery_reachable_from;
     use super::*;
     use crate::identity::{AtprotoDid, DeviceKeyId};
 
@@ -448,64 +451,64 @@ mod identity_tests {
     }
 }
 
-#[path = "host/requests_movement.rs"]
-mod requests_movement;
-#[path = "host/requests_terrain.rs"]
-mod requests_terrain;
-#[path = "host/requests_animals.rs"]
-mod requests_animals;
-#[path = "host/requests_world_use.rs"]
-mod requests_world_use;
-#[path = "host/requests_field_observation.rs"]
-mod requests_field_observation;
-#[path = "host/requests_knowledge.rs"]
-mod requests_knowledge;
-#[path = "host/requests_experiments.rs"]
-mod requests_experiments;
-#[path = "host/requests_implements.rs"]
-mod requests_implements;
 #[path = "host/requests_alchemy.rs"]
 mod requests_alchemy;
-#[path = "host/requests_projectiles.rs"]
-mod requests_projectiles;
-#[path = "host/requests_containers.rs"]
-mod requests_containers;
-#[path = "host/requests_inventory.rs"]
-mod requests_inventory;
+#[path = "host/requests_animals.rs"]
+mod requests_animals;
 #[path = "host/requests_chat.rs"]
 mod requests_chat;
+#[path = "host/requests_containers.rs"]
+mod requests_containers;
+#[path = "host/requests_experiments.rs"]
+mod requests_experiments;
+#[path = "host/requests_field_observation.rs"]
+mod requests_field_observation;
+#[path = "host/requests_implements.rs"]
+mod requests_implements;
+#[path = "host/requests_inventory.rs"]
+mod requests_inventory;
+#[path = "host/requests_knowledge.rs"]
+mod requests_knowledge;
+#[path = "host/requests_movement.rs"]
+mod requests_movement;
+#[path = "host/requests_projectiles.rs"]
+mod requests_projectiles;
+#[path = "host/requests_terrain.rs"]
+mod requests_terrain;
+#[path = "host/requests_world_use.rs"]
+mod requests_world_use;
 
-#[path = "host/startup.rs"]
-mod startup;
-#[path = "host/player_contexts.rs"]
-mod player_contexts;
-#[path = "host/join.rs"]
-mod join;
-#[path = "host/entry.rs"]
-mod entry;
-#[path = "host/moderation_actions.rs"]
-mod moderation_actions;
-#[path = "host/damage.rs"]
-mod damage;
 #[path = "host/admission.rs"]
 mod admission;
-#[path = "host/replies.rs"]
-mod replies;
+#[path = "host/damage.rs"]
+mod damage;
+#[path = "host/entry.rs"]
+mod entry;
+#[path = "host/join.rs"]
+mod join;
+#[path = "host/moderation_actions.rs"]
+mod moderation_actions;
+#[path = "host/player_contexts.rs"]
+mod player_contexts;
+#[path = "host/pump.rs"]
+mod pump;
+#[path = "host/pump_containers.rs"]
+mod pump_containers;
+#[path = "host/pump_delivery.rs"]
+mod pump_delivery;
 #[path = "host/pump_events.rs"]
 mod pump_events;
 #[path = "host/pump_guest_state.rs"]
 mod pump_guest_state;
-#[path = "host/pump_delivery.rs"]
-mod pump_delivery;
-#[path = "host/pump_containers.rs"]
-mod pump_containers;
-#[path = "host/pump_spoilage.rs"]
-mod pump_spoilage;
-#[path = "host/pump_riders.rs"]
-mod pump_riders;
 #[path = "host/pump_observations.rs"]
 mod pump_observations;
+#[path = "host/pump_riders.rs"]
+mod pump_riders;
 #[path = "host/pump_sleep.rs"]
 mod pump_sleep;
-#[path = "host/pump.rs"]
-mod pump;
+#[path = "host/pump_spoilage.rs"]
+mod pump_spoilage;
+#[path = "host/replies.rs"]
+mod replies;
+#[path = "host/startup.rs"]
+mod startup;

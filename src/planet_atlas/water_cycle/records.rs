@@ -1,8 +1,8 @@
 //! Water cell, aquifer, surface reservoir, and custody record schemas.
 
+use super::ReservoirMass;
 use crate::chunk::ChunkPos;
 use crate::planet_atlas::AtlasPos;
-use super::ReservoirMass;
 
 const RESERVOIR_KIND_SHIFT: u32 = 62;
 const RESERVOIR_ID_MASK: u64 = (1u64 << RESERVOIR_KIND_SHIFT) - 1;

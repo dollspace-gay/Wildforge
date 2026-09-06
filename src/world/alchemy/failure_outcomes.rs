@@ -69,4 +69,3 @@ pub(super) fn process_failure(
     }
     None
 }
-

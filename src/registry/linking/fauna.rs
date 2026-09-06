@@ -1,10 +1,14 @@
 //! Resolve wildlife definitions and deferred prey links.
 
-use crate::registry::{Registry, AnimalDef, ModelBox, AquaticHabitatDef, AttackDef, AttackKind, ProjectileDef, BehaviorArchetype, ArchetypeParams, RusherDef, TankDef, SniperDef, SupportDef, SwarmDef, ControllerDef, PhaserDef, ShieldDef, BuilderDef, HackDef, qualify};
-use crate::registry::schema::ResistTomlList;
-use super::pending::PendingAnimal;
-use super::lookups::lookup_item;
 use super::arcane_def;
+use super::lookups::lookup_item;
+use super::pending::PendingAnimal;
+use crate::registry::schema::ResistTomlList;
+use crate::registry::{
+    AnimalDef, AquaticHabitatDef, ArchetypeParams, AttackDef, AttackKind, BehaviorArchetype,
+    BuilderDef, ControllerDef, HackDef, ModelBox, PhaserDef, ProjectileDef, Registry, RusherDef,
+    ShieldDef, SniperDef, SupportDef, SwarmDef, TankDef, qualify,
+};
 
 pub(super) struct PendingPrey {
     hunter: usize,
@@ -14,13 +18,26 @@ pub(super) struct PendingPrey {
 
 pub(super) fn resolve(reg: &mut Registry, pending_animals: Vec<PendingAnimal>) -> Vec<PendingPrey> {
     let mut pending_prey: Vec<PendingPrey> = Vec::new();
-    for PendingAnimal { modid, definition: a, tile, head_tile, box_tiles, proj_tile, attack_proj_tiles } in pending_animals {
+    for PendingAnimal {
+        modid,
+        definition: a,
+        tile,
+        head_tile,
+        box_tiles,
+        proj_tile,
+        attack_proj_tiles,
+    } in pending_animals
+    {
         let full = qualify(&modid, &a.id);
         if reg.animals.iter().any(|x| x.name == full) {
             continue; // duplicate id — first wins, like blocks/items
         }
         if !a.prey.is_empty() {
-            pending_prey.push(PendingPrey { hunter: reg.animals.len(), modid: modid.clone(), names: a.prey.clone() });
+            pending_prey.push(PendingPrey {
+                hunter: reg.animals.len(),
+                modid: modid.clone(),
+                names: a.prey.clone(),
+            });
         }
         let drops = a
             .drops
@@ -284,7 +301,12 @@ pub(super) fn resolve(reg: &mut Registry, pending_animals: Vec<PendingAnimal>) -
 pub(super) fn prey(reg: &mut Registry, pending_prey: Vec<PendingPrey>) {
     // Prey lists resolve after the whole roster exists (a fox may be
     // declared before the rabbit it hunts).
-    for PendingPrey { hunter, modid, names } in pending_prey {
+    for PendingPrey {
+        hunter,
+        modid,
+        names,
+    } in pending_prey
+    {
         let ids: Vec<usize> = names
             .iter()
             .filter_map(|n| {

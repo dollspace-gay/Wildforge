@@ -1,9 +1,8 @@
 //! Rooting bed workings transaction coordination.
 
 use crate::arcane::ArcaneOwner;
-use std::collections::BTreeMap;
-use crate::planet::BlockPos;
 use crate::arcane::Current;
+use crate::planet::BlockPos;
 use crate::workings::PhysicalDebit;
 use crate::workings::PhysicalDebitKind;
 use crate::workings::WorkingEffect;
@@ -11,6 +10,7 @@ use crate::workings::WorkingResult;
 use crate::workings::WorkingTargetSnapshot;
 use crate::world::World;
 use crate::world::soil;
+use std::collections::BTreeMap;
 
 impl World {
     /// Plan a small prepared bed against staged shared water and soil budgets.

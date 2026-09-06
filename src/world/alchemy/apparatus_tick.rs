@@ -1,21 +1,21 @@
 //! Apparatus tick alchemy transaction coordination.
 
+use super::add_current_map;
+use super::next_block_key;
+use super::next_u64_key;
 use crate::alchemy::AlchemyCue;
 use crate::alchemy::AlchemyCueKind;
 use crate::alchemy::AlchemyRequest;
 use crate::alchemy::ApparatusAction;
 use crate::alchemy::ApparatusKind;
-use crate::arcane::ArcaneOwner;
-use std::collections::BTreeMap;
 use crate::alchemy::BatchOutcome;
-use crate::planet::BlockPos;
-use crate::arcane::Current;
 use crate::alchemy::DisposalRoute;
+use crate::arcane::ArcaneOwner;
+use crate::arcane::Current;
 use crate::inventory::Inventory;
+use crate::planet::BlockPos;
 use crate::world::World;
-use super::add_current_map;
-use super::next_block_key;
-use super::next_u64_key;
+use std::collections::BTreeMap;
 
 impl World {
     /// Bounded round-robin background maintenance: spoilage, deterministic

@@ -193,6 +193,5 @@ impl HostSession {
                 self.send_player_state(id);
             }
         }
-
     }
 }

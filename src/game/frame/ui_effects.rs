@@ -1,6 +1,5 @@
 //! Ui effects in the graphical frame pipeline.
 
-use crate::world::TerrainRead;
 use crate::game::Game;
 use crate::game::navigation::Screen;
 

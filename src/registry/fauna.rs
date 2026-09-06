@@ -1,8 +1,8 @@
 //! Wildlife appearance, behavior, spawning, and habitat definitions.
 
-use super::{ArcaneContentDef, BlockId, ItemId, NpcDef};
-use serde::{Deserialize};
-use std::collections::{HashMap};
+use super::{ArcaneContentDef, BlockId, ItemId};
+use serde::Deserialize;
+use std::collections::HashMap;
 
 /// One box of an animal's model. Sizes/offsets in px (16 px = 1 block);
 /// `at` is (center x, bottom y, center z). A box named "leg" is mirrored
@@ -340,4 +340,3 @@ impl Default for AquaticHabitatDef {
         }
     }
 }
-

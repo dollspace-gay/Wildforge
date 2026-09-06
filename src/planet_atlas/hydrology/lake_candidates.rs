@@ -1,10 +1,10 @@
 //! Depression candidates and geological lake classifications.
 
-use std::collections::VecDeque;
-use crate::chunk::SEA_LEVEL;
-use crate::planet_atlas::{AtlasGrid, BasinKind, ClimateCell, TectonicCell};
 use super::LakeClass;
 use super::flood::neighbors8_indices;
+use crate::chunk::SEA_LEVEL;
+use crate::planet_atlas::{AtlasGrid, BasinKind, ClimateCell, TectonicCell};
+use std::collections::VecDeque;
 
 #[derive(Clone, Debug)]
 pub(super) struct LakeCandidate {

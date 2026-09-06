@@ -1,7 +1,7 @@
 //! Observation implements transaction coordination.
 
-use crate::world::BlockEntity;
 use crate::inventory::ItemStack;
+use crate::world::BlockEntity;
 use crate::world::World;
 
 impl World {
@@ -55,7 +55,9 @@ impl World {
             .and_then(|state| state.instance(stack.arcane_id))
             .map(|instance| &instance.kind)?;
         crate::world::item_presentation::implement_visual(
-            &self.reg, kind, self.inspectable_item_current(stack.arcane_id),
+            &self.reg,
+            kind,
+            self.inspectable_item_current(stack.arcane_id),
         )
     }
 }

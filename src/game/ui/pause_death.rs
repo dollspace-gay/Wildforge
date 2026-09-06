@@ -1,12 +1,11 @@
 //! Pause death layout and UI composition.
 
+use crate::game::Game;
 use crate::game::widgets;
 use crate::ui::UiBatch;
-use crate::game::Game;
 
 impl Game {
     pub(in crate::game) fn draw_paused_screen(&mut self, ui: &mut UiBatch, w: f32, h: f32) {
-
         ui.rect(0.0, 0.0, w, h, [0.0, 0.0, 0.0, 0.6]);
         let title = "GAME PAUSED";
         let tw = UiBatch::text_width(4.0, title);
@@ -51,9 +50,8 @@ impl Game {
             );
             widgets::button(&mut *ui, r, "MANAGE", self.hit(r));
         }
-        }
+    }
     pub(in crate::game) fn draw_dead_screen(&mut self, ui: &mut UiBatch, w: f32, h: f32) {
-
         ui.rect(0.0, 0.0, w, h, [0.5, 0.0, 0.0, 0.5]);
         let title = "YOU DIED";
         let tw = UiBatch::text_width(5.0, title);
@@ -92,5 +90,5 @@ impl Game {
             "RESPAWN",
             [1.0; 4],
         );
-        }
+    }
 }

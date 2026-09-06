@@ -16,21 +16,25 @@ impl FeedPlan {
         let food = definition.breed_food?;
         let breed = mob.breed_cd <= 0.0 && !mob.fed;
         let tame = !mob.tamed;
-        let eligible = !definition.hostile && mob.growth >= 1.0
-            && held == Some(food) && (breed || tame);
+        let eligible =
+            !definition.hostile && mob.growth >= 1.0 && held == Some(food) && (breed || tame);
         if !eligible {
             return None;
         }
         Some(Self { food, tame, breed })
     }
 
-    pub(crate) fn food(self) -> ItemId { self.food }
+    pub(crate) fn food(self) -> ItemId {
+        self.food
+    }
 
     /// Returns whether this meal completed taming. The same state transition
     /// supplies guest prediction until the next authoritative mob snapshot.
     pub(crate) fn apply(self, mob: &mut Mob) -> bool {
         let now_tamed = self.tame && mob.feed_tame();
-        if self.breed { mob.fed = true; }
+        if self.breed {
+            mob.fed = true;
+        }
         mob.calm = 30.0;
         now_tamed
     }

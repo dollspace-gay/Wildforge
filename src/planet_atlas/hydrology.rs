@@ -5,26 +5,32 @@
 //! layer owns routing and materialization constraints; this sparse model owns
 //! named rivers, reservoir curves, lake budgets, and ocean connections.
 
-use serde::{Deserialize, Serialize};
+use super::{
+    AtlasError, AtlasGrid, CancellationToken, ClimateCell, GeometryCell, HydrologyCell,
+    TectonicCell, TerrainCell,
+};
 use crate::chunk::SEA_LEVEL;
 use crate::planet::FACE_BLOCKS;
-use super::{AtlasError, AtlasGrid, CancellationToken, ClimateCell, GeometryCell, HydrologyCell, TectonicCell, TerrainCell};
+use serde::{Deserialize, Serialize};
 
 mod records;
-pub use records::{WaterBodyKind, LakeClass, StoragePoint, OceanBasinRecord, LakeRecord, RiverRecord, WatershedRecord};
-mod flood;
-mod runoff;
-mod flow;
-mod oceans;
-mod erosion;
+pub use records::{
+    LakeClass, LakeRecord, OceanBasinRecord, RiverRecord, StoragePoint, WaterBodyKind,
+    WatershedRecord,
+};
 mod basin_shape;
+mod channels;
+mod erosion;
+mod flood;
+mod flow;
 mod lake_candidates;
 mod lakes;
-mod watersheds;
+mod oceans;
 mod rivers;
-mod channels;
-mod validation;
+mod runoff;
 mod sampling;
+mod validation;
+mod watersheds;
 pub use sampling::AtlasHydrologySample;
 mod placers;
 pub(super) use placers::route_placer_deposits;

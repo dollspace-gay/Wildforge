@@ -1,7 +1,7 @@
 //! Atlas generation configuration, cancellation, and progress events.
 
-use crate::planet_atlas::{ATLAS_FACE_SIDE};
-use std::sync::{Arc};
+use crate::planet_atlas::ATLAS_FACE_SIDE;
+use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

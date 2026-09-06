@@ -506,9 +506,11 @@ fn production_server_interleaving_conserves_weather() {
     // earlier time and then waiting for work the scheduler correctly refuses
     // to repeat.
     let final_hour = target - 1;
-    world.day = (final_hour / 24)
-        .try_into()
-        .expect("production probe climate day fits the world calendar");
+    world.set_calendar_day(
+        (final_hour / 24)
+            .try_into()
+            .expect("production probe climate day fits the world calendar"),
+    );
     let time_of_day = (final_hour % 24) as f32 / 24.0 + 0.001;
     let mut server = crate::server::Server::new(world, time_of_day, 0xd5ed);
     let before = server

@@ -1,7 +1,7 @@
 //! Preflighted industrial water exchanges with soil, runoff, and atmosphere.
 
-use crate::planet_atlas::{AtlasPos, ReservoirMass, WaterClass};
 use super::PlanetaryWeather;
+use crate::planet_atlas::{AtlasPos, ReservoirMass, WaterClass};
 
 impl PlanetaryWeather {
     /// Preflight and perform the common cleaning exchange without cloning

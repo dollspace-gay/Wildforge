@@ -1,14 +1,17 @@
 //! Read geological boundaries, host validity, and finite site envelopes.
 
-use std::cmp::Ordering as CmpOrdering;
-use glam::{DVec3, Vec2};
-use crate::planet_atlas::{PlanetAtlas, AtlasPos, HYDRO_FLOODPLAIN, HYDRO_DELTA};
-use crate::planet::{SurfacePoint, SurfacePos, FACE_BLOCKS, geodesic_distance, local_frame};
-use crate::chunk::{ChunkPos, CHUNK_X, CHUNK_Z, SEA_LEVEL};
-use super::{AtlasGeologySample, BoundaryEdge, DepositRecord, BedrockFamily, MineralKind, VolcanoRecord, IntrusionRecord};
+use super::deposits::host_allows;
 use super::geometry::dvec;
 use super::plates::classify_pair;
-use super::deposits::host_allows;
+use super::{
+    AtlasGeologySample, BedrockFamily, BoundaryEdge, DepositRecord, IntrusionRecord, MineralKind,
+    VolcanoRecord,
+};
+use crate::chunk::{CHUNK_X, CHUNK_Z, ChunkPos, SEA_LEVEL};
+use crate::planet::{FACE_BLOCKS, SurfacePoint, SurfacePos, geodesic_distance, local_frame};
+use crate::planet_atlas::{AtlasPos, HYDRO_DELTA, HYDRO_FLOODPLAIN, PlanetAtlas};
+use glam::{DVec3, Vec2};
+use std::cmp::Ordering as CmpOrdering;
 
 impl PlanetAtlas {
     pub fn boundary_between(&self, a: AtlasPos, b: AtlasPos) -> Option<BoundaryEdge> {

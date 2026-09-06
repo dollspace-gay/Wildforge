@@ -1,10 +1,10 @@
 //! Save entities transaction coordination.
 
-use crate::world::BlockEntity;
-use crate::planet::BlockPos;
 use crate::inventory::ItemStack;
-use std::path::PathBuf;
+use crate::planet::BlockPos;
+use crate::world::BlockEntity;
 use crate::world::World;
+use std::path::PathBuf;
 
 impl World {
     pub(in crate::world) fn entities_path(&self) -> PathBuf {

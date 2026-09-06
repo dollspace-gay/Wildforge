@@ -1,22 +1,25 @@
 //! Deterministic pipes, geodes, and data-defined ore deposits.
 
 use super::Generator;
+use super::{GeodeBand, geode_band_at, hash2};
 use crate::chunk::{CHUNK_X, CHUNK_Y, CHUNK_Z, Chunk, ChunkPos};
 use crate::registry::AIR;
-use std::collections::HashMap;
-use super::{GeodeBand, geode_band_at, hash2};
 use crate::registry::Registry;
+use std::collections::HashMap;
 
 impl Generator {
-
-
     /// A kimberlite pipe: a carrot of deep rock punched up through
     /// every stratum — wide near the top, a thread at depth. Most are
     /// blind (topped below the surface, found by mining); the ones
     /// that breach weather into a blue-ground stain, the prospector's
     /// tell. Diamonds only ever live inside these (the ore feature
     /// replaces kimberlite and nothing else).
-    pub(super) fn plant_pipe(&self, c: &mut Chunk, pos: ChunkPos, heights: &[[i32; CHUNK_Z]; CHUNK_X]) {
+    pub(super) fn plant_pipe(
+        &self,
+        c: &mut Chunk,
+        pos: ChunkPos,
+        heights: &[[i32; CHUNK_Z]; CHUNK_X],
+    ) {
         let Some((cx, cz, breach)) = self.pipe_at(pos) else {
             return;
         };
@@ -71,8 +74,6 @@ impl Generator {
             }
         }
     }
-
-
 
     /// A limestone geode: a rough quartz shell around an amethyst
     /// lining around a void — crack one open with a torch in hand.
@@ -212,5 +213,4 @@ impl Generator {
             }
         }
     }
-
 }

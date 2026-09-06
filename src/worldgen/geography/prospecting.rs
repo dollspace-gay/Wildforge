@@ -1,7 +1,7 @@
 //! Seeded mineral observations shared by generation tooling and guest picks.
 
-use super::Geography;
 use super::super::{ProspectHit, ProspectReading};
+use super::Geography;
 use crate::chunk::{CHUNK_X, CHUNK_Z, ChunkPos};
 use crate::planet::{SurfacePos, geodesic_distance};
 
@@ -139,5 +139,4 @@ impl Geography {
             geode: chunk_ring(12, &|p| self.geode_at(p).is_some()),
         }
     }
-
 }

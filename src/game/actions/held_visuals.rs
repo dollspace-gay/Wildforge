@@ -1,8 +1,7 @@
 //! Held visuals in the ordered graphical action pipeline.
 
-use crate::game::Game;
-use crate::world::TerrainRead;
 use crate::atlas;
+use crate::game::Game;
 use crate::inventory::ItemStack;
 use crate::mobs;
 use crate::registry::ItemId;

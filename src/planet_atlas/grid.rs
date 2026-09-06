@@ -1,8 +1,11 @@
 //! Canonical atlas addressing, dense grids, and ordered cell construction.
 
-use crate::planet::{Direction4, FACE_BLOCKS, Face, PLANET_RADIUS, QuarterTurn, SURFACE_FACES, SurfacePoint, SurfacePos, canonicalize_surface_point, surface_to_unit};
+use crate::planet::{
+    Direction4, FACE_BLOCKS, Face, PLANET_RADIUS, QuarterTurn, SURFACE_FACES, SurfacePoint,
+    SurfacePos, canonicalize_surface_point, surface_to_unit,
+};
 use crate::planet_atlas::{AtlasError, GenerationMode};
-use glam::{DVec3};
+use glam::DVec3;
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
@@ -264,7 +267,11 @@ pub(super) fn cell_area(pos: AtlasPos, side: u16) -> f32 {
     (triangle_area(a, b, c) + triangle_area(a, c, d)) as f32
 }
 
-pub(in crate::planet_atlas) fn generate_grid<T, F>(side: u16, mode: GenerationMode, make: F) -> Result<AtlasGrid<T>, AtlasError>
+pub(in crate::planet_atlas) fn generate_grid<T, F>(
+    side: u16,
+    mode: GenerationMode,
+    make: F,
+) -> Result<AtlasGrid<T>, AtlasError>
 where
     T: Send,
     F: Fn(AtlasPos) -> T + Sync,

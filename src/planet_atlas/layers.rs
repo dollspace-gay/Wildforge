@@ -1,6 +1,8 @@
 //! Typed immutable atlas cells and genesis layer storage.
 
-use crate::planet_atlas::{AtlasError, AtlasGrid, BasinKind, CLIMATE_SEASONS, DetailedBoundary, WaterBodyKind};
+use crate::planet_atlas::{
+    AtlasError, AtlasGrid, BasinKind, CLIMATE_SEASONS, DetailedBoundary, WaterBodyKind,
+};
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 #[repr(u8)]

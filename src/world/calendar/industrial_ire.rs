@@ -10,8 +10,11 @@ impl World {
         if !self.ruleset().ire || !self.ruleset().industrial_ire {
             return;
         }
-        let Some(step) = self.installations.industrial_cycle(dt) else { return; };
-        let lit: Vec<crate::planet::SurfacePos> = self.installations
+        let Some(step) = self.installations.industrial_cycle(dt) else {
+            return;
+        };
+        let lit: Vec<crate::planet::SurfacePos> = self
+            .installations
             .iter()
             .filter_map(|(pos, e)| {
                 let BlockEntity::Multiblock(m) = e else {

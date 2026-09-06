@@ -1,6 +1,6 @@
 //! Sparse player history independent of immutable genesis.
 
-use crate::planet_atlas::{AtlasPos};
+use crate::planet_atlas::AtlasPos;
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 

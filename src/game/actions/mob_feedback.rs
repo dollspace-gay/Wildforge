@@ -1,16 +1,17 @@
 //! Mob feedback in the ordered graphical action pipeline.
 
-use crate::game::Game;
-use crate::world::TerrainRead;
 use crate::audio::Sfx;
+use crate::game::Game;
 use crate::raycast;
 use glam::Vec3;
 
 impl Game {
-
     /// Nearest mob under the crosshair within reach, unless a solid block
     /// sits in front of it.
-    pub(in crate::game) fn mob_in_crosshair(&self, hit: &Option<raycast::PlanetHit>) -> Option<usize> {
+    pub(in crate::game) fn mob_in_crosshair(
+        &self,
+        hit: &Option<raycast::PlanetHit>,
+    ) -> Option<usize> {
         let origin = self.player.eye();
         let dir = self.camera.tangent_forward();
         let reach = self.reach();
@@ -33,7 +34,10 @@ impl Game {
     }
 
     /// Remove dead mobs: roll their drop table, spill items, notify mods.
-    pub(in crate::game) fn present_settled_mob_death(&mut self, death: crate::world::SettledMobDeath) {
+    pub(in crate::game) fn present_settled_mob_death(
+        &mut self,
+        death: crate::world::SettledMobDeath,
+    ) {
         let reg = self.content.reg.clone();
         let Some(def) = reg.animals.get(death.species) else {
             return;

@@ -1,11 +1,11 @@
 //! Scene overlay in the graphical frame pipeline.
 
-use crate::world::TerrainRead;
+use super::Geometry;
 use crate::atlas;
 use crate::entity;
-use crate::mesher;
 use crate::game::Game;
-use super::{Geometry};
+use crate::mesher;
+use crate::world::TerrainRead;
 
 impl Game {
     pub(in crate::game) fn prepare_scene_overlay(&self) -> Geometry {
@@ -14,7 +14,10 @@ impl Game {
         if let Some((target, progress)) = self.interaction.breaking {
             let world_pos = match target {
                 crate::game::BreakTarget::World(p) => Some(p),
-                crate::game::BreakTarget::Structure(id, offset) => self.runtime.view().local_structure(id)
+                crate::game::BreakTarget::Structure(id, offset) => self
+                    .runtime
+                    .view()
+                    .local_structure(id)
                     .and_then(|s| s.world_position(offset)),
             };
             if let Some(p) = world_pos {
@@ -69,6 +72,9 @@ impl Game {
             }
             overlay_idx.extend_from_slice(&[base, base + 1, base + 2, base, base + 2, base + 3]);
         }
-        Geometry { vertices: overlay_verts, indices: overlay_idx }
+        Geometry {
+            vertices: overlay_verts,
+            indices: overlay_idx,
+        }
     }
 }

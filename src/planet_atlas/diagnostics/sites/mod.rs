@@ -2,13 +2,13 @@
 
 use crate::planet::FACE_BLOCKS;
 use crate::planet_atlas::{AtlasPos, PlanetAtlas};
-use serde::{Serialize};
-use std::collections::{BTreeMap};
+use serde::Serialize;
+use std::collections::BTreeMap;
 
-mod geology;
-mod climate;
 mod arid_habitats;
+mod climate;
 mod countries;
+mod geology;
 mod hydrology;
 mod weather;
 
@@ -29,7 +29,9 @@ pub(super) struct QualificationSites {
     sites: BTreeMap<String, QualificationSite>,
 }
 
-pub(in crate::planet_atlas::diagnostics) fn qualification_sites(atlas: &PlanetAtlas) -> QualificationSites {
+pub(in crate::planet_atlas::diagnostics) fn qualification_sites(
+    atlas: &PlanetAtlas,
+) -> QualificationSites {
     let mut result = QualificationSites::default();
     let mut insert = |label: &str, pos: AtlasPos, evidence: String| {
         let center = pos.center(atlas.side());
@@ -52,7 +54,6 @@ pub(in crate::planet_atlas::diagnostics) fn qualification_sites(atlas: &PlanetAt
             },
         );
     };
-
 
     geology::collect(atlas, &mut insert);
     climate::collect(atlas, &mut insert);

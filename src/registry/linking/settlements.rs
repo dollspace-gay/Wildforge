@@ -1,10 +1,13 @@
 //! Resolve settlement tiers and cross-check assembly reachability.
 
-use crate::registry::{Registry, SettlementTier, SettlementNeed, SettlementDef, qualify};
-use crate::registry::schema::SettlementToml;
 use super::lookups::lookup_item;
+use crate::registry::schema::SettlementToml;
+use crate::registry::{Registry, SettlementDef, SettlementNeed, SettlementTier, qualify};
 
-pub(super) fn resolve(reg: &mut Registry, pending_settlements: Vec<(String, SettlementToml)>) -> Vec<String> {
+pub(super) fn resolve(
+    reg: &mut Registry,
+    pending_settlements: Vec<(String, SettlementToml)>,
+) -> Vec<String> {
     let mut settlement_errors = Vec::new();
     for (modid, s) in pending_settlements {
         let id = qualify(&modid, &s.id);

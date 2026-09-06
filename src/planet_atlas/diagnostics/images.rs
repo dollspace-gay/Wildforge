@@ -1,13 +1,17 @@
 //! Deterministic map colors, PNG encoding, and oblique globe preview.
 
-use crate::chunk::{SEA_LEVEL};
+use crate::chunk::SEA_LEVEL;
+use crate::planet_atlas::identity::mix64;
 use crate::planet_atlas::{AtlasError, PlanetAtlas};
-use crate::planet_atlas::identity::{mix64};
-use std::{fs};
-use std::io::{BufWriter};
-use std::path::{Path};
+use std::fs;
+use std::io::BufWriter;
+use std::path::Path;
 
-pub(in crate::planet_atlas::diagnostics) fn scalar_color(value: f64, minimum: f64, maximum: f64) -> [u8; 3] {
+pub(in crate::planet_atlas::diagnostics) fn scalar_color(
+    value: f64,
+    minimum: f64,
+    maximum: f64,
+) -> [u8; 3] {
     let t = if maximum > minimum {
         ((value - minimum) / (maximum - minimum)).clamp(0.0, 1.0)
     } else {
@@ -54,7 +58,12 @@ fn lerp_color(a: [u8; 3], b: [u8; 3], t: f64) -> [u8; 3] {
     })
 }
 
-pub(in crate::planet_atlas::diagnostics) fn write_png(path: &Path, width: u32, height: u32, pixels: &[u8]) -> Result<(), AtlasError> {
+pub(in crate::planet_atlas::diagnostics) fn write_png(
+    path: &Path,
+    width: u32,
+    height: u32,
+    pixels: &[u8],
+) -> Result<(), AtlasError> {
     let file = fs::File::create(path)?;
     let mut encoder = png::Encoder::new(BufWriter::new(file), width, height);
     encoder.set_color(png::ColorType::Rgb);
@@ -69,7 +78,10 @@ pub(in crate::planet_atlas::diagnostics) fn write_png(path: &Path, width: u32, h
     Ok(())
 }
 
-pub(in crate::planet_atlas::diagnostics) fn export_globe_preview(atlas: &PlanetAtlas, path: &Path) -> Result<(), AtlasError> {
+pub(in crate::planet_atlas::diagnostics) fn export_globe_preview(
+    atlas: &PlanetAtlas,
+    path: &Path,
+) -> Result<(), AtlasError> {
     const SIDE: u32 = 512;
     let mut pixels = vec![0u8; SIDE as usize * SIDE as usize * 3];
     let mut depth = vec![f32::NEG_INFINITY; SIDE as usize * SIDE as usize];

@@ -2,15 +2,17 @@
 
 use crate::world::TerrainRead;
 
+use super::{BUILD_MARKER, Game, Screen};
+use crate::inventory::HOTBAR_SLOTS;
+use crate::raycast;
 use std::sync::Arc;
 use winit::application::ApplicationHandler;
 use winit::dpi::{LogicalSize, PhysicalSize};
-use winit::event::{DeviceEvent, DeviceId, ElementState, MouseButton, MouseScrollDelta, WindowEvent};
+use winit::event::{
+    DeviceEvent, DeviceId, ElementState, MouseButton, MouseScrollDelta, WindowEvent,
+};
 use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop};
 use winit::window::{Window, WindowId};
-use super::{Game, Screen, BUILD_MARKER};
-use crate::inventory::HOTBAR_SLOTS;
-use crate::raycast;
 
 const SHOT_MIN_WIDTH: u32 = 320;
 const SHOT_MIN_HEIGHT: u32 = 200;
@@ -214,7 +216,8 @@ impl ApplicationHandler for App {
                     && !game.input.uses_raw_look()
                     && game.ui_state.screen == Screen::Playing
                 {
-                    game.input.cursor_look(&game.window, &mut game.camera, position);
+                    game.input
+                        .cursor_look(&game.window, &mut game.camera, position);
                 }
             }
             // Crossing the window boundary teleports the cursor; never treat
@@ -254,6 +257,26 @@ impl ApplicationHandler for App {
     }
 }
 
+/// Start the platform event loop and windowed client.
+pub fn run_windowed() {
+    // Prefer X11/XWayland on Linux: it supports cursor confinement and
+    // warping, which pure Wayland compositors (notably WSLg) often don't.
+    #[cfg(target_os = "linux")]
+    let event_loop = {
+        use winit::platform::x11::EventLoopBuilderExtX11;
+        let mut builder = EventLoop::builder();
+        if std::env::var("DISPLAY").is_ok() {
+            builder.with_x11();
+        }
+        builder.build().expect("create event loop")
+    };
+    #[cfg(not(target_os = "linux"))]
+    let event_loop = EventLoop::new().expect("create event loop");
+    event_loop.set_control_flow(ControlFlow::Poll);
+    let mut app = App::default();
+    event_loop.run_app(&mut app).expect("run event loop");
+}
+
 #[cfg(test)]
 mod tests {
     use super::parse_shot_size;
@@ -281,24 +304,3 @@ mod tests {
         }
     }
 }
-
-/// Start the platform event loop and windowed client.
-pub(super) fn run_windowed() {
-    // Prefer X11/XWayland on Linux: it supports cursor confinement and
-    // warping, which pure Wayland compositors (notably WSLg) often don't.
-    #[cfg(target_os = "linux")]
-    let event_loop = {
-        use winit::platform::x11::EventLoopBuilderExtX11;
-        let mut builder = EventLoop::builder();
-        if std::env::var("DISPLAY").is_ok() {
-            builder.with_x11();
-        }
-        builder.build().expect("create event loop")
-    };
-    #[cfg(not(target_os = "linux"))]
-    let event_loop = EventLoop::new().expect("create event loop");
-    event_loop.set_control_flow(ControlFlow::Poll);
-    let mut app = App::default();
-    event_loop.run_app(&mut app).expect("run event loop");
-}
-

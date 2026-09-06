@@ -1,15 +1,13 @@
 //! Reading interaction adapter.
 
-use crate::world::TerrainRead;
 use crate::audio::Sfx;
+use crate::game::DiscoveryAim;
+use crate::game::Game;
 use crate::identity;
 use crate::net;
 use crate::world;
-use crate::game::DiscoveryAim;
-use crate::game::Game;
 
 impl Game {
-
     pub(in crate::game) fn read_held_knowledge(&mut self) {
         let slot = self.input.hotbar_sel;
         if let Some(remote) = &self.multiplayer.remote {
@@ -29,18 +27,32 @@ impl Game {
         let Some(at) = self.player.pos.block() else {
             return;
         };
-        if let Some(text) = self.runtime.local_mut().world.discovery_artifact_text(&mut stack, at) {
+        if let Some(text) = self
+            .runtime
+            .local_mut()
+            .world
+            .discovery_artifact_text(&mut stack, at)
+        {
             self.inventory.slots[slot] = Some(stack);
             self.toast(text);
             self.sfx(Sfx::Click);
             return;
         }
-        if self.runtime.local_mut().world.bind_discovery_stack_at(at, &mut stack)
+        if self
+            .runtime
+            .local_mut()
+            .world
+            .bind_discovery_stack_at(at, &mut stack)
             .is_ok()
             && stack.arcane_id != 0
         {
             self.inventory.slots[slot] = Some(stack);
-            match self.runtime.local().world.discovery_summaries(stack.arcane_id, true) {
+            match self
+                .runtime
+                .local()
+                .world
+                .discovery_summaries(stack.arcane_id, true)
+            {
                 Ok(records) if records.is_empty() => {
                     self.open_discovery_catalogue(
                         net::RecordHolderSnap::Inventory { slot: slot as u8 },
@@ -181,7 +193,12 @@ impl Game {
             return;
         }
         let mut ledger = self.inventory.slots[ledger_slot].expect("located ledger");
-        if let Err(error) = self.runtime.local_mut().world.bind_discovery_stack_at(at, &mut ledger) {
+        if let Err(error) = self
+            .runtime
+            .local_mut()
+            .world
+            .bind_discovery_stack_at(at, &mut ledger)
+        {
             self.toast(error.to_string());
             return;
         }
@@ -268,7 +285,12 @@ impl Game {
             return;
         };
         let mut ledger = self.inventory.slots[ledger_slot].expect("located ledger");
-        if let Err(error) = self.runtime.local_mut().world.bind_discovery_stack_at(at, &mut ledger) {
+        if let Err(error) = self
+            .runtime
+            .local_mut()
+            .world
+            .bind_discovery_stack_at(at, &mut ledger)
+        {
             self.toast(error.to_string());
             return;
         }

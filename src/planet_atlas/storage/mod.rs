@@ -1,15 +1,15 @@
 //! Committed atlas directories and bounded storage entry points.
 
+use crate::planet_atlas::manifest::validate_manifest;
 use crate::planet_atlas::{AtlasError, AtlasManifest, PlanetAtlas};
-use crate::planet_atlas::manifest::{validate_manifest};
-use std::{fs};
+use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-mod bundle;
-mod mutable;
-mod load;
 pub(super) mod arcane;
+mod bundle;
+mod load;
+mod mutable;
 
 pub(in crate::planet_atlas) const MAX_GENESIS_BYTES: u64 = 128 * 1024 * 1024;
 pub(in crate::planet_atlas) const MAX_DYNAMIC_BYTES: u64 = 64 * 1024 * 1024;
@@ -92,7 +92,10 @@ impl PlanetAtlas {
     }
 }
 
-pub(in crate::planet_atlas) fn write_manifest(planet_dir: &Path, manifest: &AtlasManifest) -> Result<(), AtlasError> {
+pub(in crate::planet_atlas) fn write_manifest(
+    planet_dir: &Path,
+    manifest: &AtlasManifest,
+) -> Result<(), AtlasError> {
     let payload = toml::to_string_pretty(manifest)
         .map_err(|error| AtlasError::Corrupt(format!("manifest encoding failed: {error}")))?;
     if payload.len() as u64 > MAX_MANIFEST_BYTES {
@@ -112,7 +115,10 @@ pub(in crate::planet_atlas) fn sync_directory(path: &Path) -> Result<(), AtlasEr
     Ok(())
 }
 
-pub(in crate::planet_atlas) fn read_bounded(path: &Path, max_bytes: u64) -> Result<Vec<u8>, AtlasError> {
+pub(in crate::planet_atlas) fn read_bounded(
+    path: &Path,
+    max_bytes: u64,
+) -> Result<Vec<u8>, AtlasError> {
     let metadata = fs::metadata(path)?;
     if metadata.len() > max_bytes {
         return Err(AtlasError::Corrupt(format!(

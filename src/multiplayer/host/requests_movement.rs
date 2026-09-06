@@ -4,7 +4,9 @@ use super::{C2S, HOTBAR_SLOTS, HostSession, PlayerRuntime, S2C, Server, Vec3, re
 
 impl HostSession {
     pub(super) fn request_movement(&mut self, server: &mut Server, id: u32, msg: C2S) {
-        let Some(guest) = self.guests.get_mut(&id) else { return; };
+        let Some(guest) = self.guests.get_mut(&id) else {
+            return;
+        };
         match msg {
             C2S::Move {
                 pos,

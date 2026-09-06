@@ -51,9 +51,15 @@ impl Registry {
     }
 
     fn diagnostics(&self) -> Vec<String> {
-        self.mods.iter().filter_map(|provider| {
-            provider.error.as_ref().map(|error| format!("{}: {error}", provider.id))
-        }).chain(self.material_errors.iter().cloned())
+        self.mods
+            .iter()
+            .filter_map(|provider| {
+                provider
+                    .error
+                    .as_ref()
+                    .map(|error| format!("{}: {error}", provider.id))
+            })
+            .chain(self.material_errors.iter().cloned())
             .chain(self.arcane_errors.iter().cloned())
             .collect()
     }

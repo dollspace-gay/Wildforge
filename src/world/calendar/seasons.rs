@@ -2,6 +2,7 @@
 
 use crate::world::LONG_WINTER_FRAC;
 use crate::world::LONG_WINTER_MIN_DEAD;
+#[cfg(test)]
 use crate::world::SEASON_DAYS;
 use crate::world::World;
 
@@ -54,11 +55,6 @@ impl World {
             && known > 0
             && dead as f32 >= known as f32 * LONG_WINTER_FRAC;
         self.calendar_state.set_long_winter(falls)
-    }
-
-    /// 0..1 through the current season.
-    pub fn season_progress(&self) -> f32 {
-        self.calendar_view().season_progress()
     }
 
     /// Does the local atmospheric column currently deliver snow?

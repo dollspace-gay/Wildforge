@@ -1,6 +1,8 @@
 //! Headless dedicated-server runtime.
 
 use super::*;
+use crate::world::World;
+use std::{path::PathBuf, sync::Arc, time::Instant};
 
 /// Headless dedicated host: same binary, no window. `--server <world>`.
 pub(super) fn run_headless_server(world_name: &str) {

@@ -168,7 +168,9 @@ impl World {
                     self.write_water_mass_at(at, parcel);
                 }
             } else if let Some(mass) = self.water_mass_at(at) {
-                let returned = self.weather_state.live_mut()
+                let returned = self
+                    .weather_state
+                    .live_mut()
                     .is_some_and(|weather| weather.dematerialize_surface_water(reservoir, mass));
                 if returned {
                     self.set_block_at(at, crate::registry::AIR);

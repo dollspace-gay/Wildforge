@@ -1,19 +1,18 @@
 //! Observation channels in the ordered graphical action pipeline.
 
-use crate::game::Game;
-use crate::world::TerrainRead;
+use super::ActionFrame;
 use crate::audio::Sfx;
 use crate::entity::ItemEntity;
-use crate::net;
-use glam::Vec3;
 use crate::game::DiscoveryAim;
-use super::ActionFrame;
+use crate::game::Game;
+use crate::net;
+use crate::world::TerrainRead;
+use glam::Vec3;
 
 impl Game {
     pub(in crate::game) fn interact_observation_channels(&mut self, frame: &ActionFrame) -> bool {
         let reg = &frame.reg;
         let hit = &frame.hit;
-        let aim = &frame.aim;
         let held = frame.held;
         let dt = frame.dt;
         // A tuning lens is deliberately slow and local. Holding the aim still
@@ -48,7 +47,9 @@ impl Game {
                         let kind =
                             crate::discovery::ExperimentKind::ALL[self.interaction.experiment_kind
                                 % crate::discovery::ExperimentKind::ALL.len()];
-                        remote.session.send(&net::C2S::BeginExperiment { pos, kind });
+                        remote
+                            .session
+                            .send(&net::C2S::BeginExperiment { pos, kind });
                     } else {
                         remote.session.send(&net::C2S::BeginObserve {
                             target: match aim {
@@ -114,7 +115,7 @@ impl Game {
                     // us; the BlockSet echo swaps the remnant out.
                     rc.session.send(&net::C2S::BrushBlock { pos: target });
                     if !self.creative {
-                        self.inventory.wear_tool(&reg, self.input.hotbar_sel);
+                        self.inventory.wear_tool(reg, self.input.hotbar_sel);
                     }
                     return true;
                 }
@@ -124,7 +125,11 @@ impl Game {
                     .is_some();
                 let found = if archaeology {
                     let mut r = self.rng;
-                    let found = self.runtime.local_mut().world.brush_block_at(target, &mut r);
+                    let found = self
+                        .runtime
+                        .local_mut()
+                        .world
+                        .brush_block_at(target, &mut r);
                     self.rng = r;
                     found
                 } else {
@@ -160,7 +165,7 @@ impl Game {
                     self.toast("Nothing recoverable gathers in this ground yet.".into());
                 }
                 if !self.creative {
-                    self.inventory.wear_tool(&reg, self.input.hotbar_sel);
+                    self.inventory.wear_tool(reg, self.input.hotbar_sel);
                 }
             }
             return true;
@@ -168,7 +173,6 @@ impl Game {
             self.interaction.brushing = 0.0;
             self.interaction.brush_target = None;
         }
-
 
         false
     }

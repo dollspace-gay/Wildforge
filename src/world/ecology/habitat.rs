@@ -1,8 +1,8 @@
 //! Read-only animal habitat, climate, and connected-water queries.
 
-use crate::world::World;
 use crate::chunk::ChunkPos;
 use crate::planet::SurfacePos;
+use crate::world::World;
 
 impl World {
     pub(in crate::world) fn mob_hash_at(&self, pos: SurfacePos, salt: u32) -> u32 {

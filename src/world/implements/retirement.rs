@@ -1,17 +1,16 @@
 //! Retirement implements transaction coordination.
 
+use super::add_current;
+use super::transaction_from_maps;
 use crate::arcane::ArcaneOwner;
-use std::collections::BTreeMap;
-use crate::planet::BlockPos;
-use crate::arcane::Current;
 use crate::arcane::DrossMedium;
+use crate::arcane::LinkedFileReplacement;
 use crate::implements::ImplementAuditEvent;
 use crate::implements::ImplementKind;
 use crate::inventory::ItemStack;
-use crate::arcane::LinkedFileReplacement;
+use crate::planet::BlockPos;
 use crate::world::World;
-use super::add_current;
-use super::transaction_from_maps;
+use std::collections::BTreeMap;
 
 impl World {
     /// Remove a destroyed/despawned implement and its sidecar identity in the

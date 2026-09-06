@@ -2,8 +2,8 @@
 
 use super::super::{Biome, Province, ProvinceKey, ProvinceLabel, hash2};
 use super::Geography;
-use crate::planet::{FACE_BLOCKS, Face, SurfacePos, geodesic_distance};
 use crate::chunk::SEA_LEVEL;
+use crate::planet::{FACE_BLOCKS, Face, SurfacePos, geodesic_distance};
 
 impl Geography {
     /// Provinces: the world's countries. A jittered-grid Voronoi
@@ -324,5 +324,4 @@ impl Geography {
             .expect("test province query is inside the positive-Z face");
         self.province_at(pos)
     }
-
 }

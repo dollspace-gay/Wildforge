@@ -1,9 +1,9 @@
 //! Excavation dross transaction coordination.
 
 use crate::arcane::ArcaneOwner;
-use crate::planet::BlockPos;
 use crate::arcane::Current;
 use crate::inventory::ItemStack;
+use crate::planet::BlockPos;
 use crate::world::World;
 
 impl World {

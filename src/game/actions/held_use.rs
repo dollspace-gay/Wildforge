@@ -1,15 +1,15 @@
 //! Held use in the ordered graphical action pipeline.
 
-use crate::game::Game;
-use crate::world::TerrainRead;
+use super::ActionFrame;
 use crate::audio::Sfx;
+use crate::game::Game;
+use crate::game::navigation::Screen;
 use crate::inventory::ItemStack;
 use crate::mobs;
 use crate::net;
 use crate::raycast;
 use crate::world;
-use crate::game::navigation::Screen;
-use super::ActionFrame;
+use crate::world::TerrainRead;
 
 impl Game {
     pub(in crate::game) fn interact_held_use(&mut self, frame: &ActionFrame) -> bool {
@@ -32,7 +32,11 @@ impl Game {
                 if let Some(block) = place
                     && (self.creative || self.inventory.slots[self.input.hotbar_sel].is_some())
                 {
-                    let placed = self.runtime.local_mut().world.local_structure_mut(sid)
+                    let placed = self
+                        .runtime
+                        .local_mut()
+                        .world
+                        .local_structure_mut(sid)
                         .map(|s| s.place_block(off, block))
                         .unwrap_or(false);
                     if placed {
@@ -45,7 +49,7 @@ impl Game {
                 }
                 return true;
             }
-            if let Some(mi) = self.mob_in_crosshair(&hit) {
+            if let Some(mi) = self.mob_in_crosshair(hit) {
                 let Some(mob) = self.runtime.view().mob(mi) else {
                     return true;
                 };
@@ -58,7 +62,10 @@ impl Game {
                 // tree (spec 3.2) instead of the animal interactions below.
                 // NPCs never feed/tame/cargo/ride.
                 if reg.is_npc_species(sp) {
-                    let root = self.runtime.view().npc_by_mob(mob_id)
+                    let root = self
+                        .runtime
+                        .view()
+                        .npc_by_mob(mob_id)
                         .and_then(|npc| npc.dialogue.clone())
                         .and_then(|d| reg.dialogues.iter().find(|dd| dd.id == d).cloned())
                         .map(|dd| dd.root)
@@ -100,27 +107,33 @@ impl Game {
                 }
                 // Feeding: breeds as ever, and repeated meals TAME —
                 // a tamed animal never flees people and takes a lead.
-                let feeding = self.runtime.view().mob_by_id(mob_id)
-                    .and_then(|mob| crate::player_ops::feeding::FeedPlan::prepare(def, mob, held));
+                let feeding =
+                    self.runtime.view().mob_by_id(mob_id).and_then(|mob| {
+                        crate::player_ops::feeding::FeedPlan::prepare(def, mob, held)
+                    });
                 if let Some(feeding) = feeding
                     && (self.creative || self.inventory.take_one(self.input.hotbar_sel).is_some())
                 {
-                        // Guests request; local change is the
-                        // prediction until the snapshot echoes it.
-                        if let Some(rc) = &self.multiplayer.remote {
-                            rc.session.send(&net::C2S::FeedMob { id: mob_id });
-                        } else if !self.creative
-                            && let Err(error) = self.runtime.local_mut().world.record_consumed_stacks([ItemStack::new(&reg, feeding.food(), 1)])
-                        {
-                            eprintln!("materials: animal feed accounting failed: {error}");
-                        }
-                        let now_tamed = self.runtime.present_mob_feeding(mob_id, feeding);
-                        if now_tamed {
-                            self.toast(format!("The {def_label} trusts you now."));
-                        }
-                        self.input.action_cooldown = 0.4;
-                        self.sfx(Sfx::Pickup);
-                        return true;
+                    // Guests request; local change is the
+                    // prediction until the snapshot echoes it.
+                    if let Some(rc) = &self.multiplayer.remote {
+                        rc.session.send(&net::C2S::FeedMob { id: mob_id });
+                    } else if !self.creative
+                        && let Err(error) = self
+                            .runtime
+                            .local_mut()
+                            .world
+                            .record_consumed_stacks([ItemStack::new(reg, feeding.food(), 1)])
+                    {
+                        eprintln!("materials: animal feed accounting failed: {error}");
+                    }
+                    let now_tamed = self.runtime.present_mob_feeding(mob_id, feeding);
+                    if now_tamed {
+                        self.toast(format!("The {def_label} trusts you now."));
+                    }
+                    self.input.action_cooldown = 0.4;
+                    self.sfx(Sfx::Pickup);
+                    return true;
                 }
                 // The lead: attach to a tamed animal, click again to
                 // release (the strip comes back).
@@ -129,9 +142,9 @@ impl Game {
                         mob.led_by = None;
                     }
                     if let Some(lead) = reg.item_id("base:lead") {
-                        let left = self.inventory.add(&reg, lead, 1);
+                        let left = self.inventory.add(reg, lead, 1);
                         if left > 0 {
-                            self.drop_stack(ItemStack::new(&reg, lead, 1));
+                            self.drop_stack(ItemStack::new(reg, lead, 1));
                         }
                     }
                     self.input.action_cooldown = 0.4;
@@ -170,7 +183,10 @@ impl Game {
                 }
                 // Step aboard a vehicle (empty-handed).
                 if def.vehicle && held.is_none() {
-                    let free = self.runtime.view().mob_by_id(mob_id)
+                    let free = self
+                        .runtime
+                        .view()
+                        .mob_by_id(mob_id)
                         .is_some_and(|m| m.ridden_by.is_none());
                     if free {
                         if let Some(rc) = &self.multiplayer.remote {
@@ -178,7 +194,8 @@ impl Game {
                                 id: mob_id,
                                 mount: true,
                             });
-                        } else if let Some(m) = self.runtime.local_mut().world.mob_by_id_mut(mob_id) {
+                        } else if let Some(m) = self.runtime.local_mut().world.mob_by_id_mut(mob_id)
+                        {
                             m.ridden_by = Some(0);
                         }
                         self.interaction.riding = Some(mob_id);
@@ -249,7 +266,7 @@ impl Game {
                 if reg.is_solid(tb) {
                     self.toast_prospect(pos.surface());
                     if !self.creative {
-                        self.inventory.wear_tool(&reg, self.input.hotbar_sel);
+                        self.inventory.wear_tool(reg, self.input.hotbar_sel);
                     }
                     self.sfx(Sfx::Bolt(1.2));
                     self.input.action_cooldown = 0.8;
@@ -286,19 +303,22 @@ impl Game {
                         .pos;
                     let vel = dir * speed;
                     let tile = reg.item(item).icon;
-                    self.runtime.local_mut().world.spawn_projectile(mobs::Projectile {
-                        stable_id: 0,
-                        pos,
-                        vel,
-                        tile,
-                        damage: 0.0,
-                        damage_type: None,
-                        age: 0.0,
-                        from_player: true,
-                        drop_item: None,
-                        preparation_payload: removed.filter(|stack| stack.arcane_id != 0),
-                        owner: 0,
-                    });
+                    self.runtime
+                        .local_mut()
+                        .world
+                        .spawn_projectile(mobs::Projectile {
+                            stable_id: 0,
+                            pos,
+                            vel,
+                            tile,
+                            damage: 0.0,
+                            damage_type: None,
+                            age: 0.0,
+                            from_player: true,
+                            drop_item: None,
+                            preparation_payload: removed.filter(|stack| stack.arcane_id != 0),
+                            owner: 0,
+                        });
                 }
                 self.sfx(Sfx::Bolt(1.6));
                 self.input.action_cooldown = 0.35;

@@ -1,11 +1,12 @@
 //! Settlement workings transaction coordination.
 
+use super::Settlement;
+use super::dross_medium;
 use crate::arcane::ArcaneOwner;
-use std::collections::BTreeMap;
 use crate::arcane::Current;
-use crate::workings::DeliveryMode;
-use crate::implements::ImplementAuditEvent;
 use crate::arcane::LinkedFileReplacement;
+use crate::implements::ImplementAuditEvent;
+use crate::workings::DeliveryMode;
 use crate::workings::NudgeEntityKind;
 use crate::workings::StrainInputs;
 use crate::workings::WorkingApparatus;
@@ -16,8 +17,7 @@ use crate::workings::WorkingPhase;
 use crate::workings::WorkingResult;
 use crate::workings::WorkingTargetSnapshot;
 use crate::world::World;
-use super::Settlement;
-use super::dross_medium;
+use std::collections::BTreeMap;
 
 impl World {
     pub(super) fn settle_working(
@@ -273,8 +273,12 @@ impl World {
             let spent = ordinary_return
                 .take_units(preserve_spent_units, [settled.definition.focus.clone()])
                 .map_err(|error| error.to_string())?;
-            crate::world::implements::add_current(&mut credits, ArcaneOwner::Ambient(region), &spent)
-                .map_err(|error| error.to_string())?;
+            crate::world::implements::add_current(
+                &mut credits,
+                ArcaneOwner::Ambient(region),
+                &spent,
+            )
+            .map_err(|error| error.to_string())?;
         }
         if settlement == Settlement::Complete
             && let WorkingEffect::TransferCurrent { to, current, .. } = &settled.effect
@@ -301,8 +305,12 @@ impl World {
                     let refunded = ordinary_return
                         .take_units(amount, debit.current.parts().keys().cloned())
                         .map_err(|error| error.to_string())?;
-                    crate::world::implements::add_current(&mut credits, debit.owner.clone(), &refunded)
-                        .map_err(|error| error.to_string())?;
+                    crate::world::implements::add_current(
+                        &mut credits,
+                        debit.owner.clone(),
+                        &refunded,
+                    )
+                    .map_err(|error| error.to_string())?;
                 }
             } else {
                 crate::world::implements::add_current(

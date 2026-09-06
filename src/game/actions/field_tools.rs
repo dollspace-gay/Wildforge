@@ -1,16 +1,14 @@
 //! Field tools in the ordered graphical action pipeline.
 
-use crate::game::Game;
-use crate::world::TerrainRead;
 use crate::audio::BreakMat;
+use crate::game::Game;
+use crate::game::navigation::Screen;
 use crate::net;
 use crate::registry;
 use crate::registry::ToolKind;
 use crate::world;
-use crate::game::navigation::Screen;
 
 impl Game {
-
     /// Read the country at a spot and toast it: the prospector's
     /// verdict, shared by pick strikes and standing survey cairns.
     /// Compass octant of a great-circle bearing (clockwise from local north).
@@ -44,7 +42,10 @@ impl Game {
         // Local worlds and hosts apply directly (the host broadcast
         // happens on the C2S path for guests' own edits).
         if self.multiplayer.remote.is_none() {
-            self.runtime.local_mut().world.insert_block_entity_at(pos, world::BlockEntity::Sign(world::SignState { lines }));
+            self.runtime
+                .local_mut()
+                .world
+                .insert_block_entity_at(pos, world::BlockEntity::Sign(world::SignState { lines }));
             if let Some(hst) = &mut self.multiplayer.host {
                 hst.broadcast_sign_at(pos, &self.ui_state.sign_lines);
             }

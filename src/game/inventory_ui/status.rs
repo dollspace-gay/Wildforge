@@ -1,9 +1,9 @@
 //! Status graphical inventory ui adapter.
 
-use crate::ui::UiBatch;
-use crate::world;
 use crate::game::Game;
 use crate::game::MAX_HEALTH;
+use crate::ui::UiBatch;
+use crate::world;
 
 impl Game {
     pub(super) fn draw_inventory_tab(
@@ -145,7 +145,11 @@ impl Game {
             info_x,
             rect.1 + 146.0,
             1.4,
-            &format!("DAY {} - {third} {}", world.day() + 1, world::SEASONS[season]),
+            &format!(
+                "DAY {} - {third} {}",
+                world.day() + 1,
+                world::SEASONS[season]
+            ),
             [0.78, 0.86, 1.0, 1.0],
         );
         let weather = world.weather_at_surface(self.player.pos.surface());

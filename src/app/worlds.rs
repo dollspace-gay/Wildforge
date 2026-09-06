@@ -1,7 +1,7 @@
 //! Offline world and atlas creation with ordered progress reporting.
 
-use std::{path::PathBuf, sync::Arc};
 use crate::{planet_atlas, registry, world};
+use std::{path::PathBuf, sync::Arc};
 
 pub(super) fn create(args: &[String], i: usize) {
     let Some(seed) = args.get(i + 1).and_then(|value| value.parse::<u32>().ok()) else {

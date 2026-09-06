@@ -1,9 +1,10 @@
 //! Player contexts for the authoritative host session.
 
-use super::{HostSession, MAX_GUEST_VIEW_DIST};
+use super::HostSession;
+#[cfg(test)]
+use super::MAX_GUEST_VIEW_DIST;
 
 impl HostSession {
-
     /// PlayerCtx list for the simulation: host (when windowed) + guests.
     pub fn authoritative_player_ctxs(
         &self,

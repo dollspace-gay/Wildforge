@@ -98,7 +98,11 @@
         "crate::materials",
         "crate::edifice",
         "glam",
-        "noise"
+        "noise",
+        "crate::climate::surface_noise",
+        "crate::climate::radial_noise",
+        "crate::climate::surface_hash",
+        "crate::climate::TemperatureField"
       ],
       "test_allow": [
         "crate::tests"
@@ -145,7 +149,8 @@
         "serde_json",
         "toml",
         "postcard",
-        "thiserror"
+        "thiserror",
+        "png"
       ],
       "test_allow": [
         "crate::tests"
@@ -197,7 +202,17 @@
         "serde_json",
         "toml",
         "glam",
-        "thiserror"
+        "thiserror",
+        "crate::screens::ScreenDef",
+        "crate::screens::RawScreensToml",
+        "crate::screens::resolve",
+        "crate::screens::SCREENS_SCHEMA_VERSION",
+        "crate::atlas::UNKNOWN_SLOT",
+        "crate::atlas::builtin_slots",
+        "crate::atlas::FIRST_FREE_SLOT",
+        "crate::atlas::embedded_base_tile",
+        "crate::atlas::packs::embedded_base_tile",
+        "crate::style::EXTRA_BASE"
       ],
       "test_allow": [
         "crate::tests"
@@ -238,7 +253,12 @@
         "crate::world::block_entities"
       ],
       "test_allow": [
-        "crate::tests"
+        "crate::tests",
+        "crate::world::ReplicaWorld",
+        "crate::world::replica::ReplicaWorld",
+        "crate::world::encode_chunk_for_test",
+        "crate::world::storage::encode_chunk",
+        "crate::world::storage::encoder::encode_chunk"
       ],
       "reason": "Guest interpretation depends on incoming replication and shared observation/schema contracts, never authoritative World or its save/generation operations."
     },
@@ -370,7 +390,8 @@
         "serde_json",
         "crate::planet",
         "crate::atlas",
-        "crate::identity::atomic_write"
+        "crate::identity::atomic_write",
+        "crate::persist::atomic_write"
       ],
       "test_allow": [
         "crate::tests"
@@ -426,7 +447,8 @@
         "crate::workings",
         "crate::world",
         "crate::worldgen",
-        "crate::server::DAY_LENGTH"
+        "crate::server::DAY_LENGTH",
+        "crate::server::PlayerCtx"
       ],
       "test_allow": [
         "crate::tests"

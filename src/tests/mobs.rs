@@ -811,7 +811,13 @@ fn spawner_respects_darkness_ire_and_tiers() {
         }
     }
     // Night at Calm: spawns only ire_min = 0 wardens, within the ring.
-    w.mobs_mut().retain(|m| !reg.animals[m.species].hostile);
+    w.replace_mobs(
+        w.mobs()
+            .iter()
+            .filter(|m| !reg.animals[m.species].hostile)
+            .cloned()
+            .collect(),
+    );
     for _ in 0..300 {
         w.tick_hostile_spawns(player, world_spawn, 0.12, 5.0, &mut rng);
     }
@@ -870,7 +876,7 @@ fn wardens_dissolve_at_dawn_and_never_save() {
         "ordinary wildlife survives"
     );
     // Dawn dissolve: full daylight on an open surface removes the warden.
-    w.clock = 0.25 * f64::from(crate::server::DAY_LENGTH);
+    w.set_simulation_clock(0.25 * f64::from(crate::server::DAY_LENGTH));
     let player = Vec3::new(5.0, y, 5.0);
     let mut rng = 3u32;
     w.tick_mobs(

@@ -1,5 +1,6 @@
 //! World metadata and compatibility adapters.
 
+use crate::chunk::CHUNK_Y;
 use std::fs;
 
 pub use crate::planet::WORLD_TOPOLOGY;
@@ -245,4 +246,3 @@ pub fn inspect_worlds(dir: &std::path::Path) -> Vec<WorldBrowserEntry> {
     entries.sort_by(|a, b| a.name.cmp(&b.name));
     entries
 }
-

@@ -1,12 +1,9 @@
 //! Windowed client construction. Content and renderer creation stay ordered.
 
-use std::{path::PathBuf, sync::Arc, time::Instant};
-use glam::Vec3;
-use winit::window::Window;
-use super::{Game, Screen, InputState, UiState, SurvivalState, InteractionState,
-    PresentationState, ContentRuntime, MultiplayerState, combat, world_loading,
-    content_tree_stamp, script_mod_dirs};
-use crate::{atlas, bounce, config, identity, net, renderer, script, server, style, visual_capture};
+use super::{
+    ContentRuntime, Game, InputState, InteractionState, MultiplayerState, PresentationState,
+    Screen, SurvivalState, UiState, combat, content_tree_stamp, script_mod_dirs, world_loading,
+};
 use crate::audio::Audio;
 use crate::camera::Camera;
 use crate::config::Config;
@@ -15,6 +12,12 @@ use crate::physics::{EYE_HEIGHT, Player};
 use crate::registry;
 use crate::ui::UiBatch;
 use crate::world::World;
+use crate::{
+    atlas, bounce, config, identity, net, renderer, script, server, style, visual_capture,
+};
+use glam::Vec3;
+use std::{path::PathBuf, sync::Arc, time::Instant};
+use winit::window::Window;
 
 impl Game {
     pub(super) fn new(window: Arc<Window>) -> Game {
@@ -218,5 +221,4 @@ impl Game {
         }
         g
     }
-
 }

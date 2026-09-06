@@ -1,15 +1,14 @@
 //! Post render in the graphical frame pipeline.
 
-use crate::world::TerrainRead;
-use crate::visual_capture;
-use crate::world;
-use std::time::Instant;
+use crate::game::BUILD_MARKER;
 use crate::game::Game;
-use crate::game::advance_capture_clock;
 use crate::game::SHOT_MAX_FRAMES;
 use crate::game::SHOT_SETTLE_FRAMES;
+use crate::game::advance_capture_clock;
 use crate::game::navigation::Screen;
-use crate::game::BUILD_MARKER;
+use crate::visual_capture;
+use crate::world::TerrainRead;
+use std::time::Instant;
 
 impl Game {
     pub(in crate::game) fn finish_rendered_frame(&mut self, fog: f32, now: Instant) {
@@ -144,5 +143,5 @@ impl Game {
                 },
             ));
         }
-        }
+    }
 }

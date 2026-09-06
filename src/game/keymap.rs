@@ -1,9 +1,9 @@
 //! Keyboard mapping and high-level key actions.
 
-use crate::audio::Sfx;
-use glam::Vec3;
 use super::Game;
 use super::navigation::Screen;
+use crate::audio::Sfx;
+use glam::Vec3;
 use winit::event_loop::ActiveEventLoop;
 use winit::keyboard::KeyCode;
 use winit::window::Fullscreen;
@@ -166,7 +166,12 @@ impl Game {
                     }
                     CameraMode::Orbit => self.camera.mode = CameraMode::First,
                 }
-                if let Err(error) = self.runtime.local_mut().world.set_camera(self.camera.mode.key()) {
+                if let Err(error) = self
+                    .runtime
+                    .local_mut()
+                    .world
+                    .set_camera(self.camera.mode.key())
+                {
                     eprintln!("camera: could not persist mode: {error}");
                 }
                 self.sfx(Sfx::Click);

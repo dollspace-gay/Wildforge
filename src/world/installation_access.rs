@@ -16,10 +16,13 @@ impl World {
     }
 
     pub(crate) fn click_container(
-        &mut self, position: BlockPos, cursor: &mut Option<ItemStack>,
+        &mut self,
+        position: BlockPos,
+        cursor: &mut Option<ItemStack>,
         request: crate::player_ops::container::Click,
     ) -> Result<crate::player_ops::container::Effect, crate::player_ops::container::Rejected> {
-        self.installations.click(&self.reg, position, cursor, request)
+        self.installations
+            .click(&self.reg, position, cursor, request)
     }
 
     pub fn block_entity_at(&self, pos: &crate::planet::BlockPos) -> Option<&BlockEntity> {

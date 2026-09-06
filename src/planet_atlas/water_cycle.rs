@@ -10,14 +10,18 @@ use super::AtlasGrid;
 mod mass;
 pub use mass::{ReservoirMass, WaterClass};
 mod records;
-pub use records::{WaterCell, AquiferLayer, SparseAquiferState, SurfaceReservoirKind, SurfaceReservoirState, SpringState, FluxInbox, ChunkWaterCommitment, WaterLedger, surface_reservoir_id, surface_reservoir_parts};
-mod custody;
+pub use records::{
+    AquiferLayer, ChunkWaterCommitment, FluxInbox, SparseAquiferState, SpringState,
+    SurfaceReservoirKind, SurfaceReservoirState, WaterCell, WaterLedger, surface_reservoir_id,
+    surface_reservoir_parts,
+};
 mod audit;
+mod custody;
 pub use audit::WaterAudit;
 mod genesis;
 pub(super) use genesis::initial_water_cycle;
 mod codec;
-pub(super) use codec::{encode_water_cycle, decode_water_cycle};
+pub(super) use codec::{decode_water_cycle, encode_water_cycle};
 
 pub const HYDRO_UNITS_PER_BLOCK: u64 = 256;
 pub const HYDRO_UNITS_PER_VISIBLE_LEVEL: u64 = 32;

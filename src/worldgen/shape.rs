@@ -1,9 +1,9 @@
 //! Density/strata shaping and the immutable column maps used by later stages.
 
 use super::Generator;
+use super::{ATLAS_SURFACE_MANTLE, RING};
 use crate::chunk::{CHUNK_X, CHUNK_Y, CHUNK_Z, Chunk, ChunkPos, SEA_LEVEL};
 use crate::registry::AIR;
-use super::{ATLAS_SURFACE_MANTLE, RING};
 
 pub(super) struct ShapeColumns {
     pub(super) top: [[i32; RING]; RING],
@@ -99,6 +99,13 @@ impl Generator {
             }
         }
 
-        ShapedTerrain { chunk: c, columns: ShapeColumns { top: shape_top, fills, armors } }
+        ShapedTerrain {
+            chunk: c,
+            columns: ShapeColumns {
+                top: shape_top,
+                fills,
+                armors,
+            },
+        }
     }
 }

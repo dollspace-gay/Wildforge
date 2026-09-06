@@ -89,4 +89,3 @@ pub struct KilnDef {
     pub glass: ItemId,
     pub consumes: bool,
 }
-

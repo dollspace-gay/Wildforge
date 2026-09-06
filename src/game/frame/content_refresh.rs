@@ -1,15 +1,16 @@
 //! Content refresh in the graphical frame pipeline.
 
-use crate::world::TerrainRead;
 use crate::atlas;
 use crate::game::Game;
 use crate::game::content_watch::content_tree_stamp;
 
 impl Game {
-
     pub(in crate::game) fn refresh_content_and_toasts(&mut self, dt: f32) {
         // The turning of the season repaints the leaves.
-        let local_season = self.runtime.view().season_at_surface(self.player.pos.surface());
+        let local_season = self
+            .runtime
+            .view()
+            .season_at_surface(self.player.pos.surface());
         if self.in_world && local_season != self.presentation.atlas_season {
             let mut atlas = atlas::build_atlas(
                 &self.content.reg.tex_files,

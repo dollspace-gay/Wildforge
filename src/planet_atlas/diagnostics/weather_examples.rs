@@ -1,9 +1,11 @@
 //! Diagnostic weather tracks and maps from an isolated weather owner.
 
-use crate::planet_atlas::{AtlasError, LocalWeather, PlanetAtlas, PlanetaryWeather, weather_sample};
-use glam::{DVec3};
-use std::path::{Path};
 use super::images::write_png;
+use crate::planet_atlas::{
+    AtlasError, LocalWeather, PlanetAtlas, PlanetaryWeather, weather_sample,
+};
+use glam::DVec3;
+use std::path::Path;
 pub(in crate::planet_atlas::diagnostics) fn export_weather_examples(
     atlas: &PlanetAtlas,
     map_dir: &Path,

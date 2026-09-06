@@ -1,6 +1,8 @@
 //! Feature access coordinator for the authoritative world.
 
-use super::{BlockPos, ChunkPos, RevealKey, World};
+use super::{BlockPos, RevealKey, World};
+#[cfg(test)]
+use crate::chunk::ChunkPos;
 
 impl World {
     /// Index of the gate sealing `pos`, if any (spec 2.5).

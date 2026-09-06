@@ -1,9 +1,9 @@
 //! Food storage machine_tick transaction coordination.
 
-use crate::world::BlockEntity;
-use crate::planet::BlockPos;
-use crate::world::FRESHNESS_PER_SEC;
 use crate::inventory::ItemStack;
+use crate::planet::BlockPos;
+use crate::world::BlockEntity;
+use crate::world::FRESHNESS_PER_SEC;
 use crate::world::SMOKE_SECS;
 use crate::world::World;
 
@@ -16,7 +16,8 @@ impl World {
         let torch = reg.block_id("base:torch");
         let smoked = reg.item_id("base:smoked_meat");
         let raws = reg.tags.get("base:raw_meats").cloned().unwrap_or_default();
-        let keys: Vec<BlockPos> = self.installations
+        let keys: Vec<BlockPos> = self
+            .installations
             .iter()
             .filter(|(_, e)| matches!(e, BlockEntity::Smoker(_)))
             .map(|(k, _)| *k)
@@ -62,7 +63,9 @@ impl World {
     /// perishable) initializes to fresh instead of rotting.
     pub(in crate::world) fn tick_perish(&mut self, dt: f32) {
         const PERISH_SWEEP_SECS: f32 = 20.0;
-        if !self.installations.perish_cycle(dt, PERISH_SWEEP_SECS) { return; }
+        if !self.installations.perish_cycle(dt, PERISH_SWEEP_SECS) {
+            return;
+        }
         let reg = self.reg.clone();
         let mush = reg.item_id("base:spoiled_mush");
         let mut consumed = Vec::new();
@@ -78,7 +81,8 @@ impl World {
             })
             .unwrap_or_default();
         let mut preparation_assessments = Vec::<(ItemStack, i32, u64)>::new();
-        let cellar_at: Vec<(BlockPos, bool)> = self.installations
+        let cellar_at: Vec<(BlockPos, bool)> = self
+            .installations
             .iter()
             .filter(|(_, e)| matches!(e, BlockEntity::Chest(_) | BlockEntity::Offering(_)))
             .map(|(&p, _)| p)
@@ -145,7 +149,8 @@ impl World {
         // nor a cellar. They still live on the same ordinary aging clock; an
         // active Holdfast may only reduce this real decrement. Collect first
         // so the workings ledger can be updated without aliasing block state.
-        let mounted: Vec<(BlockPos, u8, ItemStack)> = self.installations
+        let mounted: Vec<(BlockPos, u8, ItemStack)> = self
+            .installations
             .iter()
             .filter_map(|(&pos, entity)| match entity {
                 BlockEntity::DiscoveryApparatus(apparatus) => Some(
@@ -174,8 +179,7 @@ impl World {
                 ordinary_step,
                 PERISH_SWEEP_SECS as u32,
             );
-            let Some(BlockEntity::DiscoveryApparatus(apparatus)) =
-                self.installations.get_mut(&pos)
+            let Some(BlockEntity::DiscoveryApparatus(apparatus)) = self.installations.get_mut(&pos)
             else {
                 continue;
             };

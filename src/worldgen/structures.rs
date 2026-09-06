@@ -1,10 +1,10 @@
 //! Province hearts and edifices stamp only the current chunk's columns.
 
+use super::Biome;
 use super::Generator;
 use crate::chunk::{CHUNK_X, CHUNK_Y, CHUNK_Z, Chunk, ChunkPos, SEA_LEVEL};
-use super::Biome;
-use crate::registry::BlockId;
 use crate::planet::geodesic_distance;
+use crate::registry::BlockId;
 
 impl Generator {
     /// The stone and trim a country builds with.
@@ -26,8 +26,12 @@ impl Generator {
             .unwrap_or(self.stone)
     }
 
-
-    pub(super) fn plant_province_structures(&self, c: &mut Chunk, pos: ChunkPos, heights: &[[i32; CHUNK_Z]; CHUNK_X]) {
+    pub(super) fn plant_province_structures(
+        &self,
+        c: &mut Chunk,
+        pos: ChunkPos,
+        heights: &[[i32; CHUNK_Z]; CHUNK_X],
+    ) {
         // The heart of a country stands at its province's center. A
         // site sits inside its own province by construction, so at
         // most a few keys can land in any one chunk.

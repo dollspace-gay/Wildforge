@@ -11,6 +11,7 @@ impl World {
         self.calendar_state.clock() / f64::from(crate::server::DAY_LENGTH)
     }
 
+    #[cfg(test)]
     pub fn sun_direction(&self) -> glam::DVec3 {
         self.calendar_view().sun_direction()
     }
@@ -50,7 +51,12 @@ impl World {
         pos: crate::planet::SurfacePos,
     ) -> crate::planet_atlas::LocalWeatherSample {
         if let (Some(atlas), Some(weather)) = (&self.planet_atlas, self.weather_state.live()) {
-            return weather.sample(atlas, pos, self.orbital_day(), self.calendar_state.long_winter());
+            return weather.sample(
+                atlas,
+                pos,
+                self.orbital_day(),
+                self.calendar_state.long_winter(),
+            );
         }
         // Atlas-free fixtures and development worlds still need a physically
         // sane local temperature. The old fixed +14 C spring/summer offset
@@ -59,8 +65,12 @@ impl World {
         // latitude field as the annual mean, then scale the orbital anomaly
         // by signed latitude: no equatorial season spike, opposite
         // hemispheres, strongest variation toward the poles.
-        let temperature_c = self.temperature_at_surface_on_day(pos, f64::from(self.calendar_state.day()));
-        crate::world::calendar_view::fallback_weather(temperature_c, self.weather_state.override_sample())
+        let temperature_c =
+            self.temperature_at_surface_on_day(pos, f64::from(self.calendar_state.day()));
+        crate::world::calendar_view::fallback_weather(
+            temperature_c,
+            self.weather_state.override_sample(),
+        )
     }
 
     pub fn soil_moisture_at_surface(&self, pos: crate::planet::SurfacePos) -> f32 {

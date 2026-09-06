@@ -1,15 +1,11 @@
 //! Loose-item custody coordination, motion, and loss settlement.
 
-use crate::world::World;
 use crate::inventory::ItemStack;
+use crate::world::World;
 
 impl World {
     pub fn loose_items(&self) -> &[crate::entity::ItemEntity] {
         self.population.loose_items()
-    }
-
-    pub fn loose_items_mut(&mut self) -> &mut [crate::entity::ItemEntity] {
-        self.population.loose_items_mut()
     }
 
     pub fn spawn_loose_item(&mut self, item: crate::entity::ItemEntity) -> u64 {
@@ -28,10 +24,7 @@ impl World {
         self.population.clear_loose_items()
     }
 
-    pub fn for_each_loose_item_mut(
-        &mut self,
-        update: impl FnMut(&mut crate::entity::ItemEntity),
-    ) {
+    pub fn for_each_loose_item_mut(&mut self, update: impl FnMut(&mut crate::entity::ItemEntity)) {
         self.population.for_each_loose_item_mut(update)
     }
 

@@ -7,8 +7,8 @@ use super::{Source, WorldView};
 use crate::planet::BlockPos;
 use crate::planet_atlas::LocalWeatherSample;
 use crate::registry::{BlockId, Registry};
-use crate::world::{BlockEntity, SignState, TerrainRead};
 use crate::world::multiblock::BlockRead;
+use crate::world::{BlockEntity, SignState, TerrainRead};
 
 impl<'a> WorldView<'a> {
     fn block_entity_map(&self) -> &'a HashMap<BlockPos, BlockEntity> {
@@ -24,10 +24,12 @@ impl<'a> WorldView<'a> {
         self.block_entity_map().iter()
     }
     pub(crate) fn sign_texts(&self) -> impl Iterator<Item = (BlockPos, &'a SignState)> {
-        self.block_entity_map().iter().filter_map(|(position, entity)| match entity {
-            BlockEntity::Sign(sign) => Some((*position, sign)),
-            _ => None,
-        })
+        self.block_entity_map()
+            .iter()
+            .filter_map(|(position, entity)| match entity {
+                BlockEntity::Sign(sign) => Some((*position, sign)),
+                _ => None,
+            })
     }
     pub(crate) fn check_bloomery_at(&self, position: BlockPos) -> Option<BlockPos> {
         crate::world::machines::check_machine_at(self, "base:bloomery", position)
@@ -51,18 +53,27 @@ impl<'a> WorldView<'a> {
 
 impl BlockRead for WorldView<'_> {
     type Pos = BlockPos;
-    fn get_block(&self, position: BlockPos) -> BlockId { self.get_block_at(position) }
+    fn get_block(&self, position: BlockPos) -> BlockId {
+        self.get_block_at(position)
+    }
     fn offset(&self, position: BlockPos, delta: (i32, i32, i32)) -> Option<BlockPos> {
         position.offset(delta.0, delta.1, delta.2)
     }
     fn cell_delta(&self, from: BlockPos, to: BlockPos) -> Option<(i32, i32, i32)> {
         crate::world::block_store::planetary_delta(from, to)
     }
-    fn block_entities(&self) -> &HashMap<BlockPos, BlockEntity> { self.block_entity_map() }
-    fn reg(&self) -> &Arc<Registry> { self.registry() }
-    fn to_world(&self, position: BlockPos) -> Option<BlockPos> { Some(position) }
+    fn block_entities(&self) -> &HashMap<BlockPos, BlockEntity> {
+        self.block_entity_map()
+    }
+    fn reg(&self) -> &Arc<Registry> {
+        self.registry()
+    }
+    fn to_world(&self, position: BlockPos) -> Option<BlockPos> {
+        Some(position)
+    }
     fn open_sky_above(&self, core: BlockPos) -> bool {
-        core.offset(0, 3, 0).is_some_and(|above| self.light_at_pos(above).1 == 15)
+        core.offset(0, 3, 0)
+            .is_some_and(|above| self.light_at_pos(above).1 == 15)
     }
     fn weather_at(&self, position: BlockPos) -> LocalWeatherSample {
         self.weather_at_surface(position.surface())
@@ -71,7 +82,14 @@ impl BlockRead for WorldView<'_> {
 
 impl WorldView<'_> {
     pub(crate) fn is_nudge_mechanism_at(&self, position: crate::planet::BlockPos) -> bool {
-        self.registry().block(self.get_block_at(position)).interaction.as_deref() == Some("firebox")
-            && matches!(self.block_entity_at(&position), Some(crate::world::BlockEntity::Steam(_)))
+        self.registry()
+            .block(self.get_block_at(position))
+            .interaction
+            .as_deref()
+            == Some("firebox")
+            && matches!(
+                self.block_entity_at(&position),
+                Some(crate::world::BlockEntity::Steam(_))
+            )
     }
 }

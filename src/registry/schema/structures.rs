@@ -1,7 +1,7 @@
 //! Raw structures content schema; no runtime mutation.
 
 use serde::Deserialize;
-use std::collections::{HashMap};
+use std::collections::HashMap;
 
 #[derive(Deserialize, Clone)]
 pub(in crate::registry) struct BrushToml {
@@ -190,4 +190,3 @@ pub(in crate::registry) struct PiecesFile {
     #[serde(default)]
     pub(in crate::registry) settlement: Vec<SettlementToml>,
 }
-

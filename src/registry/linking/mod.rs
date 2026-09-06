@@ -3,29 +3,29 @@
 mod material;
 pub(super) use material::{inferred_material_class, salvage_def};
 mod observation;
-pub(super) use observation::{observation_def, discovery_item_def, discovery_fixture_def};
+pub(super) use observation::{discovery_fixture_def, discovery_item_def, observation_def};
 mod magic;
 pub(super) use magic::{arcane_def, arcane_ecology_def};
+mod bootstrap;
+mod crafting;
+mod extensions;
+mod fauna;
+mod features;
+mod lookups;
+mod modes;
+mod narrative;
+mod npcs;
 mod pending;
 mod register;
-mod bootstrap;
-mod shells;
-mod lookups;
 mod resources;
-mod structures;
 mod settlements;
+mod shells;
 mod stations;
-mod fauna;
-mod npcs;
-mod narrative;
-mod crafting;
-mod features;
-mod modes;
-mod extensions;
+mod structures;
 
-use crate::registry::{Registry, ModInfo};
-use crate::registry::schema::RawMod;
 use crate::registry::material_graph::reconcile_material_definitions;
+use crate::registry::schema::RawMod;
+use crate::registry::{ModInfo, Registry};
 
 /// Build privately. Ordering is part of the content-ID and error-report contract.
 pub(super) fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
@@ -56,7 +56,12 @@ pub(super) fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
     let pending_prey = fauna::resolve(&mut reg, pending.animals);
     npcs::resolve(&mut reg, pending.npcs);
     narrative::dialogues(&mut reg, pending.dialogues);
-    narrative::quests(&mut reg, pending.quests, &pending.recipes, &mut settlement_errors);
+    narrative::quests(
+        &mut reg,
+        pending.quests,
+        &pending.recipes,
+        &mut settlement_errors,
+    );
     fauna::prey(&mut reg, pending_prey);
     resources::harvests(&mut reg, pending.harvests);
     resources::aliases(&mut reg, pending.aliases);

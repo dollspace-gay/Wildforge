@@ -1,10 +1,9 @@
 //! Read-only surface water and hydrological name queries.
 
+use super::{HYDRO_FLOODPLAIN, HYDRO_RIVER, WaterBodyKind};
 use crate::chunk::SEA_LEVEL;
 use crate::planet::{FACE_BLOCKS, PLANET_RADIUS, SurfacePoint, SurfacePos, surface_to_unit};
 use crate::planet_atlas::{AtlasPos, PlanetAtlas, mix64};
-use super::{WaterBodyKind, HYDRO_FLOODPLAIN, HYDRO_RIVER};
-
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct AtlasHydrologySample {

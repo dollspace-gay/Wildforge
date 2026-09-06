@@ -1,10 +1,10 @@
 //! UI text editing with explicit app actions; no world or Game access.
 
-use winit::event::KeyEvent;
-use winit::keyboard::{KeyCode, PhysicalKey};
 use super::navigation::{Screen, UiState};
 use crate::identity;
 use crate::planet::BlockPos;
+use winit::event::KeyEvent;
+use winit::keyboard::{KeyCode, PhysicalKey};
 
 pub(super) enum TextAction {
     Unhandled,
@@ -28,9 +28,7 @@ impl UiState {
                 _ => {
                     if let Some(text) = &event.text {
                         for ch in text.chars() {
-                            if ch.is_ascii_digit()
-                                && self.new_world_seed.len() < 10
-                            {
+                            if ch.is_ascii_digit() && self.new_world_seed.len() < 10 {
                                 self.new_world_seed.push(ch);
                             }
                         }
@@ -59,10 +57,8 @@ impl UiState {
                     if let Some(t) = &event.text {
                         for ch in t.chars() {
                             if self.account_focus == 0
-                                && (ch.is_ascii_alphanumeric()
-                                    || matches!(ch, ' ' | '-' | '.'))
-                                && self.account_name.chars().count()
-                                    < identity::DISPLAY_NAME_MAX
+                                && (ch.is_ascii_alphanumeric() || matches!(ch, ' ' | '-' | '.'))
+                                && self.account_name.chars().count() < identity::DISPLAY_NAME_MAX
                             {
                                 self.account_name.push(ch);
                             } else if self.account_focus == 1
@@ -132,8 +128,7 @@ impl UiState {
                         for ch in text.chars() {
                             let allowed = !ch.is_control()
                                 && (ch.is_alphanumeric() || " _-':,.()/#".contains(ch));
-                            if allowed && self.discovery_label.chars().count() < 48
-                            {
+                            if allowed && self.discovery_label.chars().count() < 48 {
                                 self.discovery_label.push(ch);
                             }
                         }
@@ -162,10 +157,7 @@ impl UiState {
                 _ => {
                     if let Some(t) = &event.text {
                         for ch in t.chars() {
-                            if (ch.is_ascii_alphanumeric()
-                                || ch == ' '
-                                || ch == ':'
-                                || ch == '_')
+                            if (ch.is_ascii_alphanumeric() || ch == ' ' || ch == ':' || ch == '_')
                                 && self.search.len() < 24
                             {
                                 self.search.push(ch);

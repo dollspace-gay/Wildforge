@@ -1,11 +1,11 @@
 //! Continental fetch and deterministic spherical circulation directions.
 
-use std::collections::VecDeque;
-use glam::DVec3;
-use crate::planet_atlas::{AtlasPos, AtlasGrid, TerrainCell};
-use crate::planet::surface_to_unit;
-use crate::chunk::SEA_LEVEL;
 use super::solar::geographic_basis;
+use crate::chunk::SEA_LEVEL;
+use crate::planet::surface_to_unit;
+use crate::planet_atlas::{AtlasGrid, AtlasPos, TerrainCell};
+use glam::DVec3;
+use std::collections::VecDeque;
 
 pub(super) fn ocean_distances(side: u16, terrain: &AtlasGrid<TerrainCell>) -> Vec<u16> {
     let mut distance = vec![u16::MAX; terrain.len()];
@@ -29,7 +29,11 @@ pub(super) fn ocean_distances(side: u16, terrain: &AtlasGrid<TerrainCell>) -> Ve
     distance
 }
 
-pub(super) fn direction_to_lower_distance(pos: AtlasPos, side: u16, distances: &[u16]) -> Option<DVec3> {
+pub(super) fn direction_to_lower_distance(
+    pos: AtlasPos,
+    side: u16,
+    distances: &[u16],
+) -> Option<DVec3> {
     let mine = distances[pos.index(side)];
     pos.neighbors8(side)
         .into_iter()

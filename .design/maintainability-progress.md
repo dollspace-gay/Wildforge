@@ -2182,3 +2182,25 @@ required before accepting the extraction.
 - Refreshed the requirement audit to describe current implementation instead of
   the obsolete World::remote baseline. Acceptance remains unchecked until fresh
   final evidence, including all required runners on the latest pushed head.
+
+## Final integration checkpoint
+
+The implementation pass is in final validation. Formatting and strict all-target
+Clippy pass after resolving moved-module imports/visibility and removing unused
+internal authority wrappers. Existing scenarios now construct ReplicaWorld for
+incoming host state and use named calendar/population operations for authority.
+Session chunk fixtures encode immutable chunks without constructing a generator
+or save owner. All-target compilation succeeds.
+
+The new tooling fixtures caught an unqualified type hidden behind a glob import.
+The dependency scanner now resolves those identifiers, recognizes local enum
+variants and visibility syntax, and preserves external alias findings. The
+strict project report covers 482 files with zero findings. Narrow schema,
+climate, diagnostic PNG and atomic-write dependencies are explicit; guest test
+allowances name only replica/immutable encoder fixture types and functions.
+
+Evidence so far: `target/maintainability/final-refactor-validation/` contains
+compiler integration attempts, `clippy-2` (pass), architecture reports and Python
+fixture runs. No runtime, fresh GPU campaign, or final-head CI acceptance is
+claimed. Test organization, transaction/unsafe regression additions and the
+complete final gates remain in progress.

@@ -42,14 +42,14 @@ impl Game {
     }
 }
 
-mod inventory;
-mod pause;
-mod moderation;
-mod worlds;
+mod account_tasks;
 mod accounts;
+mod character;
+mod inventory;
+mod join;
+mod moderation;
+mod pause;
 mod preferences;
 mod stations;
 mod storage;
-mod join;
-mod character;
-mod account_tasks;
+mod worlds;

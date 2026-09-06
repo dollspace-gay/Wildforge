@@ -1,13 +1,12 @@
 //! Melee in the ordered graphical action pipeline.
 
-use crate::game::Game;
-use crate::world::TerrainRead;
+use super::ActionFrame;
 use crate::audio::Sfx;
+use crate::game::Game;
+use crate::game::combat;
 use crate::net;
 use crate::raycast;
 use glam::Vec3;
-use crate::game::combat;
-use super::ActionFrame;
 
 impl Game {
     pub(in crate::game) fn interact_melee(&mut self, frame: &ActionFrame) -> bool {
@@ -20,7 +19,7 @@ impl Game {
         // press inside the combo window is a heavy finisher; a hit from
         // behind the mob's facing backstabs for double.
         if self.input.left_held
-            && let Some(mi) = self.mob_in_crosshair(&hit)
+            && let Some(mi) = self.mob_in_crosshair(hit)
             && !matches!(aim, Some(raycast::TargetHit::Structure { .. }))
         {
             self.interaction.breaking = None;
@@ -58,7 +57,7 @@ impl Game {
                     self.sfx(Sfx::MobHurt(pitch));
                     self.survival.hunger = (self.survival.hunger - 0.01).max(0.0);
                     if !self.creative {
-                        self.inventory.wear_tool(&reg, self.input.hotbar_sel);
+                        self.inventory.wear_tool(reg, self.input.hotbar_sel);
                     }
                     return true;
                 }
@@ -66,7 +65,11 @@ impl Game {
                 if let Some(mob) = self.runtime.local_mut().world.mob_mut(mi) {
                     let base = held.map(|i| reg.item(i).damage).unwrap_or(1.0);
                     let backstab = !self.creative
-                        && crate::player_ops::combat::mob_facing_away(mob.yaw, mob.pos, self.player.pos);
+                        && crate::player_ops::combat::mob_facing_away(
+                            mob.yaw,
+                            mob.pos,
+                            self.player.pos,
+                        );
                     let damage = crate::player_ops::combat::melee_damage(base, heavy, backstab);
                     let (dmg, crit) = (damage.amount, damage.critical);
                     let dmg_type = held.and_then(|i| reg.item(i).damage_type.clone());
@@ -107,12 +110,11 @@ impl Game {
                 self.sfx(Sfx::MobHurt(pitch));
                 self.survival.hunger = (self.survival.hunger - 0.01).max(0.0);
                 if !self.creative {
-                    self.inventory.wear_tool(&reg, self.input.hotbar_sel);
+                    self.inventory.wear_tool(reg, self.input.hotbar_sel);
                 }
             }
             return true;
         }
-
 
         false
     }

@@ -1,7 +1,7 @@
 //! Ore, structure, piece, assembly, and dungeon content definitions.
 
 use super::{BlockId, ItemId, RetrogenPolicy};
-use std::collections::{HashMap};
+use std::collections::HashMap;
 
 /// How a mineral deposit grows from its seed cell.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -165,4 +165,3 @@ pub struct DungeonDef {
     /// Seconds after the last participant leaves before the zone resets.
     pub reset: f32,
 }
-

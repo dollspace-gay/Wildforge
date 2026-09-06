@@ -1,6 +1,6 @@
 //! Composite stage of GPU frame encoding.
 
-use crate::renderer::{Renderer, FrameInput};
+use crate::renderer::{FrameInput, Renderer};
 
 impl Renderer {
     pub(in crate::renderer) fn composite_and_ui(
@@ -48,5 +48,4 @@ impl Renderer {
             pass.draw(0..f.ui_verts.len() as u32, 0..1);
         }
     }
-
 }

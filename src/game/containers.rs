@@ -1,12 +1,17 @@
 //! Inventory, crafting, armor, and machine-container interactions.
 
-use crate::inventory;
-use crate::world;
 use crate::game::Game;
 use crate::registry::RecipeDef;
+use crate::world;
 
 #[derive(Clone, Copy)]
-enum ContainerPanel { Chest, Offering, Furnace, Bloomery, Kiln }
+enum ContainerPanel {
+    Chest,
+    Offering,
+    Furnace,
+    Bloomery,
+    Kiln,
+}
 
 impl ContainerPanel {
     fn accepts(self, entity: &world::BlockEntity, registry: &crate::registry::Registry) -> bool {
@@ -14,8 +19,13 @@ impl ContainerPanel {
             (Self::Chest, world::BlockEntity::Chest(_))
             | (Self::Offering, world::BlockEntity::Offering(_))
             | (Self::Furnace, world::BlockEntity::Furnace(_)) => true,
-            (Self::Bloomery, world::BlockEntity::Multiblock(machine)) => matches!(machine.kind.handler(registry),
-                Some(crate::machines::MachineHandler::Bloomery | crate::machines::MachineHandler::Forge)),
+            (Self::Bloomery, world::BlockEntity::Multiblock(machine)) => matches!(
+                machine.kind.handler(registry),
+                Some(
+                    crate::machines::MachineHandler::Bloomery
+                        | crate::machines::MachineHandler::Forge
+                )
+            ),
             (Self::Kiln, world::BlockEntity::Multiblock(_)) => true,
             _ => false,
         }
@@ -23,7 +33,6 @@ impl ContainerPanel {
 }
 
 impl Game {
-
     pub(super) const BCOLS: usize = 6;
     pub(super) const BROWS: usize = 8;
     pub(super) const BSLOT: f32 = 40.0;
@@ -52,12 +61,12 @@ pub(crate) fn recipe_gates_met(
     None
 }
 
-mod inventory;
-mod layout;
 mod cargo;
-mod stall;
-mod smelting;
 mod equipment;
 mod exchange;
+mod inventory;
+mod layout;
 mod script_screen;
+mod smelting;
+mod stall;
 mod workbench;

@@ -1,77 +1,57 @@
 //! Host-authoritative embodied preparation operations.
-use crate::alchemy::AgitationKind;
-use crate::alchemy::AlchemyApparatusState;
-use crate::alchemy::AlchemyBatch;
-use crate::alchemy::AlchemyCue;
-use crate::alchemy::AlchemyCueKind;
-use crate::alchemy::AlchemyError;
-use crate::alchemy::AlchemyResult;
-use crate::alchemy::ApparatusKind;
-use crate::arcane::ArcaneOwner;
-use std::collections::BTreeMap;
-use crate::alchemy::BatchFailure;
-use crate::alchemy::BatchIngredientState;
-use crate::alchemy::BatchOutcome;
-use crate::world::BlockPos;
-use crate::alchemy::CarrierKind;
-use crate::arcane::Current;
-use crate::alchemy::ExactLiquid;
-use crate::inventory::Inventory;
-use crate::inventory::ItemStack;
-use crate::registry::MaterialVector;
-use crate::alchemy::PreparationHandler;
-use crate::alchemy::ProcessStep;
-use crate::alchemy::ProducedStack;
-use crate::planet_atlas::ReservoirMass;
-use crate::workings::WaterCarrier;
 
 const CARRIER_ITEM_UNITS: u64 = 64;
 const APPARATUS_REACH: i32 = 4;
 
-/// A successful still run moves the exact salt mass out of brine without
-/// creating or deleting a single hydro unit. The salt remains physically in
-/// the apparatus residue until cleaning or disposal returns it through the
-/// ordinary water/material paths; the bottled condensate is fresh water.
-
-/// Dissolved physical ingredients may displace a declared amount of liquid
-/// volume without creating water or carrier matter. Keep that displacement
-/// explicit in the solution's volume, heat, and named-solute state so a mod
-/// recipe admitted by validation can actually yield every declared dose.
-
 mod liquid_materials;
-use liquid_materials::{separate_brine_distillate, proportional_units, add_dissolved_displacement, take_material_fraction, split_materials, add_materials};
+use liquid_materials::{
+    add_dissolved_displacement, add_materials, proportional_units, separate_brine_distillate,
+    split_materials, take_material_fraction,
+};
 mod failure_outcomes;
-use failure_outcomes::{process_failure};
+use failure_outcomes::process_failure;
 mod inventory_helpers;
-use inventory_helpers::{take_count, produced, take_exact_slot};
+use inventory_helpers::{produced, take_count, take_exact_slot};
 mod status_rules;
-use status_rules::{incompatible_status_groups, settle_immediate_current, preparation_color, debit_nutrition};
+use status_rules::{
+    debit_nutrition, incompatible_status_groups, preparation_color, settle_immediate_current,
+};
 mod apparatus_helpers;
-use apparatus_helpers::{add_current_map, next_block_key, next_u64_key, ensure_apparatus, near, result_for};
+use apparatus_helpers::{
+    add_current_map, ensure_apparatus, near, next_block_key, next_u64_key, result_for,
+};
 
-mod observation;
-mod container_custody;
-mod dispatch;
-mod commit;
-mod carrier_load;
-mod filter_load;
-mod processing;
-mod charge;
-mod decant;
-mod repair;
-mod clean;
-mod drain;
-mod ordinary_carriers;
-mod preparation_use;
-mod water_return;
-mod status_tick;
 mod apparatus_tick;
 mod batch_input;
+mod carrier_load;
+mod charge;
+mod clean;
+mod commit;
+mod container_custody;
+mod decant;
+mod dispatch;
+mod drain;
+mod filter_load;
 mod grind;
+mod observation;
+mod ordinary_carriers;
+mod preparation_use;
+mod processing;
+mod repair;
+mod status_tick;
+mod water_return;
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::alchemy::{
+        AgitationKind, AlchemyBatch, BatchFailure, BatchIngredientState, BatchOutcome, CarrierKind,
+        ExactLiquid, ProcessStep,
+    };
+    use crate::planet_atlas::ReservoirMass;
+    use crate::registry::MaterialVector;
+    use crate::workings::WaterCarrier;
+    use std::collections::BTreeMap;
 
     fn fixture_batch(definition: &crate::alchemy::PreparationDef) -> AlchemyBatch {
         AlchemyBatch {

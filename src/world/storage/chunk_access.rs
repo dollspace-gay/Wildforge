@@ -1,10 +1,10 @@
 //! Chunk access storage transaction coordination.
 
-use std::sync::Arc;
-use crate::world::ChunkLoader;
 use crate::chunk::ChunkPos;
+use crate::world::ChunkLoader;
 use crate::world::ChunkRead;
 use crate::world::World;
+use std::sync::Arc;
 
 impl World {
     pub(crate) fn chunk_loader(&self) -> ChunkLoader {

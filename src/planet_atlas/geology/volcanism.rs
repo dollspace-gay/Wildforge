@@ -1,10 +1,13 @@
 //! Place boundary volcanoes, hotspot chains, and intrusive bodies before voxelization.
 
-use std::cmp::Ordering as CmpOrdering;
-use crate::planet_atlas::{AtlasGrid, AtlasPos, GeometryCell, TectonicCell, cell_hash, mix64};
-use crate::planet::{geodesic_distance, FACE_BLOCKS, PLANET_RADIUS};
-use super::{VolcanoRecord, VolcanoSource, MagmaChemistry, DetailedBoundary, CratonRecord, IntrusionRecord, IntrusionKind};
 use super::geometry::{dvec, unit_from_hash};
+use super::{
+    CratonRecord, DetailedBoundary, IntrusionKind, IntrusionRecord, MagmaChemistry, VolcanoRecord,
+    VolcanoSource,
+};
+use crate::planet::{FACE_BLOCKS, PLANET_RADIUS, geodesic_distance};
+use crate::planet_atlas::{AtlasGrid, AtlasPos, GeometryCell, TectonicCell, cell_hash, mix64};
+use std::cmp::Ordering as CmpOrdering;
 
 pub(super) fn moved_cell(
     start: AtlasPos,

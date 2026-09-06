@@ -1,14 +1,14 @@
 //! Frame layout implements transaction coordination.
 
-use std::collections::BTreeSet;
-use crate::world::BlockEntity;
-use crate::planet::BlockPos;
-use crate::implements::FrameLayout;
-use crate::inventory::ItemStack;
-use std::collections::VecDeque;
-use crate::world::World;
 use super::apparatus_neighbors;
 use super::horizontal_neighbors;
+use crate::implements::FrameLayout;
+use crate::inventory::ItemStack;
+use crate::planet::BlockPos;
+use crate::world::BlockEntity;
+use crate::world::World;
+use std::collections::BTreeSet;
+use std::collections::VecDeque;
 
 impl World {
     pub fn binding_frame_layout(&self, pos: BlockPos) -> FrameLayout {
@@ -105,7 +105,10 @@ impl World {
         (visited.len(), touches_unloaded, overflow)
     }
 
-    pub(super) fn conductor_network_positions(&self, frame: BlockPos) -> (BTreeSet<BlockPos>, bool, bool) {
+    pub(super) fn conductor_network_positions(
+        &self,
+        frame: BlockPos,
+    ) -> (BTreeSet<BlockPos>, bool, bool) {
         let mut queue = VecDeque::new();
         for pos in horizontal_neighbors(frame) {
             if self
@@ -177,7 +180,10 @@ impl World {
         })
     }
 
-    pub(super) fn adjacent_vessel(&self, pos: BlockPos) -> Result<(BlockPos, ItemStack, u64), String> {
+    pub(super) fn adjacent_vessel(
+        &self,
+        pos: BlockPos,
+    ) -> Result<(BlockPos, ItemStack, u64), String> {
         horizontal_neighbors(pos)
             .into_iter()
             .find_map(|at| match self.installations.get(&at) {

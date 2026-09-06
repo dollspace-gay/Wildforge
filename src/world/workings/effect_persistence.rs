@@ -1,11 +1,11 @@
 //! Effect persistence workings transaction coordination.
 
+use super::validate_water_carrier;
 use crate::planet::BlockPos;
 use crate::workings::NudgeEntityKind;
 use crate::workings::WorkingEffect;
 use crate::workings::WorkingTargetSnapshot;
 use crate::world::World;
-use super::validate_water_carrier;
 
 impl World {
     pub(super) fn save_effect_sidecars(&self, effect: &WorkingEffect) -> Result<(), String> {

@@ -19,8 +19,10 @@ pub(super) struct TerrainStore {
 
 impl std::fmt::Debug for TerrainStore {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        formatter.debug_struct("TerrainStore")
-            .field("resident_chunks", &self.resident.len()).finish()
+        formatter
+            .debug_struct("TerrainStore")
+            .field("resident_chunks", &self.resident.len())
+            .finish()
     }
 }
 
@@ -45,7 +47,9 @@ impl TerrainStore {
         self.resident.remove(position)
     }
 
-    pub(super) fn len(&self) -> usize { self.resident.len() }
+    pub(super) fn len(&self) -> usize {
+        self.resident.len()
+    }
 
     pub(super) fn iter(&self) -> impl Iterator<Item = (&ChunkPos, &Chunk)> {
         self.resident.iter()
@@ -55,34 +59,49 @@ impl TerrainStore {
         self.resident.keys()
     }
 
-    pub(super) fn values_mut(&mut self) -> impl Iterator<Item = &mut Chunk> {
-        self.resident.values_mut()
-    }
-
     pub(super) fn mark_dirty(&mut self, position: ChunkPos, dirty: bool) {
-        if let Some(chunk) = self.resident.get_mut(&position) { chunk.dirty = dirty; }
+        if let Some(chunk) = self.resident.get_mut(&position) {
+            chunk.dirty = dirty;
+        }
     }
 
     pub(super) fn mark_all_dirty(&mut self) {
-        for chunk in self.resident.values_mut() { chunk.dirty = true; }
+        for chunk in self.resident.values_mut() {
+            chunk.dirty = true;
+        }
     }
 
     pub(super) fn dirty_positions(&self) -> Vec<ChunkPos> {
-        self.resident.iter().filter_map(|(position, chunk)| chunk.dirty.then_some(*position)).collect()
+        self.resident
+            .iter()
+            .filter_map(|(position, chunk)| chunk.dirty.then_some(*position))
+            .collect()
     }
 
     pub(super) fn outside(&self, centers: &[ChunkPos], radius: i32) -> Vec<ChunkPos> {
-        self.resident.keys().filter(|position| {
-            !centers.iter().any(|center| position.distance(*center) <= f64::from(radius * CHUNK_X as i32))
-        }).copied().collect()
+        self.resident
+            .keys()
+            .filter(|position| {
+                !centers
+                    .iter()
+                    .any(|center| position.distance(*center) <= f64::from(radius * CHUNK_X as i32))
+            })
+            .copied()
+            .collect()
     }
 
     #[cfg(test)]
-    pub(super) fn clear(&mut self) { self.resident.clear(); }
+    pub(super) fn clear(&mut self) {
+        self.resident.clear();
+    }
 
     #[cfg(test)]
-    pub(super) fn test_map(&self) -> &HashMap<ChunkPos, Chunk> { &self.resident }
+    pub(super) fn test_map(&self) -> &HashMap<ChunkPos, Chunk> {
+        &self.resident
+    }
 
     #[cfg(test)]
-    pub(super) fn test_map_mut(&mut self) -> &mut HashMap<ChunkPos, Chunk> { &mut self.resident }
+    pub(super) fn test_map_mut(&mut self) -> &mut HashMap<ChunkPos, Chunk> {
+        &mut self.resident
+    }
 }

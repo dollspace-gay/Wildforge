@@ -3,13 +3,13 @@
 //! Physical custody/accounting stays with World transaction coordination. This
 //! owner controls insertion, restoration, removal, and paired NPC/mob publication.
 
-use std::collections::HashSet;
+use super::{LOOSE_ITEM_ID_BASE, MOB_CAP, NPC_CAP};
 use crate::chunk::ChunkPos;
 use crate::entity::ItemEntity;
 use crate::mobs::{Mob, Projectile};
 use crate::npc::NpcInstance;
 use crate::registry::Registry;
-use super::{LOOSE_ITEM_ID_BASE, MOB_CAP, NPC_CAP};
+use std::collections::HashSet;
 
 pub(super) struct Population {
     seeded_chunks: HashSet<ChunkPos>,
@@ -27,20 +27,25 @@ pub(super) struct Population {
 
 impl Default for Population {
     fn default() -> Self {
-        Self { seeded_chunks: HashSet::new(), hostile_spawn_timer: 0.0,
-            nest_spawn_timer: 0.0, repop_timer: 0.0, mobs: Vec::new(), npcs: Vec::new(), projectiles: Vec::new(),
-            loose_items: Vec::new(), next_mob_id: 1, next_projectile_id: 1,
-            next_loose_item_id: LOOSE_ITEM_ID_BASE }
+        Self {
+            seeded_chunks: HashSet::new(),
+            hostile_spawn_timer: 0.0,
+            nest_spawn_timer: 0.0,
+            repop_timer: 0.0,
+            mobs: Vec::new(),
+            npcs: Vec::new(),
+            projectiles: Vec::new(),
+            loose_items: Vec::new(),
+            next_mob_id: 1,
+            next_projectile_id: 1,
+            next_loose_item_id: LOOSE_ITEM_ID_BASE,
+        }
     }
 }
 
 impl Population {
     pub(super) fn loose_items(&self) -> &[crate::entity::ItemEntity] {
         &self.loose_items
-    }
-
-    pub(super) fn loose_items_mut(&mut self) -> &mut [crate::entity::ItemEntity] {
-        &mut self.loose_items
     }
 
     pub(super) fn spawn_loose_item(&mut self, mut item: crate::entity::ItemEntity) -> u64 {
@@ -92,6 +97,7 @@ impl Population {
         &mut self.mobs
     }
 
+    #[cfg(test)]
     pub(super) fn mob(&self, index: usize) -> Option<&Mob> {
         self.mobs.get(index)
     }
@@ -108,6 +114,7 @@ impl Population {
         self.mobs.iter_mut().find(|mob| mob.id == id)
     }
 
+    #[cfg(test)]
     pub(super) fn mob_count(&self) -> usize {
         self.mobs.len()
     }
@@ -124,7 +131,12 @@ impl Population {
         self.npcs.iter().find(|n| n.mob_id == mob_id)
     }
 
-    pub(super) fn spawn_npc_at(&mut self, registry: &Registry, def: usize, pos: crate::planet::EntityPos) -> Option<u32> {
+    pub(super) fn spawn_npc_at(
+        &mut self,
+        registry: &Registry,
+        def: usize,
+        pos: crate::planet::EntityPos,
+    ) -> Option<u32> {
         let npc = registry.npcs.get(def)?.clone();
         if self.mobs.len() >= MOB_CAP || self.npcs.len() >= NPC_CAP {
             return None;
@@ -168,6 +180,7 @@ impl Population {
         self.projectiles.push(projectile);
     }
 
+    #[cfg(test)]
     pub(super) fn replace_projectiles(&mut self, projectiles: Vec<Projectile>) {
         self.next_projectile_id = projectiles
             .iter()
@@ -185,63 +198,112 @@ impl Population {
         }
     }
 
-    pub(super) fn next_loose_item_id(&self) -> u64 { self.next_loose_item_id.max(LOOSE_ITEM_ID_BASE) }
+    pub(super) fn next_loose_item_id(&self) -> u64 {
+        self.next_loose_item_id.max(LOOSE_ITEM_ID_BASE)
+    }
 
     pub(super) fn reserve_mob_id(&mut self) -> Option<u32> {
-        if self.next_mob_id == u32::MAX { return None; }
+        if self.next_mob_id == u32::MAX {
+            return None;
+        }
         let id = self.next_mob_id;
         self.next_mob_id += 1;
         Some(id)
     }
 
-    pub(super) fn push_mob(&mut self, mob: Mob) { self.mobs.push(mob); }
-    pub(super) fn remove_mob(&mut self, index: usize) -> Mob { self.mobs.swap_remove(index) }
-    pub(super) fn take_mobs(&mut self) -> Vec<Mob> { std::mem::take(&mut self.mobs) }
-    pub(super) fn take_npcs(&mut self) -> Vec<NpcInstance> { std::mem::take(&mut self.npcs) }
-    pub(super) fn restore_npcs(&mut self, npcs: Vec<NpcInstance>) { self.npcs = npcs; }
-    pub(super) fn take_projectiles(&mut self) -> Vec<Projectile> { std::mem::take(&mut self.projectiles) }
+    pub(super) fn push_mob(&mut self, mob: Mob) {
+        self.mobs.push(mob);
+    }
+    pub(super) fn remove_mob(&mut self, index: usize) -> Mob {
+        self.mobs.swap_remove(index)
+    }
+    pub(super) fn take_mobs(&mut self) -> Vec<Mob> {
+        std::mem::take(&mut self.mobs)
+    }
+    pub(super) fn take_npcs(&mut self) -> Vec<NpcInstance> {
+        std::mem::take(&mut self.npcs)
+    }
+    pub(super) fn restore_npcs(&mut self, npcs: Vec<NpcInstance>) {
+        self.npcs = npcs;
+    }
+    pub(super) fn take_projectiles(&mut self) -> Vec<Projectile> {
+        std::mem::take(&mut self.projectiles)
+    }
     /// Restore a simulation pass without rewinding its already allocated IDs.
-    pub(super) fn restore_projectiles(&mut self, projectiles: Vec<Projectile>) { self.projectiles = projectiles; }
-    pub(super) fn restore_loose_items(&mut self, items: Vec<ItemEntity>) { self.loose_items = items; }
+    pub(super) fn restore_projectiles(&mut self, projectiles: Vec<Projectile>) {
+        self.projectiles = projectiles;
+    }
+    pub(super) fn restore_loose_items(&mut self, items: Vec<ItemEntity>) {
+        self.loose_items = items;
+    }
     pub(super) fn remap_loose_items(&mut self, old: &Registry, registry: &Registry) {
         crate::entity::remap_items(&mut self.loose_items, old, registry);
     }
 
     pub(super) fn stamp_unassigned_mobs(&mut self) {
         for mob in &mut self.mobs {
-            if mob.id == 0 { mob.id = self.next_mob_id; self.next_mob_id += 1; }
+            if mob.id == 0 {
+                mob.id = self.next_mob_id;
+                self.next_mob_id += 1;
+            }
         }
     }
 
     /// Loading appends a companion, then joins the NPC to its ID immediately.
     /// Preserve the existing saturating load cursor, distinct from live spawn.
-    pub(super) fn attach_loaded_npc(&mut self, definition: &crate::registry::NpcDef, index: usize, position: crate::planet::EntityPos) {
+    pub(super) fn attach_loaded_npc(
+        &mut self,
+        definition: &crate::registry::NpcDef,
+        index: usize,
+        position: crate::planet::EntityPos,
+    ) {
         let mob = self.mobs.last_mut().expect("mob just pushed");
         mob.id = self.next_mob_id;
         self.next_mob_id = self.next_mob_id.saturating_add(1);
-        self.npcs.push(NpcInstance::new(definition, position, mob.id).with_def(index));
+        self.npcs
+            .push(NpcInstance::new(definition, position, mob.id).with_def(index));
     }
 }
 
 impl Population {
-    pub(super) fn seeded_chunks(&self) -> &HashSet<ChunkPos> { &self.seeded_chunks }
-    pub(super) fn record_seeded(&mut self, position: ChunkPos) -> bool { self.seeded_chunks.insert(position) }
-    pub(super) fn forget_seeded(&mut self, position: ChunkPos) { self.seeded_chunks.remove(&position); }
+    pub(super) fn seeded_chunks(&self) -> &HashSet<ChunkPos> {
+        &self.seeded_chunks
+    }
+    pub(super) fn record_seeded(&mut self, position: ChunkPos) -> bool {
+        self.seeded_chunks.insert(position)
+    }
+    pub(super) fn forget_seeded(&mut self, position: ChunkPos) {
+        self.seeded_chunks.remove(&position);
+    }
 
     pub(super) fn hostile_cycle(&mut self, dt: f32) -> bool {
         self.hostile_spawn_timer += dt;
-        if self.hostile_spawn_timer < 4.0 { return false; }
+        if self.hostile_spawn_timer < 4.0 {
+            return false;
+        }
         self.hostile_spawn_timer = 0.0;
         true
     }
     pub(super) fn nest_cycle(&mut self, dt: f32) -> bool {
         self.nest_spawn_timer += dt;
-        if self.nest_spawn_timer < 4.0 { return false; }
+        if self.nest_spawn_timer < 4.0 {
+            return false;
+        }
         self.nest_spawn_timer = 0.0;
         true
     }
     pub(super) fn repopulation_cycle(&mut self, dt: f32, season: usize) -> bool {
-        self.repop_timer += dt * match season { 0 => 2.0, 3 => 0.5, _ => 1.0 };
-        if self.repop_timer >= 16.0 { self.repop_timer = 0.0; true } else { false }
+        self.repop_timer += dt
+            * match season {
+                0 => 2.0,
+                3 => 0.5,
+                _ => 1.0,
+            };
+        if self.repop_timer >= 16.0 {
+            self.repop_timer = 0.0;
+            true
+        } else {
+            false
+        }
     }
 }

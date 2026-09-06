@@ -1,6 +1,9 @@
 //! Startup for the authoritative host session.
 
-use super::{AdmissionPolicy, DisplayName, HashMap, HashSet, HostSession, IdentityPolicy, ServerSettings, chunk_jobs, net};
+use super::{
+    AdmissionPolicy, DisplayName, HashMap, HashSet, HostSession, IdentityPolicy, ServerSettings,
+    chunk_jobs, net,
+};
 
 impl HostSession {
     pub fn start(world_name: String) -> std::io::Result<HostSession> {

@@ -1,10 +1,17 @@
 //! Sun stage of GPU frame encoding.
 
-use crate::renderer::{Renderer, FrameInput, GpuChunk, CASCADE_RADII, CASCADE_STRIDE, chunk_in_range};
 use crate::chunk::ChunkPos;
+use crate::renderer::{
+    CASCADE_RADII, CASCADE_STRIDE, FrameInput, GpuChunk, Renderer, chunk_in_range,
+};
 
 impl Renderer {
-    pub(in crate::renderer) fn encode_sun_shadows(&self, encoder: &mut wgpu::CommandEncoder, f: &FrameInput<'_>, visible: &[(&ChunkPos, &GpuChunk)]) {
+    pub(in crate::renderer) fn encode_sun_shadows(
+        &self,
+        encoder: &mut wgpu::CommandEncoder,
+        f: &FrameInput<'_>,
+        visible: &[(&ChunkPos, &GpuChunk)],
+    ) {
         // Shadow pass: opaque terrain depth from the sun's POV, once per cascade
         // into its own layer. No color target. Every loaded chunk is a potential
         // caster (occluders behind the camera still shadow what's in view), so
@@ -47,6 +54,5 @@ impl Renderer {
                 }
             }
         }
-
     }
 }

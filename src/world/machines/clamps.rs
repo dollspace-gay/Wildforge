@@ -1,11 +1,11 @@
 //! Clamps machines transaction coordination.
 
-use crate::world::BlockEntity;
 use crate::planet::BlockPos;
+use crate::world::BlockEntity;
 use crate::world::CLAMP_SECS_PER_LOG;
 use crate::world::ClampState;
-use std::collections::HashSet;
 use crate::world::World;
+use std::collections::HashSet;
 
 impl World {
     /// Flood-fill a covered log pile from the clicked log and light it.

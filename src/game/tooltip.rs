@@ -8,14 +8,14 @@
 //! numbers — the failure mode of a hand-written `desc` field is a lie,
 //! and a lie about a mechanic is worse than silence.
 
-use crate::crafting;
-use crate::inventory::TOTAL_SLOTS;
-use crate::ui::UiBatch;
-use crate::world;
 use super::Game;
 use super::navigation::Screen;
+use crate::crafting;
 use crate::inventory::ItemStack;
+use crate::inventory::TOTAL_SLOTS;
 use crate::registry::{ArmorSlot, NUTRIENTS, Registry, ToolKind};
+use crate::ui::UiBatch;
+use crate::world;
 
 const TITLE: [f32; 4] = [1.0, 0.98, 0.92, 1.0];
 const BODY: [f32; 4] = [0.72, 0.76, 0.80, 1.0];
@@ -370,7 +370,9 @@ impl Game {
             Screen::MobCargo(id) => (0..9)
                 .find(|&i| self.hit(self.mob_cargo_slot_rect(i)))
                 .and_then(|i| {
-                    self.runtime.view().mob_by_id(id)
+                    self.runtime
+                        .view()
+                        .mob_by_id(id)
                         .and_then(|m| m.cargo.as_ref().and_then(|c| c[i]))
                 })
                 .or_else(inv),
@@ -390,7 +392,10 @@ impl Game {
         let Some(stack) = self.hovered_item() else {
             return;
         };
-        let current = self.runtime.view().inspectable_item_current(stack.arcane_id);
+        let current = self
+            .runtime
+            .view()
+            .inspectable_item_current(stack.arcane_id);
         let mut lines = item_tooltip_lines_with_current(&self.content.reg, stack, current);
         let has_lens = self
             .inventory
@@ -407,7 +412,9 @@ impl Game {
                     .is_some_and(|definition| definition.kind == "tuning_lens")
             });
         lines.extend(
-            self.runtime.view().preparation_tooltip(stack, has_lens)
+            self.runtime
+                .view()
+                .preparation_tooltip(stack, has_lens)
                 .into_iter()
                 .map(|line| (line, EFFECT)),
         );

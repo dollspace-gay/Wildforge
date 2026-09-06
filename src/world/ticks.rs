@@ -24,7 +24,15 @@ impl World {
         let mut order: Vec<(f64, ChunkPos)> = self
             .chunks
             .keys()
-            .map(|p| (self.last_random.get(p).copied().unwrap_or(self.calendar_state.clock()), *p))
+            .map(|p| {
+                (
+                    self.last_random
+                        .get(p)
+                        .copied()
+                        .unwrap_or(self.calendar_state.clock()),
+                    *p,
+                )
+            })
             .collect();
         order.sort_unstable_by(|a, b| a.0.total_cmp(&b.0).then(a.1.cmp(&b.1)));
         order.truncate(K);

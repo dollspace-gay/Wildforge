@@ -1,9 +1,9 @@
 //! Shared kiln ticking over the physical BlockStore contract.
 
-use crate::world::BlockEntity;
-use crate::world::multiblock::BlockStore;
 use crate::inventory::ItemStack;
 use crate::machines::MachineHandler;
+use crate::world::BlockEntity;
+use crate::world::multiblock::BlockStore;
 
 pub(in crate::world) fn tick_kiln_machines<B: BlockStore>(store: &mut B, dt: f32) {
     let keys: Vec<B::Pos> = store

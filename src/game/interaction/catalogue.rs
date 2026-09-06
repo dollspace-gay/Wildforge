@@ -1,11 +1,10 @@
 //! Catalogue interaction adapter.
 
-use crate::world::TerrainRead;
-use crate::identity;
-use crate::net;
-use crate::world;
 use crate::game::Game;
 use crate::game::navigation::Screen;
+use crate::net;
+use crate::world;
+use crate::world::TerrainRead;
 
 impl Game {
     pub(in crate::game) fn open_discovery_catalogue(
@@ -51,7 +50,10 @@ impl Game {
         self.open_discovery_catalogue(holder, records, capacity, copy_target, writing_pos);
     }
 
-    pub(in crate::game) fn local_discovery_holder_id(&mut self, holder: net::RecordHolderSnap) -> Result<u64, String> {
+    pub(in crate::game) fn local_discovery_holder_id(
+        &mut self,
+        holder: net::RecordHolderSnap,
+    ) -> Result<u64, String> {
         match holder {
             net::RecordHolderSnap::Inventory { slot } => {
                 let index = usize::from(slot);
@@ -67,12 +69,16 @@ impl Game {
                     .pos
                     .block()
                     .ok_or_else(|| "Your position is outside the world.".to_string())?;
-                self.runtime.local_mut().world.bind_discovery_stack_at(at, &mut stack)
+                self.runtime
+                    .local_mut()
+                    .world
+                    .bind_discovery_stack_at(at, &mut stack)
                     .map_err(|error| error.to_string())?;
                 self.inventory.slots[index] = Some(stack);
                 Ok(stack.arcane_id)
             }
-            net::RecordHolderSnap::Folio { pos } => match self.runtime.view().block_entity_at(&pos) {
+            net::RecordHolderSnap::Folio { pos } => match self.runtime.view().block_entity_at(&pos)
+            {
                 Some(world::BlockEntity::SurveyFolio(folio)) if folio.object_id != 0 => {
                     Ok(folio.object_id)
                 }
@@ -182,7 +188,12 @@ impl Game {
                 return;
             }
         };
-        match self.runtime.local().world.discovery_summaries(object_id, true) {
+        match self
+            .runtime
+            .local()
+            .world
+            .discovery_summaries(object_id, true)
+        {
             Ok(records) => {
                 self.ui_state.discovery_records = records;
                 self.ui_state.discovery_capacity = match destination {
@@ -196,7 +207,10 @@ impl Game {
         }
     }
 
-    pub(in crate::game) fn copy_at_writing_surface(&mut self, writing_pos: crate::planet::BlockPos) {
+    pub(in crate::game) fn copy_at_writing_surface(
+        &mut self,
+        writing_pos: crate::planet::BlockPos,
+    ) {
         let held_slot = self.input.hotbar_sel;
         let Some(mut held) = self.inventory.slots[held_slot] else {
             self.toast("Hold a field ledger at the writing surface.".into());
@@ -246,7 +260,12 @@ impl Game {
         let Some(at) = self.player.pos.block() else {
             return;
         };
-        if let Err(error) = self.runtime.local_mut().world.bind_discovery_stack_at(at, &mut held) {
+        if let Err(error) = self
+            .runtime
+            .local_mut()
+            .world
+            .bind_discovery_stack_at(at, &mut held)
+        {
             self.toast(error.to_string());
             return;
         }
@@ -258,7 +277,11 @@ impl Game {
                 return;
             }
         }
-        let held_records = self.runtime.local().world.discovery_summaries(held.arcane_id, true)
+        let held_records = self
+            .runtime
+            .local()
+            .world
+            .discovery_summaries(held.arcane_id, true)
             .unwrap_or_default();
         self.open_discovery_catalogue(
             source,

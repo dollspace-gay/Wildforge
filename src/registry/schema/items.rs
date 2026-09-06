@@ -3,7 +3,7 @@
 use super::{ArcaneContentToml, ArcaneEcologyToml, DiscoveryItemToml, ObservationToml, one_u8};
 use crate::registry::{MaterialClass, MaterialVector, ToolKind};
 use serde::Deserialize;
-use std::collections::{HashMap};
+use std::collections::HashMap;
 
 #[derive(Deserialize, Clone)]
 pub(in crate::registry) struct FoodToml {
@@ -186,4 +186,3 @@ pub(in crate::registry) struct FrameSlotToml {
     #[serde(default = "one_u8")]
     pub(in crate::registry) max: u8,
 }
-

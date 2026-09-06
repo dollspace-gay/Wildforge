@@ -1,13 +1,13 @@
 //! Smelting graphical containers adapter.
 
+use super::ContainerPanel;
 use crate::audio::Sfx;
-use crate::inventory;
+use crate::game::Game;
 use crate::inventory::ItemStack;
 use crate::inventory::TOTAL_SLOTS;
 use crate::net;
 use crate::world;
-use crate::game::Game;
-use super::ContainerPanel;
+use crate::world::TerrainRead;
 
 impl Game {
     pub(in crate::game) fn bloomery_click(
@@ -53,7 +53,12 @@ impl Game {
                         return;
                     }
                 };
-                crate::world::machines::light_machine_at(&mut self.runtime.local_mut().world, pos, kind, matched)
+                crate::world::machines::light_machine_at(
+                    &mut self.runtime.local_mut().world,
+                    pos,
+                    kind,
+                    matched,
+                )
             }
             None => self.runtime.local_mut().world.light_bloomery_at(pos),
         };
@@ -89,7 +94,12 @@ impl Game {
         }
     }
 
-    pub(in crate::game) fn kiln_click(&mut self, pos: crate::planet::BlockPos, slot: usize, right: bool) {
+    pub(in crate::game) fn kiln_click(
+        &mut self,
+        pos: crate::planet::BlockPos,
+        slot: usize,
+        right: bool,
+    ) {
         self.exchange_container_slot(pos, slot, right, ContainerPanel::Kiln);
     }
 

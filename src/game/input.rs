@@ -1,7 +1,7 @@
 //! Held input and pointer capture. Capture/warp state has a single owner.
 
-use winit::window::{CursorGrabMode, Window};
 use crate::camera::Camera;
+use winit::window::{CursorGrabMode, Window};
 
 #[derive(Default)]
 pub(super) struct KeysDown {
@@ -40,23 +40,23 @@ pub(super) struct InputState {
 impl InputState {
     pub(super) fn new() -> Self {
         Self {
-                keys: KeysDown::default(),
-                mouse_captured: false,
-                raw_look: false,
-                last_cursor: None,
-                warp_pending: false,
-                allow_warp: std::env::var("WSL_DISTRO_NAME").is_err()
-                    && !std::path::Path::new("/mnt/wslg").exists(),
-                left_held: false,
-                right_held: false,
-                dodge_pressed: false,
-                action_cooldown: 0.0,
-                attack_cooldown: 0.0,
-                hotbar_sel: 0,
-                scroll_accum: 0.0,
-                scroll_cooldown: 0.0,
-                ui_cursor: (0.0, 0.0),
-                cursor_locked: false,
+            keys: KeysDown::default(),
+            mouse_captured: false,
+            raw_look: false,
+            last_cursor: None,
+            warp_pending: false,
+            allow_warp: std::env::var("WSL_DISTRO_NAME").is_err()
+                && !std::path::Path::new("/mnt/wslg").exists(),
+            left_held: false,
+            right_held: false,
+            dodge_pressed: false,
+            action_cooldown: 0.0,
+            attack_cooldown: 0.0,
+            hotbar_sel: 0,
+            scroll_accum: 0.0,
+            scroll_cooldown: 0.0,
+            ui_cursor: (0.0, 0.0),
+            cursor_locked: false,
         }
     }
 
@@ -108,7 +108,12 @@ impl InputState {
     /// The cursor is kept pinned in a small bubble around the window center;
     /// the warp's own event is recognized by landing exactly on center, so
     /// real motion events are never swallowed.
-    pub(super) fn cursor_look(&mut self, window: &Window, camera: &mut Camera, pos: winit::dpi::PhysicalPosition<f64>) {
+    pub(super) fn cursor_look(
+        &mut self,
+        window: &Window,
+        camera: &mut Camera,
+        pos: winit::dpi::PhysicalPosition<f64>,
+    ) {
         let c = Self::center(window);
         if self.warp_pending && (pos.x - c.x).abs() < 1.5 && (pos.y - c.y).abs() < 1.5 {
             self.warp_pending = false;
@@ -127,5 +132,4 @@ impl InputState {
             self.warp_pending = true;
         }
     }
-
 }

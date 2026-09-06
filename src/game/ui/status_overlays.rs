@@ -1,8 +1,8 @@
 //! Status overlays layout and UI composition.
 
-use crate::ui::UiBatch;
+use super::wrap_ui_status;
 use crate::game::Game;
-use super::{wrap_ui_status};
+use crate::ui::UiBatch;
 
 impl Game {
     pub(in crate::game) fn draw_status_overlays(&mut self, ui: &mut UiBatch, w: f32, h: f32) {
@@ -55,6 +55,5 @@ impl Game {
                 toast_row += 1;
             }
         }
-
     }
 }

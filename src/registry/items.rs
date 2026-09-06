@@ -1,7 +1,10 @@
 //! Item identities, equipment, nutrition, and runtime item definitions.
 
-use super::{ArcaneContentDef, ArcaneEcologyDef, BlockId, DiscoveryItemDef, MaterialClass, MaterialVector, ObservationDef, SalvageDef};
-use serde::{Deserialize};
+use super::{
+    ArcaneContentDef, ArcaneEcologyDef, BlockId, DiscoveryItemDef, MaterialClass, MaterialVector,
+    ObservationDef, SalvageDef,
+};
+use serde::Deserialize;
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub struct ItemId(pub u16);
@@ -136,4 +139,3 @@ pub struct ItemDef {
     pub observation: Option<ObservationDef>,
     pub discovery: Option<DiscoveryItemDef>,
 }
-

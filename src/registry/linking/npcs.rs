@@ -1,8 +1,10 @@
 //! Resolve friendly NPCs and their non-wildlife companion species.
 
-use std::collections::HashMap;
-use crate::registry::{Registry, AnimalDef, NpcDef, ModelBox, BehaviorArchetype, ArchetypeParams, qualify};
 use super::pending::PendingNpc;
+use crate::registry::{
+    AnimalDef, ArchetypeParams, BehaviorArchetype, ModelBox, NpcDef, Registry, qualify,
+};
+use std::collections::HashMap;
 
 pub(super) fn resolve(reg: &mut Registry, pending_npcs: Vec<PendingNpc>) {
     // Friendly NPCs (spec 3.1): each synthesizes a companion AnimalDef so
@@ -10,7 +12,14 @@ pub(super) fn resolve(reg: &mut Registry, pending_npcs: Vec<PendingNpc>) {
     // as an ordinary species. The companion is non-hostile, never flees,
     // never tames, has no drops/belly/prey, and is never wildlife-spawned
     // (empty biomes). `AnimalDef.npc` points back to the NpcDef.
-    for PendingNpc { modid, definition: n, tile, head, box_tiles } in pending_npcs {
+    for PendingNpc {
+        modid,
+        definition: n,
+        tile,
+        head,
+        box_tiles,
+    } in pending_npcs
+    {
         let full = qualify(&modid, &n.id);
         if reg.npcs.iter().any(|x| x.name == full) {
             continue; // duplicate id — first wins, like blocks/items

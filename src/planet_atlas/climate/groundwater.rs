@@ -1,10 +1,15 @@
 //! Daily shallow and sparse-aquifer exchange in deterministic edge order.
 
-use crate::planet_atlas::{AtlasPos, PlanetAtlas, AtlasError, ReservoirMass, HYDRO_UNITS_PER_VISIBLE_LEVEL};
 use super::PlanetaryWeather;
+use crate::planet_atlas::{
+    AtlasError, AtlasPos, HYDRO_UNITS_PER_VISIBLE_LEVEL, PlanetAtlas, ReservoirMass,
+};
 
 impl PlanetaryWeather {
-    pub(super) fn advance_groundwater_day(&mut self, atlas: &PlanetAtlas) -> Result<(), AtlasError> {
+    pub(super) fn advance_groundwater_day(
+        &mut self,
+        atlas: &PlanetAtlas,
+    ) -> Result<(), AtlasError> {
         let side = atlas.side();
         let count = self.water.cells.len();
         let mut available = self

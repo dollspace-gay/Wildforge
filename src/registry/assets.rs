@@ -1,9 +1,9 @@
 //! Retain private asset storage with every clone of the registry that uses it.
 
-use std::path::Path;
-use std::sync::Arc;
 use super::Registry;
 use crate::content_files::AssetSnapshot;
+use std::path::Path;
+use std::sync::Arc;
 
 impl Registry {
     pub(crate) fn retain_asset_snapshot(&mut self, source: &Path, snapshot: AssetSnapshot) {

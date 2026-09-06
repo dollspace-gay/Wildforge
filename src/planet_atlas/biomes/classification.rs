@@ -1,8 +1,12 @@
 //! Zonal climate classifications and terrain slope interpretation.
 
-use crate::chunk::{SEA_LEVEL};
+use super::{
+    BIOME_ARCTIC, BIOME_BADLANDS, BIOME_DESERT, BIOME_FOREST, BIOME_JUNGLE, BIOME_MOUNTAINS,
+    BIOME_OCEAN, BIOME_PLAINS, BIOME_SAVANNA, BIOME_SCRUBLAND, BIOME_SWAMP, BIOME_TAIGA,
+    BIOME_TUNDRA,
+};
+use crate::chunk::SEA_LEVEL;
 use crate::planet_atlas::{AtlasGrid, AtlasPos, ClimateCell, TerrainCell};
-use super::{BIOME_ARCTIC, BIOME_BADLANDS, BIOME_DESERT, BIOME_FOREST, BIOME_JUNGLE, BIOME_MOUNTAINS, BIOME_OCEAN, BIOME_PLAINS, BIOME_SAVANNA, BIOME_SCRUBLAND, BIOME_SWAMP, BIOME_TAIGA, BIOME_TUNDRA};
 
 pub(super) fn slope_at(index: usize, side: u16, terrain: &AtlasGrid<TerrainCell>) -> f32 {
     let pos = AtlasPos::from_index(index, side).expect("atlas index");
@@ -13,7 +17,12 @@ pub(super) fn slope_at(index: usize, side: u16, terrain: &AtlasGrid<TerrainCell>
         .fold(0.0, f32::max)
 }
 
-pub(super) fn classify_zonal(climate: ClimateCell, elevation: f32, slope: f32, tree_line: f32) -> u8 {
+pub(super) fn classify_zonal(
+    climate: ClimateCell,
+    elevation: f32,
+    slope: f32,
+    tree_line: f32,
+) -> u8 {
     if elevation <= SEA_LEVEL as f32 {
         return BIOME_OCEAN;
     }

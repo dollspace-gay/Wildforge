@@ -1,7 +1,7 @@
 //! Link bounded observation, discovery item, and fixture declarations.
 
-use crate::registry::{DiscoveryFixtureDef, DiscoveryItemDef, ObservationDef, qualify};
 use crate::registry::schema::{DiscoveryFixtureToml, DiscoveryItemToml, ObservationToml};
+use crate::registry::{DiscoveryFixtureDef, DiscoveryItemDef, ObservationDef, qualify};
 
 pub(in crate::registry) fn observation_def(
     raw: Option<&ObservationToml>,
@@ -178,4 +178,3 @@ pub(in crate::registry) fn discovery_fixture_def(
         record_capacity: raw.record_capacity,
     }))
 }
-

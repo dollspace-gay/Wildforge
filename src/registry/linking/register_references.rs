@@ -1,9 +1,9 @@
 //! Register references in provider order with owned deferred references.
 
-use super::Registration;
-use crate::registry::schema::{RawMod};
-use std::collections::HashMap;
 use super::super::pending::{PendingAnimal, PendingNpc};
+use super::Registration;
+use crate::registry::schema::RawMod;
+use std::collections::HashMap;
 
 impl Registration {
     pub(super) fn references(&mut self, raw: &RawMod, errs: &mut Vec<String>) {
@@ -15,7 +15,9 @@ impl Registration {
         }
         for it in &raw.items {
             if let Some(p) = &it.places {
-                self.pending.places.push((raw.info.id.clone(), (it.id.clone(), p.clone())));
+                self.pending
+                    .places
+                    .push((raw.info.id.clone(), (it.id.clone(), p.clone())));
             }
         }
         for t in &raw.tags {
@@ -25,7 +27,9 @@ impl Registration {
             self.pending.smelts.push((raw.info.id.clone(), s.clone()));
         }
         for b in &raw.bloomeries {
-            self.pending.bloomeries.push((raw.info.id.clone(), b.clone()));
+            self.pending
+                .bloomeries
+                .push((raw.info.id.clone(), b.clone()));
         }
         for w in &raw.workeds {
             self.pending.workeds.push((raw.info.id.clone(), w.clone()));
@@ -34,7 +38,9 @@ impl Registration {
             self.pending.kilns.push((raw.info.id.clone(), k.clone()));
         }
         for k in &raw.kiln_bases {
-            self.pending.kiln_bases.push((raw.info.id.clone(), k.clone()));
+            self.pending
+                .kiln_bases
+                .push((raw.info.id.clone(), k.clone()));
         }
         for st in &raw.structures {
             self.pending.structs.push((raw.info.id.clone(), st.clone()));
@@ -46,10 +52,14 @@ impl Registration {
             self.pending.pools.push((raw.info.id.clone(), p.clone()));
         }
         for a in &raw.assemblies {
-            self.pending.assemblies.push((raw.info.id.clone(), a.clone()));
+            self.pending
+                .assemblies
+                .push((raw.info.id.clone(), a.clone()));
         }
         for s in &raw.settlements {
-            self.pending.settlements.push((raw.info.id.clone(), s.clone()));
+            self.pending
+                .settlements
+                .push((raw.info.id.clone(), s.clone()));
         }
         for lt in &raw.loots {
             self.pending.loots.push((raw.info.id.clone(), lt.clone()));
@@ -113,8 +123,13 @@ impl Registration {
                 }
             }
             self.pending.animals.push(PendingAnimal {
-                modid: raw.info.id.clone(), definition: a.clone(), tile, head_tile: head,
-                box_tiles, proj_tile, attack_proj_tiles,
+                modid: raw.info.id.clone(),
+                definition: a.clone(),
+                tile,
+                head_tile: head,
+                box_tiles,
+                proj_tile,
+                attack_proj_tiles,
             });
         }
         for n in &raw.npcs {
@@ -133,10 +148,18 @@ impl Registration {
                         .map(|t| (name.clone(), self.textures.resolve(t, &raw.info.path, errs)))
                 })
                 .collect();
-            self.pending.npcs.push(PendingNpc { modid: raw.info.id.clone(), definition: n.clone(), tile, head, box_tiles });
+            self.pending.npcs.push(PendingNpc {
+                modid: raw.info.id.clone(),
+                definition: n.clone(),
+                tile,
+                head,
+                box_tiles,
+            });
         }
         for d in &raw.dialogues {
-            self.pending.dialogues.push((raw.info.id.clone(), d.clone()));
+            self.pending
+                .dialogues
+                .push((raw.info.id.clone(), d.clone()));
         }
         for q in &raw.quests {
             self.pending.quests.push((raw.info.id.clone(), q.clone()));

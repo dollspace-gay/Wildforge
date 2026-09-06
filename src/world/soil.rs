@@ -232,9 +232,14 @@ impl World {
             .planet_atlas
             .as_ref()
             .map(|atlas| atlas.biome_sample(pos.surface()));
-        soil_failure(self.get_soil_salinity_at(pos), sample.map(|soil| soil.drainage),
-            sample.is_some_and(|soil| soil.habitat_flags & crate::planet_atlas::HABITAT_PERMAFROST != 0),
-            self.managed_soil_moisture_at(pos))
+        soil_failure(
+            self.get_soil_salinity_at(pos),
+            sample.map(|soil| soil.drainage),
+            sample.is_some_and(|soil| {
+                soil.habitat_flags & crate::planet_atlas::HABITAT_PERMAFROST != 0
+            }),
+            self.managed_soil_moisture_at(pos),
+        )
     }
 
     /// Feed one item into a compost heap; the meta byte counts the
@@ -309,17 +314,21 @@ impl World {
 }
 
 /// Shared warning priority over observed salinity and optional atlas habitat.
-pub(super) fn soil_failure(salinity: u8, drainage: Option<u8>, permafrost: bool, moisture: f32) -> Option<&'static str> {
-        if salinity >= 128 {
-            Some("The soil is white with salt; fresh water and drainage must leach it.")
-        } else if drainage.is_some_and(|value| value < 42) {
-            Some("The ground is waterlogged; this crop needs drainage.")
-        } else if permafrost
-        {
-            Some("The ground is frozen too deeply for these roots.")
-        } else if moisture < 0.18 {
-            Some("The soil is dry; irrigation must bring real water.")
-        } else {
-            None
-        }
+pub(super) fn soil_failure(
+    salinity: u8,
+    drainage: Option<u8>,
+    permafrost: bool,
+    moisture: f32,
+) -> Option<&'static str> {
+    if salinity >= 128 {
+        Some("The soil is white with salt; fresh water and drainage must leach it.")
+    } else if drainage.is_some_and(|value| value < 42) {
+        Some("The ground is waterlogged; this crop needs drainage.")
+    } else if permafrost {
+        Some("The ground is frozen too deeply for these roots.")
+    } else if moisture < 0.18 {
+        Some("The soil is dry; irrigation must bring real water.")
+    } else {
+        None
+    }
 }

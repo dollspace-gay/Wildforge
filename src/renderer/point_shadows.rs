@@ -1,6 +1,8 @@
 //! Point-shadow cube resources, incremental cache, upload, and encoding.
 
-use super::{PointLight, FrameInput, GpuChunk, MAX_PT_LIGHTS, PT_FACE_STRIDE, CUBE_FACES, chunk_in_range};
+use super::{
+    CUBE_FACES, FrameInput, GpuChunk, MAX_PT_LIGHTS, PT_FACE_STRIDE, PointLight, chunk_in_range,
+};
 use crate::chunk::ChunkPos;
 use glam::{Mat4, Vec3};
 
@@ -22,7 +24,11 @@ pub(super) struct PointShadows {
 
 impl PointShadows {
     pub(super) fn from_resources(resources: PointShadowResources) -> Self {
-        Self { resources, cached: [None; MAX_PT_LIGHTS], progress: [0; MAX_PT_LIGHTS] }
+        Self {
+            resources,
+            cached: [None; MAX_PT_LIGHTS],
+            progress: [0; MAX_PT_LIGHTS],
+        }
     }
 
     pub(super) fn upload(&self, queue: &wgpu::Queue, lights: &[PointLight]) {
@@ -49,10 +55,15 @@ impl PointShadows {
             }
             queue.write_buffer(&self.resources.pt_face_buf, 0, &data);
         }
-
     }
 
-    pub(super) fn encode(&mut self, encoder: &mut wgpu::CommandEncoder, f: &FrameInput<'_>, visible: &[(&ChunkPos, &GpuChunk)], atlas: &wgpu::BindGroup) {
+    pub(super) fn encode(
+        &mut self,
+        encoder: &mut wgpu::CommandEncoder,
+        f: &FrameInput<'_>,
+        visible: &[(&ChunkPos, &GpuChunk)],
+        atlas: &wgpu::BindGroup,
+    ) {
         // Point-light shadow passes: for each active light, render terrain
         // distance into its 6 cube faces (range-culled to the light's
         // reach). The cache makes static scenes free: a slot re-renders
@@ -192,6 +203,5 @@ impl PointShadows {
                 self.progress[li] = 0;
             }
         }
-
     }
 }

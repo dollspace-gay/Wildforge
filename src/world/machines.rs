@@ -1,29 +1,27 @@
 //! Falling blocks, multiblock machines, clamps, anvils, and archaeology.
-use std::sync::Arc;
-use crate::world::multiblock::BlockConstraint;
-use crate::world::BlockEntity;
-use crate::registry::BlockId;
+use crate::inventory::ItemStack;
+use crate::machines::MachineHandler;
 use crate::planet::BlockPos;
+use crate::planet_atlas::LocalWeatherSample;
+use crate::registry::BlockId;
+use crate::registry::Registry;
+use crate::world::BlockEntity;
+use crate::world::World;
+use crate::world::multiblock::BlockConstraint;
 use crate::world::multiblock::BlockRead;
 use crate::world::multiblock::BlockStore;
-use std::collections::HashMap;
-use crate::inventory::ItemStack;
-use crate::planet_atlas::LocalWeatherSample;
-use crate::machines::MachineHandler;
 use crate::world::multiblock::MachineKind;
 use crate::world::multiblock::MatchResult;
 use crate::world::multiblock::MultiblockShape;
-use crate::registry::Registry;
 use crate::world::multiblock::Rotation;
 use crate::world::multiblock::ShapeCell;
-use crate::world::World;
 use crate::world::multiblock::fold_capabilities;
 use crate::world::multiblock::fold_stats;
 use crate::world::multiblock::match_shape;
 use crate::world::multiblock::pos_within_extent;
 use crate::world::multiblock::shape_extent;
-
-
+use std::collections::HashMap;
+use std::sync::Arc;
 
 /// A powered station's batch limit: what one loading can hold.
 pub const STATION_BULK: u32 = 16;
@@ -47,27 +45,29 @@ pub fn station_powered(station: &str) -> bool {
 }
 
 impl World {
-
     // ---------------- wildlife ----------------
 }
 
 /// Locate a registered machine slot without exposing any mutation operation.
-pub(super) fn slot_of_instance_at<B: BlockRead>(store: &B, pos: B::Pos) -> Option<(B::Pos, &'static str)> {
-        for (anchor, entity) in store.block_entities() {
-            let BlockEntity::Multiblock(m) = entity else {
-                continue;
-            };
-            let extent = m.kind.edit_region(store, *anchor);
-            if !pos_within_extent(store, pos, *anchor, extent) {
-                continue;
-            }
-            if let Some(matched) = m.kind.validate(store, *anchor)
-                && let Some(category) = matched.slots.get(&pos)
-            {
-                return Some((*anchor, *category));
-            }
+pub(super) fn slot_of_instance_at<B: BlockRead>(
+    store: &B,
+    pos: B::Pos,
+) -> Option<(B::Pos, &'static str)> {
+    for (anchor, entity) in store.block_entities() {
+        let BlockEntity::Multiblock(m) = entity else {
+            continue;
+        };
+        let extent = m.kind.edit_region(store, *anchor);
+        if !pos_within_extent(store, pos, *anchor, extent) {
+            continue;
         }
-        None
+        if let Some(matched) = m.kind.validate(store, *anchor)
+            && let Some(category) = matched.slots.get(&pos)
+        {
+            return Some((*anchor, *category));
+        }
+    }
+    None
 }
 
 /// Shared machine-recognition queries for authority and read-only scenes.
@@ -450,12 +450,11 @@ impl BlockStore for World {
     }
 }
 
-mod feeding;
-mod falling;
-mod firing;
-mod modules;
-mod clamps;
-mod workstations;
 mod archaeology;
+mod clamps;
+mod falling;
+mod feeding;
+mod firing;
 mod legacy_coordinates;
-
+mod modules;
+mod workstations;

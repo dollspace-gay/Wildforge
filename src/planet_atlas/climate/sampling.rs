@@ -1,9 +1,9 @@
 //! Seasonal interpolation and read-only weather observations.
 
-use crate::planet_atlas::{AtlasPos, ClimateCell, DynamicCell, DynamicLayers, PlanetAtlas};
-use super::{CLIMATE_SEASONS, YEAR_DAYS, LocalWeather, PrecipitationForm, LocalWeatherSample};
-use super::transport::chart_vector;
 use super::circulation::downstream_neighbor;
+use super::transport::chart_vector;
+use super::{CLIMATE_SEASONS, LocalWeather, LocalWeatherSample, PrecipitationForm, YEAR_DAYS};
+use crate::planet_atlas::{AtlasPos, ClimateCell, DynamicCell, DynamicLayers, PlanetAtlas};
 
 pub fn seasonal_scalar(values: [f32; CLIMATE_SEASONS], day: f64) -> f32 {
     let position = (day.rem_euclid(f64::from(YEAR_DAYS)) - 18.0) / 36.0;

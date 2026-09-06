@@ -1,18 +1,5 @@
 //! Atlas selection for the common spawn contract.
 
-use crate::planet_atlas::BIOME_FOREST;
-use crate::planet_atlas::BIOME_JUNGLE;
-use crate::planet_atlas::BIOME_TAIGA;
-use crate::planet_atlas::EDAPHIC_SHALLOW_ROCK;
-use crate::planet::FACE_BLOCKS;
-use std::collections::HashMap;
-use std::collections::HashSet;
-use crate::planet_atlas::MineralKind;
-use crate::planet_atlas::PlanetAtlas;
-use crate::chunk::SEA_LEVEL;
-use crate::planet::SurfacePos;
-use std::collections::VecDeque;
-use crate::planet_atlas::WaterBodyKind;
 use super::FRESH_WATER_ATLAS_STEPS;
 use super::HEART_PROTECTION_BLOCKS;
 use super::MAX_VOXEL_CANDIDATES;
@@ -22,6 +9,19 @@ use super::PREFERRED_COPPER_ACCESS_BLOCKS;
 use super::PREFERRED_TIN_ACCESS_BLOCKS;
 use super::SpawnCandidate;
 use super::SpawnSelectionDiagnostics;
+use crate::chunk::SEA_LEVEL;
+use crate::planet::FACE_BLOCKS;
+use crate::planet::SurfacePos;
+use crate::planet_atlas::BIOME_FOREST;
+use crate::planet_atlas::BIOME_JUNGLE;
+use crate::planet_atlas::BIOME_TAIGA;
+use crate::planet_atlas::EDAPHIC_SHALLOW_ROCK;
+use crate::planet_atlas::MineralKind;
+use crate::planet_atlas::PlanetAtlas;
+use crate::planet_atlas::WaterBodyKind;
+use std::collections::HashMap;
+use std::collections::HashSet;
+use std::collections::VecDeque;
 
 pub(super) fn fresh_water_distances(atlas: &PlanetAtlas) -> Vec<u16> {
     let side = atlas.side();
@@ -311,4 +311,3 @@ pub(super) fn spawn_candidate_portfolio(candidates: &[SpawnCandidate]) -> Vec<Sp
     }
     selected
 }
-

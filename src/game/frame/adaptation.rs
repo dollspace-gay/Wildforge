@@ -1,12 +1,14 @@
 //! Adaptation in the graphical frame pipeline.
 
-use crate::world::TerrainRead;
-use crate::atlas;
-use glam::Vec3;
 use crate::game::Game;
+use glam::Vec3;
 
 impl Game {
-    pub(in crate::game) fn prepare_frame_adaptation(&self, daylight: f32, mut amb_col: Vec3) -> (f32, Vec3) {
+    pub(in crate::game) fn prepare_frame_adaptation(
+        &self,
+        daylight: f32,
+        mut amb_col: Vec3,
+    ) -> (f32, Vec3) {
         // The flat fill under everything. It and the room tint are answering
         // the same question — what lights a surface no lamp reaches — and at
         // 0.12 the flat one is several times the honest one, so the room's own
@@ -36,7 +38,10 @@ impl Game {
                     self.runtime.view().remote_arcane_dominant(),
                 )
             } else if let Some(atlas) = self.runtime.view().planet_atlas() {
-                self.runtime.local().world.arcane_sensory_cue_at(atlas.atlas_pos(self.player.pos.surface()))
+                self.runtime
+                    .local()
+                    .world
+                    .arcane_sensory_cue_at(atlas.atlas_pos(self.player.pos.surface()))
             } else {
                 ([0; 2], 0)
             };

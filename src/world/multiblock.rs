@@ -15,7 +15,6 @@ use std::hash::Hash;
 
 use crate::registry::{AIR, BlockId, Registry};
 
-
 /// A whole-rotation of a shape around the vertical axis, applied to each
 /// cell offset before the world is probed.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]

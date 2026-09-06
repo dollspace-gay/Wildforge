@@ -1,13 +1,26 @@
 //! Initial atlas bundle writes with the complete manifest committed last.
 
-use crate::planet_atlas::{ATLAS_DYNAMIC_VERSION, ATLAS_FORMAT_VERSION, AtlasError, PlanetAtlas, WATER_CYCLE_SCHEMA_VERSION, encode_water_cycle};
-use crate::planet_atlas::codec::{DYNAMIC_MAGIC, DYNAMIC_RECORD_BYTES, GENESIS_MAGIC, GENESIS_RECORD_BYTES, WATER_CYCLE_MAGIC};
-use crate::planet_atlas::codec::container::{container_bytes_owned, variable_container_bytes_owned};
-use crate::planet_atlas::codec::dynamic::{encode_dynamic};
-use crate::planet_atlas::codec::genesis::{encode_genesis};
-use crate::planet_atlas::codec::models::{encode_biomes, encode_geology, encode_history, encode_hydrology};
-use crate::planet_atlas::storage::{BIOMES_FILE, DYNAMIC_FILE, GENESIS_FILE, GEOLOGY_FILE, HISTORY_FILE, HYDROLOGY_FILE, MAX_BIOMES_BYTES, MAX_DYNAMIC_BYTES, MAX_GENESIS_BYTES, MAX_GEOLOGY_BYTES, MAX_HISTORY_BYTES, MAX_HYDROLOGY_BYTES, MAX_WATER_CYCLE_BYTES, WATER_CYCLE_FILE, write_manifest};
-use std::path::{Path};
+use crate::planet_atlas::codec::container::{
+    container_bytes_owned, variable_container_bytes_owned,
+};
+use crate::planet_atlas::codec::dynamic::encode_dynamic;
+use crate::planet_atlas::codec::genesis::encode_genesis;
+use crate::planet_atlas::codec::models::{
+    encode_biomes, encode_geology, encode_history, encode_hydrology,
+};
+use crate::planet_atlas::codec::{
+    DYNAMIC_MAGIC, DYNAMIC_RECORD_BYTES, GENESIS_MAGIC, GENESIS_RECORD_BYTES, WATER_CYCLE_MAGIC,
+};
+use crate::planet_atlas::storage::{
+    BIOMES_FILE, DYNAMIC_FILE, GENESIS_FILE, GEOLOGY_FILE, HISTORY_FILE, HYDROLOGY_FILE,
+    MAX_BIOMES_BYTES, MAX_DYNAMIC_BYTES, MAX_GENESIS_BYTES, MAX_GEOLOGY_BYTES, MAX_HISTORY_BYTES,
+    MAX_HYDROLOGY_BYTES, MAX_WATER_CYCLE_BYTES, WATER_CYCLE_FILE, write_manifest,
+};
+use crate::planet_atlas::{
+    ATLAS_DYNAMIC_VERSION, ATLAS_FORMAT_VERSION, AtlasError, PlanetAtlas,
+    WATER_CYCLE_SCHEMA_VERSION, encode_water_cycle,
+};
+use std::path::Path;
 
 impl PlanetAtlas {
     pub(super) fn write_bundle(&self, planet_dir: &Path) -> Result<(), AtlasError> {

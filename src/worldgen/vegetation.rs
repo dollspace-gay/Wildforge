@@ -1,9 +1,9 @@
 //! Per-column vegetation and tree forms; seed salts and planting order are stable.
 
+use super::Biome;
 use super::Generator;
 use crate::chunk::{CHUNK_X, CHUNK_Y, CHUNK_Z, Chunk, ChunkPos, SEA_LEVEL};
 use crate::registry::AIR;
-use super::Biome;
 
 impl Generator {
     fn height_hint(&self, heights: &[[i32; CHUNK_Z]; CHUNK_X], lx: usize, lz: usize) -> i32 {
@@ -351,6 +351,5 @@ impl Generator {
                 }
             }
         }
-
     }
 }

@@ -1,11 +1,11 @@
 //! Named river paths and records assembled in watershed order.
 
-use std::collections::BTreeMap;
-use crate::planet::geodesic_distance;
-use crate::planet_atlas::{AtlasPos, HydrologyCell, mix64};
-use super::{LakeRecord, OceanBasinRecord, RiverRecord};
 use super::flow::edge_distance;
 use super::records::generated_word;
+use super::{LakeRecord, OceanBasinRecord, RiverRecord};
+use crate::planet::geodesic_distance;
+use crate::planet_atlas::{AtlasPos, HydrologyCell, mix64};
+use std::collections::BTreeMap;
 
 pub(super) struct RiverInput<'a> {
     pub(super) seed: u32,

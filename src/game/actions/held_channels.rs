@@ -1,9 +1,8 @@
 //! Held channels in the ordered graphical action pipeline.
 
-use crate::game::Game;
-use crate::world::TerrainRead;
-use crate::audio::Sfx;
 use super::ActionFrame;
+use crate::audio::Sfx;
+use crate::game::Game;
 
 impl Game {
     pub(in crate::game) fn interact_held_channels(&mut self, frame: &ActionFrame) -> bool {
@@ -50,7 +49,6 @@ impl Game {
             }
             self.interaction.fishing = Some((bobber, wait, bite));
         }
-
 
         false
     }

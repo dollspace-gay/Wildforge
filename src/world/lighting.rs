@@ -26,6 +26,7 @@ impl World {
     }
 
     /// (block-light r,g,b, sky light) at a canonical planetary cell.
+    #[cfg(test)]
     pub fn light_rgb_at_pos(&self, pos: BlockPos) -> ([u8; 3], u8) {
         TerrainRead::light_rgb_at_pos(self, pos)
     }
@@ -43,11 +44,6 @@ impl World {
         BlockPos::of_world(x, y, z).map_or(([0; 3], 15), |pos| self.light_rgb_at_pos(pos))
     }
 
-    /// Recompute one resident chunk's derived light.
-    pub(super) fn relight_chunk(&mut self, position: ChunkPos) -> bool {
-        self.chunks.relight_chunk(&self.reg, position)
-    }
-
     /// Settle a changed chunk and loaded neighbors through the shared cascade.
     /// The store preserves the 18-visit cap, above the full 15-level light range.
     pub fn relight_and_cascade(&mut self, position: ChunkPos) {
@@ -55,7 +51,8 @@ impl World {
     }
 
     pub(super) fn relight_chunks_and_cascade(
-        &mut self, positions: impl IntoIterator<Item = ChunkPos>,
+        &mut self,
+        positions: impl IntoIterator<Item = ChunkPos>,
     ) {
         self.chunks.relight_chunks_and_cascade(&self.reg, positions);
     }

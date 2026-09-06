@@ -1,5 +1,7 @@
 //! Inventory completion workings transaction coordination.
 
+use super::Settlement;
+use super::repair_inventory_slots;
 use crate::workings::DeliveryMode;
 use crate::workings::WorkingCueKind;
 use crate::workings::WorkingEffect;
@@ -7,8 +9,6 @@ use crate::workings::WorkingPhase;
 use crate::workings::WorkingResult;
 use crate::workings::WorkingTransaction;
 use crate::world::World;
-use super::Settlement;
-use super::repair_inventory_slots;
 
 impl World {
     /// Fieldmend's target lives in a player profile rather than a chunk. Its

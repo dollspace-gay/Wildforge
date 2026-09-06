@@ -1,11 +1,10 @@
 //! Stall graphical containers adapter.
 
 use crate::audio::Sfx;
+use crate::game::Game;
 use crate::identity;
-use crate::inventory;
 use crate::net;
 use crate::world;
-use crate::game::Game;
 
 impl Game {
     /// Whether the local player owns this stall (local worlds/hosts).
@@ -22,7 +21,12 @@ impl Game {
         }
     }
 
-    pub(in crate::game) fn stall_click(&mut self, pos: crate::planet::BlockPos, slot: usize, right: bool) {
+    pub(in crate::game) fn stall_click(
+        &mut self,
+        pos: crate::planet::BlockPos,
+        slot: usize,
+        right: bool,
+    ) {
         if slot > 12 {
             return;
         }
@@ -42,8 +46,13 @@ impl Game {
             _ => return,
         };
         let _ = self.runtime.click_container(
-            pos, &mut self.ui_state.held_stack,
-            crate::player_ops::container::Click { slot, right, actor: Some(owner) },
+            pos,
+            &mut self.ui_state.held_stack,
+            crate::player_ops::container::Click {
+                slot,
+                right,
+                actor: Some(owner),
+            },
         );
     }
 
@@ -54,10 +63,13 @@ impl Game {
             self.toast("The stall wants its posts and awning.".to_string());
             return;
         }
-        let Some(world::BlockEntity::Stall(stall)) = self.runtime.local_mut().world.block_entity_mut_at(&pos) else {
+        let Some(world::BlockEntity::Stall(stall)) =
+            self.runtime.local_mut().world.block_entity_mut_at(&pos)
+        else {
             return;
         };
-        let Ok(purchase) = crate::player_ops::trade::purchase(&reg, stall, &mut self.inventory) else {
+        let Ok(purchase) = crate::player_ops::trade::purchase(&reg, stall, &mut self.inventory)
+        else {
             return;
         };
         if let Some(stack) = purchase.overflow {

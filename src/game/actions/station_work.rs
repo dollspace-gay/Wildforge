@@ -1,15 +1,15 @@
 //! Station work in the ordered graphical action pipeline.
 
-use crate::game::Game;
-use crate::world::TerrainRead;
+use super::ActionFrame;
 use crate::atlas;
 use crate::audio::BreakMat;
 use crate::audio::Sfx;
 use crate::entity::ItemEntity;
+use crate::game::Game;
 use crate::net;
 use crate::world;
+use crate::world::TerrainRead;
 use glam::Vec3;
-use super::ActionFrame;
 
 impl Game {
     pub(in crate::game) fn interact_station_work(&mut self, frame: &ActionFrame) -> bool {
@@ -81,7 +81,7 @@ impl Game {
                     }
                 }
                 if !self.creative && held.is_some() {
-                    self.inventory.wear_tool(&reg, self.input.hotbar_sel);
+                    self.inventory.wear_tool(reg, self.input.hotbar_sel);
                 }
                 if let Some(rc) = &self.multiplayer.remote {
                     // The host counts strikes and Gives the bar.
@@ -97,12 +97,15 @@ impl Game {
                         f32::from(target.v()) + 0.5,
                     )
                     .expect("worked item remains above its station");
-                    self.runtime.local_mut().world.spawn_loose_item(ItemEntity::new(
-                        center,
-                        Vec3::new(0.0, 2.0, 0.0),
-                        out.item,
-                        out.count,
-                    ));
+                    self.runtime
+                        .local_mut()
+                        .world
+                        .spawn_loose_item(ItemEntity::new(
+                            center,
+                            Vec3::new(0.0, 2.0, 0.0),
+                            out.item,
+                            out.count,
+                        ));
                     self.sfx(Sfx::Craft);
                 }
             }
@@ -111,7 +114,6 @@ impl Game {
             self.interaction.anvil_work = 0.0;
             self.interaction.anvil_pos = None;
         }
-
 
         false
     }

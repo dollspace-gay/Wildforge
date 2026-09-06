@@ -12,7 +12,9 @@ pub(crate) struct TemperatureField {
 
 impl TemperatureField {
     pub(crate) fn new(seed: u32) -> Self {
-        Self { noise: Perlin::new(seed.wrapping_add(4)) }
+        Self {
+            noise: Perlin::new(seed.wrapping_add(4)),
+        }
     }
 
     pub(crate) fn sample(&self, position: SurfacePos) -> f32 {
@@ -36,7 +38,11 @@ pub(crate) fn surface_noise(
     offset: [f64; 3],
 ) -> f32 {
     let point = surface_to_unit(position.center()) * (PLANET_RADIUS / scale);
-    noise.get([point.x + offset[0], point.y + offset[1], point.z + offset[2]]) as f32
+    noise.get([
+        point.x + offset[0],
+        point.y + offset[1],
+        point.z + offset[2],
+    ]) as f32
 }
 
 /// Preserve the latitude-scaled seasonal anomaly used by atlas-free worlds.
@@ -49,17 +55,23 @@ pub(crate) fn seasonal_temperature(field: f32, position: SurfacePos, day: f64) -
 
 /// Deterministic identity noise for one canonical surface cell.
 pub(crate) fn surface_hash(seed: u32, salt: u32, pos: SurfacePos) -> u32 {
-        // Canonical face/cell identity means the same physical cell has one
-        // roll even at seams. Adjacent cells remain decorrelated as intended.
-        let a = ((pos.face() as u32) << 29) ^ (u32::from(pos.u()) << 13) ^ u32::from(pos.v());
-        let mut h = seed ^ salt ^ a.wrapping_mul(0x9e37_79b9);
-        h ^= h >> 16;
-        h = h.wrapping_mul(0x85eb_ca6b);
-        h ^ (h >> 13)
+    // Canonical face/cell identity means the same physical cell has one
+    // roll even at seams. Adjacent cells remain decorrelated as intended.
+    let a = ((pos.face() as u32) << 29) ^ (u32::from(pos.u()) << 13) ^ u32::from(pos.v());
+    let mut h = seed ^ salt ^ a.wrapping_mul(0x9e37_79b9);
+    h ^= h >> 16;
+    h = h.wrapping_mul(0x85eb_ca6b);
+    h ^ (h >> 13)
 }
 
 /// Seam-safe radial sampling shared by deposit observations and density stages.
-pub(crate) fn radial_noise(noise: &Perlin, pos: SurfacePos, y: f64, scale: f64, offset: [f64; 3]) -> f32 {
-        let p = surface_to_unit(pos.center()) * ((PLANET_RADIUS + y) / scale);
-        noise.get([p.x + offset[0], p.y + offset[1], p.z + offset[2]]) as f32
+pub(crate) fn radial_noise(
+    noise: &Perlin,
+    pos: SurfacePos,
+    y: f64,
+    scale: f64,
+    offset: [f64; 3],
+) -> f32 {
+    let p = surface_to_unit(pos.center()) * ((PLANET_RADIUS + y) / scale);
+    noise.get([p.x + offset[0], p.y + offset[1], p.z + offset[2]]) as f32
 }

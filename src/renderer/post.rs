@@ -17,7 +17,6 @@ pub(super) struct PostProcess {
     blur_v_pipeline: wgpu::RenderPipeline,
     composite_pipeline: wgpu::RenderPipeline,
     targets: PostTargets,
-
 }
 
 /// Size-dependent post targets: the HDR scene buffer, the two half-res bloom
@@ -27,9 +26,9 @@ struct PostTargets {
     hdr_view: wgpu::TextureView,
     bloom_a: wgpu::TextureView,
     bloom_b: wgpu::TextureView,
-    bright_bg: wgpu::BindGroup, // hdr  -> bloom_a
-    blur_h_bg: wgpu::BindGroup, // bloom_a -> bloom_b
-    blur_v_bg: wgpu::BindGroup, // bloom_b -> bloom_a
+    bright_bg: wgpu::BindGroup,          // hdr  -> bloom_a
+    blur_h_bg: wgpu::BindGroup,          // bloom_a -> bloom_b
+    blur_v_bg: wgpu::BindGroup,          // bloom_b -> bloom_a
     composite_scene_bg: wgpu::BindGroup, // hdr  (group 0)
     composite_bloom_bg: wgpu::BindGroup, // bloom_a (group 1)
     /// Filler for group 1 of the bright pass, which shares the composite's
@@ -161,12 +160,22 @@ impl PostProcess {
     }
 
     pub(super) fn resize(&mut self, device: &wgpu::Device, config: &wgpu::SurfaceConfiguration) {
-        self.targets = create_post_targets(device, config, &self.post_in_bgl,
-            &self.post_tex_bgl, &self.post_sampler);
+        self.targets = create_post_targets(
+            device,
+            config,
+            &self.post_in_bgl,
+            &self.post_tex_bgl,
+            &self.post_sampler,
+        );
     }
 
-    pub(super) fn bloom(&self, queue: &wgpu::Queue, encoder: &mut wgpu::CommandEncoder,
-        bloom: f32, daylight: f32) {
+    pub(super) fn bloom(
+        &self,
+        queue: &wgpu::Queue,
+        encoder: &mut wgpu::CommandEncoder,
+        bloom: f32,
+        daylight: f32,
+    ) {
         // Bloom: isolate the HDR headroom, then separable blur at half res.
         // The bright pass clears bloom_a even with bloom off, so the composite
         // always samples a defined texture (times a zero intensity).
@@ -204,7 +213,6 @@ impl PostProcess {
                 bp.draw(0..3, 0..1);
             }
         }
-
     }
 
     pub(super) fn composite(&self, encoder: &mut wgpu::CommandEncoder, target: &wgpu::TextureView) {
@@ -216,7 +224,6 @@ impl PostProcess {
             pass.set_bind_group(2, &self.post_params_bg, &[]);
             pass.draw(0..3, 0..1);
         }
-
     }
 }
 
@@ -261,4 +268,3 @@ fn exposure(daylight: f32) -> f32 {
     // torchlight and moonlight read as they always did.
     1.0 - (1.0 - DAY_EXPOSURE) * daylight.clamp(0.0, 1.0)
 }
-

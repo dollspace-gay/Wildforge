@@ -1,6 +1,9 @@
 //! Block identities, runtime definitions, and emission color resolution.
 
-use super::{ArcaneContentDef, ArcaneEcologyDef, DiscoveryFixtureDef, ItemId, MaterialClass, MaterialVector, ObservationDef, ToolKind};
+use super::{
+    ArcaneContentDef, ArcaneEcologyDef, DiscoveryFixtureDef, ItemId, MaterialClass, MaterialVector,
+    ObservationDef, ToolKind,
+};
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub struct BlockId(pub u16);
@@ -100,4 +103,3 @@ pub(super) fn resolve_light_rgb(level: u8, color: Option<[f32; 3]>) -> [u8; 3] {
         }
     }
 }
-

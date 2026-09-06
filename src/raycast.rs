@@ -11,8 +11,8 @@ use glam::Vec3;
 
 use crate::planet::{BlockPos, EntityPos};
 use crate::registry::{AIR, BlockId};
-use crate::world::{SceneRead, TerrainRead};
 use crate::world::local_structure::LocalStructureId;
+use crate::world::{SceneRead, TerrainRead};
 
 /// A hit in flat `(i32,i32,i32)` coordinate space (no planet topology).
 /// Used when casting against a structure's local store or in test scenes.
@@ -40,7 +40,12 @@ pub struct PlanetHit {
 }
 
 /// Topology-aware voxel DDA in the origin's local face frame.
-pub fn raycast_at(world: &(impl TerrainRead + ?Sized), origin: EntityPos, dir: Vec3, max_dist: f32) -> Option<PlanetHit> {
+pub fn raycast_at(
+    world: &(impl TerrainRead + ?Sized),
+    origin: EntityPos,
+    dir: Vec3,
+    max_dist: f32,
+) -> Option<PlanetHit> {
     cast_at(world, origin, dir, max_dist, false)
 }
 
@@ -54,7 +59,12 @@ pub fn raycast_water_at(
 }
 
 #[cfg(test)]
-pub fn raycast(world: &(impl TerrainRead + ?Sized), origin: Vec3, dir: Vec3, max_dist: f32) -> Option<Hit> {
+pub fn raycast(
+    world: &(impl TerrainRead + ?Sized),
+    origin: Vec3,
+    dir: Vec3,
+    max_dist: f32,
+) -> Option<Hit> {
     cast(
         origin,
         dir,

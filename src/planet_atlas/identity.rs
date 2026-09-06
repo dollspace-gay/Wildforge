@@ -3,7 +3,7 @@
 use crate::planet::{SurfacePoint, surface_to_unit};
 use crate::planet_atlas::{ATLAS_ALGORITHM_VERSION, AtlasPos};
 use noise::{NoiseFn, Perlin};
-use std::path::{Path};
+use std::path::Path;
 
 pub(in crate::planet_atlas) fn stable_hash(bytes: &[u8]) -> u64 {
     bytes.iter().fold(0xcbf2_9ce4_8422_2325, |hash, byte| {
@@ -59,7 +59,12 @@ pub(in crate::planet_atlas) fn cell_hash(seed: u32, pos: AtlasPos, salt: u64) ->
     )
 }
 
-pub(in crate::planet_atlas) fn unit_noise(noise: &Perlin, point: SurfacePoint, scale: f64, offset: [f64; 3]) -> f32 {
+pub(in crate::planet_atlas) fn unit_noise(
+    noise: &Perlin,
+    point: SurfacePoint,
+    scale: f64,
+    offset: [f64; 3],
+) -> f32 {
     let unit = surface_to_unit(point);
     noise.get([
         unit.x * scale + offset[0],

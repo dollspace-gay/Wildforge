@@ -1,12 +1,12 @@
 //! Draw workings transaction coordination.
 
+use super::working_distance;
 use crate::planet::BlockPos;
 use crate::workings::PhysicalDebit;
 use crate::workings::PhysicalDebitKind;
 use crate::workings::WorkingEffect;
 use crate::workings::WorkingResult;
 use crate::world::World;
-use super::working_distance;
 
 impl World {
     /// Build one exact conservative water parcel. Both reservoir snapshots

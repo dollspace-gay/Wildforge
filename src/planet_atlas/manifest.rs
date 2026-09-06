@@ -1,10 +1,15 @@
 //! Persisted atlas manifest and layer compatibility contract.
 
 use crate::planet::{FACE_BLOCKS, PLANET_RADIUS};
-use crate::planet_atlas::{ATLAS_ALGORITHM_VERSION, ATLAS_DYNAMIC_VERSION, ATLAS_FACE_SIDE, ATLAS_FORMAT_VERSION, ATLAS_HISTORY_VERSION, AXIAL_TILT_DEGREES, AtlasError, BIOME_SCHEMA_VERSION, CLIMATE_CONVERGENCE_TOLERANCE, CLIMATE_MAX_ITERATIONS, CLIMATE_SEASONS, GEOLOGY_SCHEMA_VERSION, HYDROLOGY_SCHEMA_VERSION, PRIME_MERIDIAN, ROTATION_AXIS, WATER_CYCLE_SCHEMA_VERSION};
-use crate::planet_atlas::grid::{atlas_count};
+use crate::planet_atlas::grid::atlas_count;
+use crate::planet_atlas::{
+    ATLAS_ALGORITHM_VERSION, ATLAS_DYNAMIC_VERSION, ATLAS_FACE_SIDE, ATLAS_FORMAT_VERSION,
+    ATLAS_HISTORY_VERSION, AXIAL_TILT_DEGREES, AtlasError, BIOME_SCHEMA_VERSION,
+    CLIMATE_CONVERGENCE_TOLERANCE, CLIMATE_MAX_ITERATIONS, CLIMATE_SEASONS, GEOLOGY_SCHEMA_VERSION,
+    HYDROLOGY_SCHEMA_VERSION, PRIME_MERIDIAN, ROTATION_AXIS, WATER_CYCLE_SCHEMA_VERSION,
+};
 use serde::{Deserialize, Serialize};
-use std::collections::{BTreeMap};
+use std::collections::BTreeMap;
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct StageRecord {
@@ -132,7 +137,10 @@ pub(in crate::planet_atlas) fn layer_versions() -> BTreeMap<String, u32> {
     versions
 }
 
-pub(in crate::planet_atlas) fn validate_manifest(manifest: &AtlasManifest, production_only: bool) -> Result<(), AtlasError> {
+pub(in crate::planet_atlas) fn validate_manifest(
+    manifest: &AtlasManifest,
+    production_only: bool,
+) -> Result<(), AtlasError> {
     if manifest.format_version != ATLAS_FORMAT_VERSION {
         return Err(AtlasError::UnsupportedVersion(format!(
             "format {} (supported {})",

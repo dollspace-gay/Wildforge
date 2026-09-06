@@ -23,8 +23,10 @@ impl<'a> WorldView<'a> {
     }
     pub(crate) fn script_arcane_estimate(&self, position: SurfacePos) -> [u8; 2] {
         match self.source {
-            Source::Authority(world) => world.planet_atlas()
-                .map(|atlas| world.arcane_cue_at(atlas.atlas_pos(position))).unwrap_or([0; 2]),
+            Source::Authority(world) => world
+                .planet_atlas()
+                .map(|atlas| world.arcane_cue_at(atlas.atlas_pos(position)))
+                .unwrap_or([0; 2]),
             Source::Replica(_) => [0; 2],
         }
     }
@@ -46,14 +48,18 @@ impl<'a> WorldView<'a> {
             Source::Replica(world) => world.mode(),
         }
     }
-    pub(crate) fn ruleset(&self) -> crate::ruleset::Ruleset { self.registry().ruleset_for(self.mode()) }
+    pub(crate) fn ruleset(&self) -> crate::ruleset::Ruleset {
+        self.registry().ruleset_for(self.mode())
+    }
     pub(crate) fn ire(&self) -> f32 {
         match self.source {
             Source::Authority(world) => world.ire,
             Source::Replica(world) => world.ire(),
         }
     }
-    pub(crate) fn ire_tier(&self) -> usize { calendar_view::ire_tier(self.ire()) }
+    pub(crate) fn ire_tier(&self) -> usize {
+        calendar_view::ire_tier(self.ire())
+    }
     pub(crate) fn regional_ire_at_surface(&self, position: SurfacePos) -> f32 {
         match self.source {
             Source::Authority(world) => world.regional_ire_at_surface(position),
@@ -62,17 +68,25 @@ impl<'a> WorldView<'a> {
         }
     }
     pub(crate) fn ire_tier_at_surface(&self, position: SurfacePos) -> usize {
-        calendar_view::ire_tier((self.ire() + self.regional_ire_at_surface(position) * 3.0).clamp(0.0, 100.0))
+        calendar_view::ire_tier(
+            (self.ire() + self.regional_ire_at_surface(position) * 3.0).clamp(0.0, 100.0),
+        )
     }
-    pub(crate) fn sun_direction(&self) -> glam::DVec3 { self.calendar().sun_direction() }
+    pub(crate) fn sun_direction(&self) -> glam::DVec3 {
+        self.calendar().sun_direction()
+    }
     pub(crate) fn daylight_at_surface(&self, position: SurfacePos) -> f32 {
         self.calendar().daylight_at(position)
     }
     pub(crate) fn season_at_surface(&self, position: SurfacePos) -> usize {
         self.calendar().season_at(position)
     }
-    pub(crate) fn season_progress(&self) -> f32 { self.calendar().season_progress() }
-    pub(crate) fn moon_illumination(&self) -> f32 { self.calendar().moon_illumination() }
+    pub(crate) fn season_progress(&self) -> f32 {
+        self.calendar().season_progress()
+    }
+    pub(crate) fn moon_illumination(&self) -> f32 {
+        self.calendar().moon_illumination()
+    }
     pub(crate) fn season_want_at_surface(&self, position: SurfacePos) -> (usize, &'static str) {
         calendar_view::seasonal_want(self.season_at_surface(position))
     }
@@ -129,7 +143,9 @@ impl<'a> WorldView<'a> {
         }
     }
     pub(crate) fn perceived_arcane_ecology_at(
-        &self, surface: SurfacePos, radius: f32,
+        &self,
+        surface: SurfacePos,
+        radius: f32,
     ) -> Option<crate::arcane_ecology::EcologyObservation> {
         match self.source {
             Source::Authority(world) => world.perceived_arcane_ecology_at(surface, radius),
@@ -151,12 +167,20 @@ impl WorldView<'_> {
             Source::Replica(world) => world.heart_report_at(position),
         }
     }
-    pub(crate) fn soil_failure_at(&self, position: crate::planet::BlockPos) -> Option<&'static str> {
+    pub(crate) fn soil_failure_at(
+        &self,
+        position: crate::planet::BlockPos,
+    ) -> Option<&'static str> {
         match self.source {
             Source::Authority(world) => world.soil_failure_at(position),
             // No atlas/weather water books are sent. The old guest used the
             // atlas-free moisture baseline of 1.0 and no habitat sample.
-            Source::Replica(world) => crate::world::soil::soil_failure(world.get_soil_salinity_at(position), None, false, 1.0),
+            Source::Replica(world) => crate::world::soil::soil_failure(
+                world.get_soil_salinity_at(position),
+                None,
+                false,
+                1.0,
+            ),
         }
     }
 }

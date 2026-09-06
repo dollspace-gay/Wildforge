@@ -1,21 +1,17 @@
 //! Authority in the graphical frame pipeline.
 
-use crate::world::TerrainRead;
+use super::local_sim_should_advance;
 use crate::atlas;
 use crate::audio::Sfx;
-use crate::entity;
 use crate::entity::ItemEntity;
-use crate::mobs;
+use crate::game::Game;
+use crate::game::navigation::Screen;
 use crate::mp;
 use crate::server;
 use crate::world;
 use glam::Vec3;
-use crate::game::Game;
-use crate::game::navigation::Screen;
-use super::{local_sim_should_advance};
 
 impl Game {
-
     pub(in crate::game) fn advance_session_authority(&mut self, dt: f32, paused: bool) {
         let t0 = std::time::Instant::now();
         self.advance_session_authority_inner(dt, paused);
@@ -110,7 +106,8 @@ impl Game {
                             }
                         }
                     }
-                    let players = sess.authoritative_player_ctxs(&self.runtime.local().world, Some(ctx));
+                    let players =
+                        sess.authoritative_player_ctxs(&self.runtime.local().world, Some(ctx));
                     self.multiplayer.host = Some(sess);
                     players
                 } else {
@@ -225,7 +222,10 @@ impl Game {
                             if let Some(session) = &self.multiplayer.host {
                                 session.broadcast_dross_cue(&self.runtime.local().world, cue);
                             }
-                            let local_region = self.runtime.view().planet_atlas()
+                            let local_region = self
+                                .runtime
+                                .view()
+                                .planet_atlas()
                                 .map(|atlas| atlas.atlas_pos(self.player.pos.surface()));
                             if local_region == Some(cue.region) {
                                 self.present_dross_cue(cue);
@@ -276,7 +276,10 @@ impl Game {
                     ))
                 } else {
                     self.runtime.view().planet_atlas().and_then(|atlas| {
-                        self.runtime.local().world.arcane_survey_at(atlas.atlas_pos(surface), false)
+                        self.runtime
+                            .local()
+                            .world
+                            .arcane_survey_at(atlas.atlas_pos(surface), false)
                             .map(|survey| survey.sensory_cue())
                     })
                 };
@@ -285,7 +288,10 @@ impl Game {
                 {
                     self.toast(sign);
                 }
-                if let Some(observation) = self.runtime.view().perceived_arcane_ecology_at(surface, self.scan_range())
+                if let Some(observation) = self
+                    .runtime
+                    .view()
+                    .perceived_arcane_ecology_at(surface, self.scan_range())
                     && self
                         .presentation
                         .arcane_signs
@@ -308,9 +314,11 @@ impl Game {
                     if self.multiplayer.tick_accum >= 0.1 {
                         let t = self.multiplayer.tick_accum;
                         self.multiplayer.tick_accum = 0.0;
-                        self.content
-                            .scripts
-                            .dispatch_view(&self.runtime.view(), "on_tick", (t as f64,));
+                        self.content.scripts.dispatch_view(
+                            &self.runtime.view(),
+                            "on_tick",
+                            (t as f64,),
+                        );
                         self.apply_script_cmds();
                     }
                 }

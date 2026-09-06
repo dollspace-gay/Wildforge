@@ -1,10 +1,10 @@
 //! Linked ecology destruction commits before physical voxel removal.
 
-use std::path::Path;
 use crate::arcane::ArcaneLedger;
 use crate::arcane_geography::ArcaneGeography;
 use crate::planet::BlockPos;
 use crate::registry::Registry;
+use std::path::Path;
 
 pub(super) fn settle_destruction(
     geography: &mut ArcaneGeography,
@@ -30,16 +30,15 @@ pub(super) fn settle_destruction(
         return Ok(false);
     }
     let operation_id = geography.dynamic.ecology.event_sequence.max(1);
-    let (manifest, files) =
-        match geography.linked_dynamic_replacements(save_dir, operation_id) {
-            Ok(prepared) => prepared,
-            Err(error) => {
-                geography.dynamic.ecology.sites[site_index] = old_site;
-                geography.dynamic.cells[atlas_index] = old_cell;
-                geography.dynamic.ecology.event_sequence = old_sequence;
-                return Err(error.to_string());
-            }
-        };
+    let (manifest, files) = match geography.linked_dynamic_replacements(save_dir, operation_id) {
+        Ok(prepared) => prepared,
+        Err(error) => {
+            geography.dynamic.ecology.sites[site_index] = old_site;
+            geography.dynamic.cells[atlas_index] = old_cell;
+            geography.dynamic.ecology.event_sequence = old_sequence;
+            return Err(error.to_string());
+        }
+    };
     let Some(ledger) = ledger else {
         geography.dynamic.ecology.sites[site_index] = old_site;
         geography.dynamic.cells[atlas_index] = old_cell;

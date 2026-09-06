@@ -4,19 +4,16 @@
 //! mutation. Each public entry point constructs one named domain effect; the
 //! reservation/settlement machinery never accepts scripts or arbitrary block
 //! edits.
-use std::collections::BTreeMap;
-use std::collections::BTreeSet;
-use crate::world::BlockPos;
 use crate::arcane::DrossMedium;
-use std::collections::VecDeque;
 use crate::workings::WorkingEffect;
 use crate::workings::WorkingHandler;
 use crate::workings::WorkingPhase;
 use crate::workings::WorkingTargetSnapshot;
 use crate::workings::WorkingTransaction;
-
-
-
+use crate::world::BlockPos;
+use std::collections::BTreeMap;
+use std::collections::BTreeSet;
+use std::collections::VecDeque;
 
 const AMBIENT_SAFE_FLOOR: u64 = 64;
 const ROOTWAKE_WATER_HU: u64 = crate::planet_atlas::HYDRO_UNITS_PER_VISIBLE_LEVEL;
@@ -339,32 +336,31 @@ fn mounted_target_id(pos: BlockPos, bay: u8, item: u16) -> u64 {
     hash.max(1)
 }
 
-
-mod wand_admission;
-mod trace_gleam;
-mod kindle;
-mod nudge;
-mod fieldmend;
-mod holdfast;
-mod transfer_ritual;
-mod settling_rite;
-mod ritual_dispatch;
-mod rooting_bed;
-mod ward;
 mod draw;
-mod rootwake;
-mod lifecycle;
-mod inventory_completion;
-mod preservation;
+mod effect_persistence;
+mod fieldmend;
 mod fragile_custody;
+mod holdfast;
+mod inventory_completion;
+mod kindle;
+mod lifecycle;
+mod nudge;
 mod observation;
+mod physical_effects;
+mod preservation;
+mod ritual_dispatch;
 mod ritual_layout;
 mod ritual_reservation;
-mod wand_reservation;
+mod rooting_bed;
+mod rootwake;
 mod settlement;
+mod settling_rite;
 mod target_validation;
-mod physical_effects;
-mod effect_persistence;
+mod trace_gleam;
+mod transfer_ritual;
+mod wand_admission;
+mod wand_reservation;
+mod ward;
 
 #[cfg(test)]
 mod tests {

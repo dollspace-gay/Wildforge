@@ -1,9 +1,9 @@
 //! Discovery graphical inventory ui adapter.
 
-use crate::game::widgets;
-use crate::game::ui::wrap_ui_status;
-use crate::ui::UiBatch;
 use crate::game::Game;
+use crate::game::ui::wrap_ui_status;
+use crate::game::widgets;
+use crate::ui::UiBatch;
 
 impl Game {
     pub(in crate::game) fn discovery_record_rect(&self, row: usize) -> (f32, f32, f32, f32) {
@@ -31,7 +31,9 @@ impl Game {
         (x, panel.1 + panel.3 - 40.0, widths[button], 28.0)
     }
 
-    pub(in crate::game) fn sorted_discovery_records(&self) -> Vec<&crate::discovery::ObservationSummary> {
+    pub(in crate::game) fn sorted_discovery_records(
+        &self,
+    ) -> Vec<&crate::discovery::ObservationSummary> {
         let mut records = self.ui_state.discovery_records.iter().collect::<Vec<_>>();
         match self.ui_state.discovery_sort % 3 {
             0 => records.sort_by(|a, b| {

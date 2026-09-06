@@ -1,11 +1,10 @@
 //! Scene hand in the graphical frame pipeline.
 
-use crate::world::TerrainRead;
-use crate::mobs;
-use glam::Vec3;
+use super::{Geometry, portrait_depth};
 use crate::game::Game;
 use crate::game::navigation::Screen;
-use super::{Geometry, portrait_depth};
+use crate::mobs;
+use glam::Vec3;
 
 impl Game {
     pub(in crate::game) fn prepare_scene_hand(&self) -> Geometry {
@@ -81,6 +80,9 @@ impl Game {
             );
         }
 
-        Geometry { vertices: hand_verts, indices: hand_idx }
+        Geometry {
+            vertices: hand_verts,
+            indices: hand_idx,
+        }
     }
 }

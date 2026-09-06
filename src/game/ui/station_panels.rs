@@ -1,13 +1,18 @@
 //! Station panels layout and UI composition.
 
+use crate::game::Game;
 use crate::game::widgets;
 use crate::ui::UiBatch;
 use crate::world;
-use crate::game::Game;
 
 impl Game {
-    pub(in crate::game) fn draw_furnace_screen(&mut self, ui: &mut UiBatch, w: f32, h: f32, pos: crate::planet::BlockPos) {
-
+    pub(in crate::game) fn draw_furnace_screen(
+        &mut self,
+        ui: &mut UiBatch,
+        w: f32,
+        h: f32,
+        pos: crate::planet::BlockPos,
+    ) {
         ui.rect(0.0, 0.0, w, h, [0.0, 0.0, 0.0, 0.55]);
         let title = "FURNACE";
         let tw = UiBatch::text_width(3.0, title);
@@ -34,10 +39,20 @@ impl Game {
         // Player inventory below for restocking.
         self.draw_player_inventory(&mut *ui);
         self.draw_browser(&mut *ui);
-        widgets::held_stack(&self.content.reg, &mut *ui, self.input.ui_cursor, self.ui_state.held_stack);
+        widgets::held_stack(
+            &self.content.reg,
+            &mut *ui,
+            self.input.ui_cursor,
+            self.ui_state.held_stack,
+        );
     }
-    pub(in crate::game) fn draw_bloomery_screen(&mut self, ui: &mut UiBatch, w: f32, h: f32, pos: crate::planet::BlockPos) {
-
+    pub(in crate::game) fn draw_bloomery_screen(
+        &mut self,
+        ui: &mut UiBatch,
+        w: f32,
+        h: f32,
+        pos: crate::planet::BlockPos,
+    ) {
         ui.rect(0.0, 0.0, w, h, [0.0, 0.0, 0.0, 0.55]);
         // The forge rides the bloomery screen: same slots,
         // its own shell check and firing clock.
@@ -113,10 +128,20 @@ impl Game {
         }
         self.draw_player_inventory(&mut *ui);
         self.draw_browser(&mut *ui);
-        widgets::held_stack(&self.content.reg, &mut *ui, self.input.ui_cursor, self.ui_state.held_stack);
+        widgets::held_stack(
+            &self.content.reg,
+            &mut *ui,
+            self.input.ui_cursor,
+            self.ui_state.held_stack,
+        );
     }
-    pub(in crate::game) fn draw_kiln_screen(&mut self, ui: &mut UiBatch, w: f32, h: f32, pos: crate::planet::BlockPos) {
-
+    pub(in crate::game) fn draw_kiln_screen(
+        &mut self,
+        ui: &mut UiBatch,
+        w: f32,
+        h: f32,
+        pos: crate::planet::BlockPos,
+    ) {
         ui.rect(0.0, 0.0, w, h, [0.0, 0.0, 0.0, 0.55]);
         let title = if self.runtime.view().check_glassworks_at(pos).is_some() {
             "GLASSWORKS"
@@ -176,13 +201,26 @@ impl Game {
         }
         self.draw_player_inventory(&mut *ui);
         self.draw_browser(&mut *ui);
-        widgets::held_stack(&self.content.reg, &mut *ui, self.input.ui_cursor, self.ui_state.held_stack);
+        widgets::held_stack(
+            &self.content.reg,
+            &mut *ui,
+            self.input.ui_cursor,
+            self.ui_state.held_stack,
+        );
     }
-    pub(in crate::game) fn draw_workbench_screen(&mut self, ui: &mut UiBatch, w: f32, h: f32, pos: crate::planet::BlockPos) {
-
+    pub(in crate::game) fn draw_workbench_screen(
+        &mut self,
+        ui: &mut UiBatch,
+        w: f32,
+        h: f32,
+        pos: crate::planet::BlockPos,
+    ) {
         ui.rect(0.0, 0.0, w, h, [0.0, 0.0, 0.0, 0.55]);
         let reg = &self.content.reg;
-        let machine = self.runtime.view().block_entity_at(&pos)
+        let machine = self
+            .runtime
+            .view()
+            .block_entity_at(&pos)
             .and_then(|e| match e {
                 world::BlockEntity::Multiblock(m) => {
                     reg.machine(m.kind).map(|def| def.label.clone())
@@ -194,7 +232,10 @@ impl Game {
             .to_uppercase();
         let tw = UiBatch::text_width(3.0, &title);
         ui.text_shadow((w - tw) / 2.0, h / 2.0 - 310.0, 3.0, &title, [1.0; 4]);
-        let recipes = self.runtime.view().block_entity_at(&pos)
+        let recipes = self
+            .runtime
+            .view()
+            .block_entity_at(&pos)
             .and_then(|e| match e {
                 world::BlockEntity::Multiblock(m) => Some(reg.machine_recipes_for(m.kind)),
                 _ => None,
@@ -293,6 +334,11 @@ impl Game {
         }
         self.draw_player_inventory(&mut *ui);
         self.draw_browser(&mut *ui);
-        widgets::held_stack(&self.content.reg, &mut *ui, self.input.ui_cursor, self.ui_state.held_stack);
+        widgets::held_stack(
+            &self.content.reg,
+            &mut *ui,
+            self.input.ui_cursor,
+            self.ui_state.held_stack,
+        );
     }
 }

@@ -1,11 +1,12 @@
 //! Firing machines transaction coordination.
 
-use crate::planet::BlockPos;
-use crate::world::World;
+#[cfg(test)]
 use super::check_glassworks_at;
 use super::check_machine_at;
 use super::check_stall_at;
 use super::light_machine_at;
+use crate::planet::BlockPos;
+use crate::world::World;
 
 impl World {
     // ---------------- steelworks ----------------
@@ -13,6 +14,7 @@ impl World {
     /// Validate the bloomery multiblock at this mouth: a hollow 1x1
     /// core beside the mouth wrapped in a 3-wide, 3-tall firebrick
     /// ring (23 firebrick + the mouth), open on top. Returns the core.
+    #[cfg(test)]
     pub fn check_bloomery_at(&self, pos: BlockPos) -> Option<BlockPos> {
         check_machine_at(self, "base:bloomery", pos)
     }
@@ -22,6 +24,7 @@ impl World {
     /// open flue above the stack — rain never reaches the fire) and a
     /// stone anvil within three blocks of the mouth. A building, not
     /// a block: the workshop is the capital (economy plan, leg 2).
+    #[cfg(test)]
     pub fn check_forge_at(&self, pos: BlockPos) -> Option<BlockPos> {
         check_machine_at(self, "base:forge", pos)
     }
@@ -41,6 +44,7 @@ impl World {
     /// A kiln whose stack carries the chimney is a GLASSWORKS: the
     /// draft doubles what each fuel fires, and weather means nothing
     /// (economy plan, leg 2 — same capital rule as the forge).
+    #[cfg(test)]
     pub fn check_glassworks_at(&self, pos: BlockPos) -> Option<BlockPos> {
         check_glassworks_at(self, pos)
     }
@@ -53,6 +57,7 @@ impl World {
     }
 
     /// The same stack with a kiln in its mouth fires glass instead.
+    #[cfg(test)]
     pub fn check_kiln_at(&self, pos: BlockPos) -> Option<BlockPos> {
         check_machine_at(self, "base:kiln", pos)
     }

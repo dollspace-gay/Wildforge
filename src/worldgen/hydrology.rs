@@ -1,8 +1,8 @@
 //! Raw waterlines and seam-consistent channel sealing.
 
 use super::{Climate, Generator};
-use crate::planet::{Direction4, SurfacePos, step4};
 use crate::chunk::SEA_LEVEL;
+use crate::planet::{Direction4, SurfacePos, step4};
 #[cfg(test)]
 use noise::NoiseFn;
 
@@ -13,7 +13,13 @@ impl Generator {
     /// (gates the neighbor probes — the margins cover the one-block
     /// noise gradient to the true water zones).
     #[cfg(test)]
-    pub(super) fn hydro_raw(&self, wx: i32, wz: i32, cl: &Climate, pre: f32) -> (f32, Option<i32>, bool) {
+    pub(super) fn hydro_raw(
+        &self,
+        wx: i32,
+        wz: i32,
+        cl: &Climate,
+        pre: f32,
+    ) -> (f32, Option<i32>, bool) {
         let mut carve = 0.0f32;
         let mut level: Option<i32> = None;
         let mut near = false;
@@ -55,7 +61,12 @@ impl Generator {
         (carve, level, near)
     }
 
-    pub(super) fn hydro_raw_at(&self, pos: SurfacePos, cl: &Climate, pre: f32) -> (f32, Option<i32>, bool) {
+    pub(super) fn hydro_raw_at(
+        &self,
+        pos: SurfacePos,
+        cl: &Climate,
+        pre: f32,
+    ) -> (f32, Option<i32>, bool) {
         if let Some(atlas) = &self.atlas {
             let water = atlas.hydrology_sample(pos.center());
             if !water.near_channel {
@@ -207,5 +218,4 @@ impl Generator {
         let pre = self.base_offset_at(pos, &climate);
         self.hydrology_at(pos, &climate, pre).1
     }
-
 }

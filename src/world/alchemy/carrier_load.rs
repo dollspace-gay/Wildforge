@@ -1,25 +1,25 @@
 //! Carrier load alchemy transaction coordination.
 
-use crate::alchemy::AlchemyAuditEvent;
-use crate::alchemy::AlchemyCueKind;
-use crate::alchemy::AlchemyRequest;
-use crate::alchemy::AlchemyResult;
-use std::collections::BTreeMap;
-use crate::planet::BlockPos;
-use crate::alchemy::CarrierKind;
-use crate::alchemy::ExactLiquid;
-use crate::planet_atlas::HYDRO_UNITS_PER_BLOCK;
-use crate::inventory::Inventory;
-use crate::alchemy::ProcessObservation;
-use crate::alchemy::ProcessStep;
-use crate::planet_atlas::ReservoirMass;
-use crate::workings::WaterCarrier;
-use crate::planet_atlas::WaterClass;
-use crate::world::World;
 use super::CARRIER_ITEM_UNITS;
 use super::add_dissolved_displacement;
 use super::result_for;
 use super::take_exact_slot;
+use crate::alchemy::AlchemyAuditEvent;
+use crate::alchemy::AlchemyCueKind;
+use crate::alchemy::AlchemyRequest;
+use crate::alchemy::AlchemyResult;
+use crate::alchemy::CarrierKind;
+use crate::alchemy::ExactLiquid;
+use crate::alchemy::ProcessObservation;
+use crate::alchemy::ProcessStep;
+use crate::inventory::Inventory;
+use crate::planet::BlockPos;
+use crate::planet_atlas::HYDRO_UNITS_PER_BLOCK;
+use crate::planet_atlas::ReservoirMass;
+use crate::planet_atlas::WaterClass;
+use crate::workings::WaterCarrier;
+use crate::world::World;
+use std::collections::BTreeMap;
 
 impl World {
     pub(super) fn alchemy_load_carrier(
@@ -94,7 +94,9 @@ impl World {
                 CarrierKind::Brine => WaterClass::Salt,
                 _ => unreachable!(),
             };
-            let mass = self.weather_state.live()
+            let mass = self
+                .weather_state
+                .live()
                 .ok_or("Alchemy water needs the authoritative planetary water cycle.")?
                 .preview_move_portable_to_industrial(class, amount)
                 .ok_or("The portable-water ledger does not contain that full vessel.")?;
@@ -186,7 +188,9 @@ impl World {
         )?;
         state.validate().map_err(|error| error.to_string())?;
         if let Some((class, expected)) = water_move {
-            let moved = self.weather_state.live_mut()
+            let moved = self
+                .weather_state
+                .live_mut()
                 .and_then(|weather| weather.move_portable_to_industrial(class, amount))
                 .ok_or("Preflighted carrier water unexpectedly failed to move.")?;
             debug_assert_eq!(moved, expected);

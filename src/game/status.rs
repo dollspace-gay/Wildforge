@@ -1,7 +1,5 @@
 //! Survival ticking, item pickup, and player-facing status messages.
 
-
-
 pub(super) fn dross_warning_text(band: u8) -> (&'static str, &'static str) {
     match band {
         1 => ("TRACE", "GLASS HAZE"),
@@ -13,8 +11,7 @@ pub(super) fn dross_warning_text(band: u8) -> (&'static str, &'static str) {
     }
 }
 
-
 mod feedback;
+mod items;
 mod nutrition;
 mod survival;
-mod items;

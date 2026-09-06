@@ -1,14 +1,14 @@
 //! Mining in the ordered graphical action pipeline.
 
-use crate::game::Game;
-use crate::world::TerrainRead;
+use super::ActionFrame;
 use crate::audio::Sfx;
 use crate::entity::ItemEntity;
+use crate::game::Game;
 use crate::net;
 use crate::raycast;
 use crate::registry::AIR;
+use crate::world::TerrainRead;
 use glam::Vec3;
-use super::ActionFrame;
 
 impl Game {
     pub(in crate::game) fn interact_mining(&mut self, frame: &ActionFrame) -> bool {
@@ -27,7 +27,10 @@ impl Game {
             }) = &aim
             {
                 let (sid, soff) = (*id, *block);
-                let s_block_id = self.runtime.view().local_structure(sid)
+                let s_block_id = self
+                    .runtime
+                    .view()
+                    .local_structure(sid)
                     .map(|s| s.get_block(soff))
                     .unwrap_or(AIR);
                 let hardness = if self.creative {
@@ -45,30 +48,42 @@ impl Game {
                         // No `on_block_break` script hook for structure
                         // blocks (they have no world BlockPos).
                         self.interaction.breaking = None;
-                        let drop = self.runtime.local_mut().world.local_structure_mut(sid)
+                        let drop = self
+                            .runtime
+                            .local_mut()
+                            .world
+                            .local_structure_mut(sid)
                             .and_then(|s| s.break_block(soff, held));
                         // 8c: drop to player inventory directly.
                         if !self.creative {
                             if let Some(stack) = drop {
                                 let item = stack.item;
-                                let remaining = self.inventory.add_stack(&reg, stack);
+                                let remaining = self.inventory.add_stack(reg, stack);
                                 if remaining > 0
-                                    && let Some(wp) = self.runtime.view().local_structure(sid)
+                                    && let Some(wp) = self
+                                        .runtime
+                                        .view()
+                                        .local_structure(sid)
                                         .and_then(|s| s.world_position(soff))
                                 {
-                                    self.runtime.local_mut().world.spawn_loose_item(ItemEntity::new(
-                                        wp.entity_at_height(0.3),
-                                        Vec3::new(0.0, 2.2, 0.0),
-                                        item,
-                                        remaining,
-                                    ));
+                                    self.runtime.local_mut().world.spawn_loose_item(
+                                        ItemEntity::new(
+                                            wp.entity_at_height(0.3),
+                                            Vec3::new(0.0, 2.2, 0.0),
+                                            item,
+                                            remaining,
+                                        ),
+                                    );
                                 }
                             }
-                            self.inventory.wear_tool(&reg, self.input.hotbar_sel);
+                            self.inventory.wear_tool(reg, self.input.hotbar_sel);
                         }
                         self.survival.hunger = (self.survival.hunger - 0.008).max(0.0);
                         self.sfx(Sfx::Break(self.break_mat(s_block_id)));
-                        if let Some(wp) = self.runtime.view().local_structure(sid)
+                        if let Some(wp) = self
+                            .runtime
+                            .view()
+                            .local_structure(sid)
                             .and_then(|s| s.world_position(soff))
                         {
                             self.presentation.burst(
@@ -165,14 +180,19 @@ impl Game {
                                 2.2,
                             );
                             if !self.creative {
-                                self.inventory.wear_tool(&reg, self.input.hotbar_sel);
+                                self.inventory.wear_tool(reg, self.input.hotbar_sel);
                             }
                             return true;
                         }
                         if allow {
                             let Some(mined) = crate::player_ops::terrain::mine(
-                                &mut self.runtime.local_mut().world, target, held, self.creative,
-                            ) else { return true; };
+                                &mut self.runtime.local_mut().world,
+                                target,
+                                held,
+                                self.creative,
+                            ) else {
+                                return true;
+                            };
                             self.survival.hunger = (self.survival.hunger - 0.008).max(0.0);
                             let (result, sheared) = (mined.result, mined.sheared);
                             let b = result.block;
@@ -185,7 +205,7 @@ impl Game {
                             );
                             self.grant_xp("mine");
                             if !self.creative {
-                                self.inventory.wear_tool(&reg, self.input.hotbar_sel);
+                                self.inventory.wear_tool(reg, self.input.hotbar_sel);
                             }
                             // Shears: leaves come off whole.
                             if sheared
@@ -193,12 +213,15 @@ impl Game {
                                 && let Some(item) = reg.item_id(&reg.block(b).name)
                             {
                                 let center = target.entity_at_height(0.3);
-                                self.runtime.local_mut().world.spawn_loose_item(ItemEntity::new(
-                                    center,
-                                    Vec3::new(0.0, 2.2, 0.0),
-                                    item,
-                                    1,
-                                ));
+                                self.runtime
+                                    .local_mut()
+                                    .world
+                                    .spawn_loose_item(ItemEntity::new(
+                                        center,
+                                        Vec3::new(0.0, 2.2, 0.0),
+                                        item,
+                                        1,
+                                    ));
                             }
                             if let Some(drop) = result.drop {
                                 let center = target.entity_at_height(0.3);
@@ -211,8 +234,11 @@ impl Game {
                             }
                             // Chance extras (leaves drop saplings).
                             if !self.creative
-                                && let Some(stack) =
-                                    self.runtime.local_mut().world.roll_bonus_drop_at(target, b, &mut self.rng)
+                                && let Some(stack) = self
+                                    .runtime
+                                    .local_mut()
+                                    .world
+                                    .roll_bonus_drop_at(target, b, &mut self.rng)
                             {
                                 let center = target.entity_at_height(0.3);
                                 let a = self.rand01() * std::f32::consts::TAU;
@@ -251,7 +277,6 @@ impl Game {
         } else {
             self.interaction.breaking = None;
         }
-
 
         false
     }

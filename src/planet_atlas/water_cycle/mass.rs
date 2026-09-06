@@ -1,7 +1,7 @@
 //! Exact water and salt parcels with conservative transfer arithmetic.
 
-use crate::planet_atlas::AtlasError;
 use super::SALINITY_SCALE;
+use crate::planet_atlas::AtlasError;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 #[repr(u8)]

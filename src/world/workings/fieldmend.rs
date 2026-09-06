@@ -1,5 +1,6 @@
 //! Fieldmend workings transaction coordination.
 
+use super::inventory_target_id;
 use crate::planet::BlockPos;
 use crate::workings::PhysicalDebit;
 use crate::workings::PhysicalDebitKind;
@@ -7,7 +8,6 @@ use crate::workings::WorkingEffect;
 use crate::workings::WorkingResult;
 use crate::workings::WorkingTargetSnapshot;
 use crate::world::World;
-use super::inventory_target_id;
 
 impl World {
     /// Reserve a wasteful portable repair against two exact inventory slots.

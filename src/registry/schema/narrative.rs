@@ -2,7 +2,7 @@
 
 use super::{AnimalToml, BoxToml};
 use serde::Deserialize;
-use std::collections::{HashMap};
+use std::collections::HashMap;
 
 #[derive(Deserialize, Default)]
 pub(in crate::registry) struct AnimalsFile {
@@ -124,4 +124,3 @@ pub(in crate::registry) struct QuestRewardToml {
     #[serde(default)]
     pub(in crate::registry) learn_recipe: Option<String>,
 }
-

@@ -1,14 +1,13 @@
 //! Feedback in the graphical frame pipeline.
 
-use crate::world::TerrainRead;
 use crate::audio;
 use crate::audio::Sfx;
-use glam::Vec3;
 use crate::game::Game;
 use crate::game::navigation::Screen;
+use crate::world::TerrainRead;
+use glam::Vec3;
 
 impl Game {
-
     pub(in crate::game) fn advance_feedback(&mut self, dt: f32, paused: bool) {
         // The juice layer's clock: particles, pulses, streaks, motion.
         self.presentation.pool.tick(dt);
@@ -18,7 +17,10 @@ impl Game {
         self.presentation.ambient_timer -= dt;
         if !paused && self.presentation.ambient_timer <= 0.0 && self.presentation.juice {
             self.presentation.ambient_timer = 1.6 + self.presentation.vary() * 2.4;
-            let day = self.runtime.view().daylight_at_surface(self.player.pos.surface())
+            let day = self
+                .runtime
+                .view()
+                .daylight_at_surface(self.player.pos.surface())
                 > 0.5;
             let r1 = self.presentation.vary();
             let r2 = self.presentation.vary();
@@ -84,7 +86,10 @@ impl Game {
         {
             self.presentation.presence_timer = 6.0 + (self.presentation.vary() - 0.9) * 20.0;
             let reg = self.content.reg.clone();
-            let lurker = self.runtime.view().mobs()
+            let lurker = self
+                .runtime
+                .view()
+                .mobs()
                 .iter()
                 .filter(|m| {
                     reg.animals[m.species].hostile && m.state != crate::mobs::MobState::Hunt

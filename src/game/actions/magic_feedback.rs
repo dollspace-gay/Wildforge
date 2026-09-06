@@ -1,12 +1,10 @@
 //! Magic feedback in the ordered graphical action pipeline.
 
-use crate::game::Game;
-use crate::world::TerrainRead;
 use crate::audio::Sfx;
+use crate::game::Game;
 use crate::registry::ItemId;
 
 impl Game {
-
     /// Present an authoritative implement event without learning exact charge
     /// or provenance. `wire_items` is present for a guest receiving host item
     /// ids; a windowed host passes `None` because its visual already names the

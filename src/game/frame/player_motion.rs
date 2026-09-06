@@ -1,17 +1,16 @@
 //! Player motion in the graphical frame pipeline.
 
-use crate::world::TerrainRead;
+use super::movement_axes;
 use crate::audio::Sfx;
-use crate::net;
-use crate::physics;
-use glam::Vec3;
 use crate::game::Game;
 use crate::game::combat;
 use crate::game::navigation::Screen;
-use super::{movement_axes};
+use crate::net;
+use crate::physics;
+use crate::world::TerrainRead;
+use glam::Vec3;
 
 impl Game {
-
     pub(in crate::game) fn advance_player(&mut self, dt: f32, paused: bool) {
         // Physics — only once the chunk under the player exists.
         let Some(pchunk) = self.player.pos.chunk() else {
@@ -97,7 +96,8 @@ impl Game {
                             });
                         }
                     } else if !self.runtime.is_guest()
-                        && let Some(m) = self.runtime.local_mut().world.mob_by_id_mut(bid) {
+                        && let Some(m) = self.runtime.local_mut().world.mob_by_id_mut(bid)
+                    {
                         m.ridden_by = None;
                     }
                     self.interaction.riding = None;

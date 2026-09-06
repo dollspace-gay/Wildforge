@@ -1,6 +1,6 @@
 //! Continental and tectonic relief before hydrology.
 
-use super::super::{Climate};
+use super::super::Climate;
 use super::Geography;
 use crate::planet::SurfacePos;
 #[cfg(test)]
@@ -80,5 +80,4 @@ impl Geography {
         }
         off
     }
-
 }

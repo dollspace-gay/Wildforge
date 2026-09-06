@@ -1,9 +1,11 @@
 //! Moderation actions for the authoritative host session.
 
-use super::{BanIdentity, HostSession, ModerationAction, ModerationStore, PlayerRuntime, Principal, Refusal, RefusalCode, Role, S2C, moderation_action_allowed};
+use super::{
+    BanIdentity, HostSession, ModerationAction, ModerationStore, PlayerRuntime, Principal, Refusal,
+    RefusalCode, Role, S2C, moderation_action_allowed,
+};
 
 impl HostSession {
-
     /// Kick a guest and refuse them for the rest of the session.
     pub fn kick_guest(&mut self, id: u32) -> Option<String> {
         let g = self.guests.remove(&id)?;
@@ -167,7 +169,12 @@ impl HostSession {
         moderation.unban_player(player_id, by)
     }
 
-    pub(super) fn on_moderation_request(&mut self, actor: u32, target: u32, action: ModerationAction) {
+    pub(super) fn on_moderation_request(
+        &mut self,
+        actor: u32,
+        target: u32,
+        action: ModerationAction,
+    ) {
         let Some(actor_guest) = self.guests.get(&actor) else {
             return;
         };

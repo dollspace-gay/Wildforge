@@ -1,17 +1,21 @@
 //! One deterministic geological attempt and its unchanged acceptance constraints.
 
-use noise::{NoiseFn, Perlin};
-use crate::planet_atlas::{AtlasGrid, GeometryCell, TerrainCell};
-use crate::planet::FACE_BLOCKS;
-use crate::chunk::SEA_LEVEL;
-use super::{AttemptOutput, PlateRecord, ContinentRecord, VolcanoSource, MineralKind, BedrockFamily};
+use super::deposits::deposits;
 use super::geometry::dvec;
 use super::plates::craton_field;
+use super::provinces::{assign_provinces, metamorphism};
+use super::relief::{
+    boundary_relief, label_components, smooth_scalar, stamp_volcanic_relief, weighted_sea_level,
+};
 use super::tectonics::build_tectonics;
 use super::volcanism::geology_sites;
-use super::relief::{stamp_volcanic_relief, boundary_relief, smooth_scalar, weighted_sea_level, label_components};
-use super::provinces::{assign_provinces, metamorphism};
-use super::deposits::deposits;
+use super::{
+    AttemptOutput, BedrockFamily, ContinentRecord, MineralKind, PlateRecord, VolcanoSource,
+};
+use crate::chunk::SEA_LEVEL;
+use crate::planet::FACE_BLOCKS;
+use crate::planet_atlas::{AtlasGrid, GeometryCell, TerrainCell};
+use noise::{NoiseFn, Perlin};
 
 pub(super) fn build_attempt(
     seed: u32,

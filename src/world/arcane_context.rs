@@ -29,7 +29,6 @@ impl ArcaneEnvironment<'_> {
             .as_ref()
             .map_or([0; 2], |ledger| ledger.local_bands(region));
         [geographic[0].max(sparse[0]), geographic[1].max(sparse[1])]
-    
     }
 
     pub(super) fn sensory_cue(&self, region: AtlasPos) -> ([u8; 2], u8) {
@@ -39,14 +38,12 @@ impl ArcaneEnvironment<'_> {
             .as_ref()
             .map_or(0, |geography| geography.local_dominant_resonance(region));
         (bands, dominant)
-    
     }
 
     pub(super) fn survey(&self, region: AtlasPos, tuning_lens: bool) -> Option<ArcaneSurvey> {
         self.geography
             .as_ref()
             .map(|geography| geography.survey(region, tuning_lens))
-    
     }
 
     pub(super) fn item_current(&self, id: u64) -> Option<u64> {
@@ -56,11 +53,13 @@ impl ArcaneEnvironment<'_> {
         self.ledger
             .as_ref()
             .and_then(|ledger| ledger.item_clean_total(id))
-
-    
     }
 
-    pub(super) fn ward_pressures(&self, atlas: &PlanetAtlas, workings: Option<&WorkingsState>) -> Vec<WardPressure> {
+    pub(super) fn ward_pressures(
+        &self,
+        atlas: &PlanetAtlas,
+        workings: Option<&WorkingsState>,
+    ) -> Vec<WardPressure> {
         let controllers = workings
             .into_iter()
             .flat_map(|state| state.active.values())
@@ -128,9 +127,13 @@ impl ArcaneEnvironment<'_> {
                 units.div_ceil(64).clamp(1, 32)
             }
         };
-        pressures.into_iter().map(|(controller, wake, dross)| WardPressure {
-            controller, wake: bounded(wake), dross: bounded(dross),
-        }).collect()
+        pressures
+            .into_iter()
+            .map(|(controller, wake, dross)| WardPressure {
+                controller,
+                wake: bounded(wake),
+                dross: bounded(dross),
+            })
+            .collect()
     }
-
 }

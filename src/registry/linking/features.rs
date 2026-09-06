@@ -1,9 +1,12 @@
 //! Link ore generation and flag-gated block features.
 
-use crate::registry::{Registry, OreFeature, VeinShape, RetrogenPolicy, GateDef, AIR, qualify};
 use crate::registry::schema::FeatureToml;
+use crate::registry::{AIR, GateDef, OreFeature, Registry, RetrogenPolicy, VeinShape, qualify};
 
-pub(super) fn resolve(reg: &mut Registry, pending_features: Vec<(String, FeatureToml)>) -> Vec<String> {
+pub(super) fn resolve(
+    reg: &mut Registry,
+    pending_features: Vec<(String, FeatureToml)>,
+) -> Vec<String> {
     // Gate errors are collected locally: `validate_material_graph` rebuilds
     // `material_errors` from scratch at the end of build, so pushing straight
     // to it here would be wiped.

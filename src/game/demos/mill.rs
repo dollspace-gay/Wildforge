@@ -1,15 +1,13 @@
 //! Mill capture scene construction.
 
-use crate::world::TerrainRead;
-use crate::inventory::ItemStack;
-use crate::registry::AIR;
-use crate::world;
-use crate::game::Game;
-use crate::planet::{BlockPos, EntityPos, Face, SurfacePos};
 use super::DemoChart;
+use crate::game::Game;
+use crate::inventory::ItemStack;
+use crate::planet::EntityPos;
+use crate::registry::AIR;
 
 impl Game {
-    pub(in crate::game) fn stage_capture_mill(&mut self, spawn: EntityPos, chart: DemoChart) {
+    pub(super) fn stage_capture_mill(&mut self, spawn: EntityPos, chart: DemoChart) {
         if std::env::var("WILDFORGE_DEMO_MILL").is_ok() {
             // A working millrace: an elevated pool spilling over a
             // lip, the wheel in the fall, gears walking the power

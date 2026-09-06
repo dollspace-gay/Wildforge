@@ -1,14 +1,13 @@
 //! Menus accounts layout and UI composition.
 
+use crate::game::Game;
 use crate::game::widgets;
 use crate::identity;
 use crate::net;
 use crate::ui::UiBatch;
-use crate::game::Game;
 
 impl Game {
     pub(in crate::game) fn draw_accounts_screen(&mut self, ui: &mut UiBatch, w: f32, h: f32) {
-
         ui.rect(0.0, 0.0, w, h, [0.02, 0.05, 0.1, 0.82]);
         let title = if self.config.profile_complete {
             "ACCOUNTS"
@@ -163,8 +162,13 @@ impl Game {
             [0.65, 0.65, 0.65, 1.0],
         );
     }
-    pub(in crate::game) fn draw_moderation_screen(&mut self, ui: &mut UiBatch, w: f32, h: f32, id: u32) {
-
+    pub(in crate::game) fn draw_moderation_screen(
+        &mut self,
+        ui: &mut UiBatch,
+        w: f32,
+        h: f32,
+        id: u32,
+    ) {
         ui.rect(0.0, 0.0, w, h, [0.0, 0.0, 0.0, 0.78]);
         let title = "PLAYER MODERATION";
         let tw = UiBatch::text_width(4.0, title);
@@ -176,8 +180,13 @@ impl Game {
             .and_then(|host| host.guest_identity_summary(id))
             .or_else(|| {
                 let remote = self.multiplayer.remote.as_ref()?;
-                remote.session.roster().get(&id)
-                    .map(|presence| format!("{} | YOUR ROLE {:?}", crate::game::remote::presence_label(presence), remote.role))
+                remote.session.roster().get(&id).map(|presence| {
+                    format!(
+                        "{} | YOUR ROLE {:?}",
+                        crate::game::remote::presence_label(presence),
+                        remote.role
+                    )
+                })
             })
             .unwrap_or_else(|| "PLAYER DISCONNECTED".into());
         ui.text_shadow(
@@ -207,7 +216,6 @@ impl Game {
         }
     }
     pub(in crate::game) fn draw_join_screen(&mut self, ui: &mut UiBatch, w: f32, h: f32) {
-
         ui.rect(0.0, 0.0, w, h, [0.02, 0.05, 0.1, 0.75]);
         let tw = UiBatch::text_width(4.0, "JOIN GAME");
         ui.text_shadow((w - tw) / 2.0, h * 0.08, 4.0, "JOIN GAME", [1.0; 4]);

@@ -1,10 +1,13 @@
 //! Resolve shaped recipes after quest unlocks and aliases are available.
 
-use crate::registry::{Registry, RecipeDef, Ingredient, qualify};
-use crate::registry::schema::RecipeToml;
 use super::lookups::lookup_item;
+use crate::registry::schema::RecipeToml;
+use crate::registry::{Ingredient, RecipeDef, Registry, qualify};
 
-pub(super) fn resolve(reg: &mut Registry, pending_recipes: Vec<(String, RecipeToml)>) -> Vec<String> {
+pub(super) fn resolve(
+    reg: &mut Registry,
+    pending_recipes: Vec<(String, RecipeToml)>,
+) -> Vec<String> {
     let mut recipe_errors = Vec::new();
     // Recipes unlocked by a `learn_recipe` reward default their tech key to
     // `learned:<recipe_id>` (spec 3.5) when they don't declare an explicit

@@ -1,6 +1,10 @@
 //! Initialization coordinator for the authoritative world.
 
-use super::{Arc, Generator, HashMap, HashSet, PathBuf, Registry, VecDeque, World, calendar_state, construction, installations, population, storage, terrain, weather_state, write_world_meta_full};
+use super::{
+    Arc, Generator, HashMap, HashSet, PathBuf, Registry, VecDeque, World, calendar_state,
+    construction, installations, population, storage, terrain, weather_state,
+    write_world_meta_full,
+};
 
 impl World {
     pub fn new(seed: u32, save_dir: PathBuf, reg: Arc<Registry>) -> World {

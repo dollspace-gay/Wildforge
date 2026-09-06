@@ -128,5 +128,4 @@ impl Generator {
         }
         sediment
     }
-
 }

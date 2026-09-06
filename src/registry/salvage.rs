@@ -1,6 +1,10 @@
 //! Derived physical salvage definitions and bounded material recovery chains.
 
-use super::{ForgeSalvageDef, Ingredient, RecipeDef, ItemDef, ItemId, MaterialClass, MaterialVector, Registry};
+use super::{BlockId, SalvageDef};
+use super::{
+    ForgeSalvageDef, Ingredient, ItemDef, ItemId, MaterialClass, MaterialVector, RecipeDef,
+    Registry,
+};
 
 fn split_recovery(
     materials: &MaterialVector,
@@ -245,4 +249,3 @@ pub(super) fn register_salvage_content(reg: &mut Registry) {
         reg.blocks[index].dismantles_to = Some(bundle);
     }
 }
-

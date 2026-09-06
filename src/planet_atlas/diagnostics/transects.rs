@@ -1,12 +1,15 @@
 //! Deterministic climate transects and river profile exports.
 
-use crate::chunk::{SEA_LEVEL};
-use crate::planet::{geodesic_distance};
+use crate::chunk::SEA_LEVEL;
+use crate::planet::geodesic_distance;
 use crate::planet_atlas::{AtlasError, AtlasPos, HYDRO_RIVER, PlanetAtlas};
-use std::collections::{BTreeSet};
-use std::path::{Path};
+use std::collections::BTreeSet;
+use std::path::Path;
 
-pub(in crate::planet_atlas::diagnostics) fn export_climate_transects(atlas: &PlanetAtlas, path: &Path) -> Result<(), AtlasError> {
+pub(in crate::planet_atlas::diagnostics) fn export_climate_transects(
+    atlas: &PlanetAtlas,
+    path: &Path,
+) -> Result<(), AtlasError> {
     let mut candidates = Vec::new();
     for (pos, terrain) in atlas.genesis.terrain.iter() {
         if terrain.eroded_elevation <= SEA_LEVEL as f32 {
@@ -86,7 +89,10 @@ pub(in crate::planet_atlas::diagnostics) fn export_climate_transects(atlas: &Pla
     Ok(())
 }
 
-pub(in crate::planet_atlas::diagnostics) fn export_river_profiles(atlas: &PlanetAtlas, path: &Path) -> Result<(), AtlasError> {
+pub(in crate::planet_atlas::diagnostics) fn export_river_profiles(
+    atlas: &PlanetAtlas,
+    path: &Path,
+) -> Result<(), AtlasError> {
     let mut selected: Vec<_> = atlas.hydrology.rivers.iter().collect();
     selected.sort_by(|a, b| {
         b.maximum_discharge

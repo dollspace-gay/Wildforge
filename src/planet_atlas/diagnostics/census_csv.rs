@@ -1,10 +1,13 @@
 //! Stable CSV projection of the recorded atlas census.
 
-use crate::planet_atlas::{AtlasError};
-use crate::planet_atlas::diagnostics::{AtlasCensus};
-use std::path::{Path};
+use crate::planet_atlas::AtlasError;
+use crate::planet_atlas::diagnostics::AtlasCensus;
+use std::path::Path;
 
-pub(in crate::planet_atlas::diagnostics) fn write_census_csv(census: &AtlasCensus, path: &Path) -> Result<(), AtlasError> {
+pub(in crate::planet_atlas::diagnostics) fn write_census_csv(
+    census: &AtlasCensus,
+    path: &Path,
+) -> Result<(), AtlasError> {
     let mut out = String::from("metric,key,value\n");
     out.push_str(&format!("planet,cells,{}\n", census.cells));
     out.push_str(&format!(

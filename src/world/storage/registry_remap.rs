@@ -1,8 +1,8 @@
 //! Registry remap storage transaction coordination.
 
-use std::collections::HashMap;
 use crate::registry::Registry;
 use crate::world::World;
+use std::collections::HashMap;
 
 impl World {
     /// Remap all in-memory chunks from an old registry to the current one

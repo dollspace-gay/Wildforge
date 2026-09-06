@@ -1,13 +1,12 @@
 //! Loadout layout and UI composition.
 
-use crate::game::widgets;
-use crate::ui::UiBatch;
-use crate::world;
 use crate::game::Game;
+use crate::game::widgets;
+use crate::inventory::TOTAL_SLOTS;
+use crate::ui::UiBatch;
 
 impl Game {
     pub(in crate::game) fn draw_loadout_screen(&mut self, ui: &mut UiBatch, w: f32, h: f32) {
-
         ui.rect(0.0, 0.0, w, h, [0.0, 0.0, 0.0, 0.6]);
         let title = "LOADOUT";
         let tw = UiBatch::text_width(3.0, title);
@@ -51,13 +50,7 @@ impl Game {
                 };
                 ui.text_shadow(r.0 + 10.0, r.1 + 10.0, 1.4, &name, [1.0; 4]);
                 if !status.is_empty() {
-                    ui.text_shadow(
-                        r.0 + 10.0,
-                        r.1 + 40.0,
-                        1.1,
-                        &status,
-                        [0.8, 0.8, 0.8, 1.0],
-                    );
+                    ui.text_shadow(r.0 + 10.0, r.1 + 40.0, 1.1, &status, [0.8, 0.8, 0.8, 1.0]);
                 }
                 let slot_name = ["HEAD", "CHEST", "LEGS", "FEET"][i];
                 let sw = UiBatch::text_width(1.2, slot_name);
@@ -161,5 +154,5 @@ impl Game {
                 [0.72, 0.75, 0.78, 1.0],
             );
         }
-        }
+    }
 }

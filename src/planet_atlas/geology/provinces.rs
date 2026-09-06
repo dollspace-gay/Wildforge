@@ -1,10 +1,12 @@
 //! Name geological provinces and apply regional/contact metamorphism.
 
-use std::collections::BTreeMap;
-use crate::planet_atlas::{AtlasGrid, AtlasPos, GeometryCell, TectonicCell, TerrainCell, mix64};
-use crate::planet::geodesic_distance;
-use super::{BasinKind, BedrockFamily, DetailedBoundary, GeologicalProvinceRecord, IntrusionRecord};
 use super::strata::{basin_for, bedrock_for, stack_for};
+use super::{
+    BasinKind, BedrockFamily, DetailedBoundary, GeologicalProvinceRecord, IntrusionRecord,
+};
+use crate::planet::geodesic_distance;
+use crate::planet_atlas::{AtlasGrid, AtlasPos, GeometryCell, TectonicCell, TerrainCell, mix64};
+use std::collections::BTreeMap;
 
 pub(super) fn province_name(seed: u32, id: u16) -> String {
     const A: [&str; 12] = [

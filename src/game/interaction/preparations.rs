@@ -1,12 +1,10 @@
 //! Preparations interaction adapter.
 
-use crate::world::TerrainRead;
 use crate::audio::Sfx;
-use crate::net;
 use crate::game::Game;
+use crate::net;
 
 impl Game {
-
     pub(in crate::game) fn perform_alchemy_action(
         &mut self,
         pos: crate::planet::BlockPos,
@@ -32,7 +30,11 @@ impl Game {
             expected_revision,
             action,
         };
-        match self.runtime.local_mut().world.operate_alchemy(pos, &mut self.inventory, request)
+        match self
+            .runtime
+            .local_mut()
+            .world
+            .operate_alchemy(pos, &mut self.inventory, request)
         {
             Ok(result) => {
                 self.interaction
@@ -47,7 +49,10 @@ impl Game {
         }
     }
 
-    pub(in crate::game) fn use_selected_preparation(&mut self, target: crate::alchemy::AlchemyTarget) {
+    pub(in crate::game) fn use_selected_preparation(
+        &mut self,
+        target: crate::alchemy::AlchemyTarget,
+    ) {
         let slot = self.input.hotbar_sel;
         if let Some(remote) = &self.multiplayer.remote {
             remote.session.send(&net::C2S::UsePreparation {

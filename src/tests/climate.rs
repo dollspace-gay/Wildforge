@@ -7,6 +7,7 @@ use crate::planet_atlas::{
     solar_direction,
 };
 use crate::world::World;
+use crate::world::{ReplicaWorld, ReplicationTarget};
 use std::sync::Arc;
 
 use super::{base_reg, tmp_dir};
@@ -40,8 +41,8 @@ fn astronomy_has_opposite_seasons_and_real_polar_day() {
 fn runtime_sun_daylight_and_climate_insolation_share_one_geometry() {
     let atlas = Arc::new(climate(6_012, 8));
     let mut world = World::new_with_atlas(6_012, tmp_dir("climate-shared-sun"), base_reg(), atlas);
-    world.day = 36;
-    world.clock = 36.25 * f64::from(crate::server::DAY_LENGTH);
+    world.set_calendar_day(36);
+    world.set_simulation_clock(36.25 * f64::from(crate::server::DAY_LENGTH));
     let expected = solar_direction(36.25, 0.25);
     assert!(world.sun_direction().distance(expected) < 1.0e-12);
     for surface in [
@@ -75,14 +76,14 @@ fn runtime_sun_daylight_and_climate_insolation_share_one_geometry() {
 fn long_winter_adds_a_global_thermal_anomaly_without_stopping_the_orbit() {
     let atlas = Arc::new(climate(6_013, 8));
     let mut world = World::new_with_atlas(6_013, tmp_dir("climate-long-winter"), base_reg(), atlas);
-    world.day = 54;
-    world.clock = 54.25 * f64::from(crate::server::DAY_LENGTH);
+    world.set_calendar_day(54);
+    world.set_simulation_clock(54.25 * f64::from(crate::server::DAY_LENGTH));
     let northern = SurfacePos::new(Face::PosY, 4_096, 4_096).unwrap();
     let southern = SurfacePos::new(Face::NegY, 4_096, 4_096).unwrap();
     let ordinary = world.weather_at_surface(northern);
     let sun_before = world.sun_direction();
 
-    world.long_winter = true;
+    world.set_long_winter_for_test(true);
     assert_eq!(world.season_at_surface(northern), 3);
     assert_eq!(world.season_at_surface(southern), 3);
     assert_eq!(world.sun_direction(), sun_before);
@@ -760,9 +761,8 @@ fn guest_weather_matches_the_host_across_a_face_seam() {
             (pos, host.weather_at_surface(surface))
         })
         .collect();
-    let mut guest = World::new(404, tmp_dir("climate-guest-seam"), reg);
-    guest.set_remote(true);
-    guest.set_remote_weather(atlas.side(), cells);
+    let mut guest = ReplicaWorld::new(404, reg, 0.0);
+    guest.observations_mut().set_weather(atlas.side(), cells);
     assert_eq!(
         guest.weather_at_surface(source).kind,
         host.weather_at_surface(source).kind

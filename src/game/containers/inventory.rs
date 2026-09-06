@@ -1,13 +1,13 @@
 //! Inventory graphical containers adapter.
 
+use super::recipe_gates_met;
 use crate::audio::Sfx;
 use crate::crafting;
+use crate::game::Game;
 use crate::inventory;
 use crate::inventory::ItemStack;
 use crate::net;
-use crate::game::Game;
 use crate::registry::RecipeDef;
-use super::recipe_gates_met;
 
 impl Game {
     pub(in crate::game) fn slot_get(&self, craft: bool, i: usize) -> Option<ItemStack> {
@@ -76,13 +76,17 @@ impl Game {
         ) else {
             return;
         };
-        let kind = self.runtime.finish_craft(effects, self.player.pos.block(), &mut self.inventory);
+        let kind = self
+            .runtime
+            .finish_craft(effects, self.player.pos.block(), &mut self.inventory);
         self.sfx(Sfx::Craft);
         if let crate::player_ops::craft::CraftKind::Recipe(output) = kind {
             self.grant_xp("craft");
             if self.content.scripts.wants("on_craft") {
                 let name = reg.item(output).name.clone();
-                self.content.scripts.dispatch_view(&self.runtime.view(), "on_craft", (name,));
+                self.content
+                    .scripts
+                    .dispatch_view(&self.runtime.view(), "on_craft", (name,));
                 self.apply_script_cmds();
             }
         }

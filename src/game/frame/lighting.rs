@@ -1,12 +1,11 @@
 //! Lighting in the graphical frame pipeline.
 
-use crate::world::TerrainRead;
+use super::{LightingFrame, sun_scale};
 use crate::audio;
 use crate::audio::Sfx;
-use glam::Vec3;
 use crate::game::Game;
 use crate::game::navigation::Screen;
-use super::{LightingFrame, sun_scale};
+use glam::Vec3;
 
 impl Game {
     pub(in crate::game) fn prepare_frame_lighting(&mut self, dt: f32) -> LightingFrame {
@@ -94,7 +93,9 @@ impl Game {
         // gently, gray the sky, and pull the fog in. Lerped over ~10 s
         // so transitions read as skies changing, not a light switch.
         let local_weather = self.in_world.then(|| {
-            self.runtime.view().weather_at_surface(self.player.pos.surface())
+            self.runtime
+                .view()
+                .weather_at_surface(self.player.pos.surface())
         });
         let gloom_target = if let Some(weather) = local_weather {
             match weather.kind {
@@ -207,7 +208,10 @@ impl Game {
 
         // Weather wins while it is audible; in fair conditions nearby living
         // Current supplies its own restrained harmonic bed.
-        let ecology_ambience = self.runtime.view().perceived_arcane_ecology_at(self.player.pos.surface(), self.scan_range());
+        let ecology_ambience = self
+            .runtime
+            .view()
+            .perceived_arcane_ecology_at(self.player.pos.surface(), self.scan_range());
         if let Some(a) = &self.audio {
             let want = if self.ui_state.screen == Screen::Paused {
                 // The pause menu holds the world's breath: no rain,
@@ -245,7 +249,9 @@ impl Game {
                     // The night bed reads the land underfoot: crickets
                     // in tended country, the wrathful hush where the
                     // ground remembers (legible escalation, stage 2).
-                    self.runtime.view().ire_tier_at_surface(self.player.pos.surface())
+                    self.runtime
+                        .view()
+                        .ire_tier_at_surface(self.player.pos.surface())
                         < 2,
                 ))
             } else {
@@ -264,6 +270,15 @@ impl Game {
             }
         }
 
-        LightingFrame { daylight, sun_dir, sun_dir_true, sun_col, amb_col, gloom, sh_ambient, local_weather }
+        LightingFrame {
+            daylight,
+            sun_dir,
+            sun_dir_true,
+            sun_col,
+            amb_col,
+            gloom,
+            sh_ambient,
+            local_weather,
+        }
     }
 }

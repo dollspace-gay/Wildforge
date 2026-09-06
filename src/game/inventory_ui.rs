@@ -4,10 +4,10 @@
 //! then storage. Detailed survival readouts and recipe discovery are secondary
 //! views, opened deliberately instead of competing with the core task.
 
+use crate::game::Game;
 use crate::game::widgets;
 use crate::inventory::HOTBAR_SLOTS;
 use crate::ui::UiBatch;
-use crate::game::Game;
 
 impl Game {
     pub(super) const DISCOVERY_ROWS: usize = 7;
@@ -92,10 +92,15 @@ impl Game {
             self.draw_browser(ui);
         }
 
-        widgets::held_stack(&self.content.reg, ui, self.input.ui_cursor, self.ui_state.held_stack);
+        widgets::held_stack(
+            &self.content.reg,
+            ui,
+            self.input.ui_cursor,
+            self.ui_state.held_stack,
+        );
     }
 }
 
 mod discovery;
-mod status;
 mod gear;
+mod status;

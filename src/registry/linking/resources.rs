@@ -1,9 +1,9 @@
 //! Resolve tags, block rewards, aliases, placement, and held block forms.
 
-use crate::registry::{Registry, BlockId, ItemId, ItemDef, AIR, qualify};
-use crate::registry::schema::{TagToml, BonusDropToml, BrushToml, HarvestToml, AliasToml};
+use super::lookups::{lookup_block, lookup_item};
 use super::pending::PendingDrop;
-use super::lookups::{lookup_item, lookup_block};
+use crate::registry::schema::{AliasToml, BonusDropToml, BrushToml, HarvestToml, TagToml};
+use crate::registry::{AIR, BlockId, ItemDef, ItemId, Registry, qualify};
 
 pub(super) fn tags(reg: &mut Registry, pending_tags: Vec<(String, TagToml)>) {
     // Tags first (recipes reference them). Multiple mods extend the same tag.

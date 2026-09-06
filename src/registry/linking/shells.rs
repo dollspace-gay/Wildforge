@@ -1,7 +1,7 @@
 //! Resolve resonance, working, geography, and preparation identities.
 
-use crate::registry::{Registry, ArcaneSiteRule, RetrogenPolicy, qualify};
 use crate::registry::schema::RawMod;
+use crate::registry::{ArcaneSiteRule, Registry, RetrogenPolicy, qualify};
 
 pub(super) fn resonances(reg: &mut Registry, raws: &[RawMod]) {
     for raw in raws {

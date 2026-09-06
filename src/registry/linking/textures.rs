@@ -1,8 +1,8 @@
 //! Registration owns texture allocation until its outputs join the registry.
 
+use crate::registry::Registry;
 use std::collections::HashMap;
 use std::path::PathBuf;
-use crate::registry::Registry;
 
 pub(super) struct Textures {
     slots: HashMap<String, u16>,
@@ -13,13 +13,22 @@ pub(super) struct Textures {
 
 impl Default for Textures {
     fn default() -> Self {
-        Self { slots: crate::atlas::builtin_slots(), next: crate::atlas::FIRST_FREE_SLOT,
-            names: Vec::new(), files: Vec::new() }
+        Self {
+            slots: crate::atlas::builtin_slots(),
+            next: crate::atlas::FIRST_FREE_SLOT,
+            names: Vec::new(),
+            files: Vec::new(),
+        }
     }
 }
 
 impl Textures {
-    pub(super) fn resolve(&mut self, spec: &str, mod_path: &Option<PathBuf>, errs: &mut Vec<String>) -> u16 {
+    pub(super) fn resolve(
+        &mut self,
+        spec: &str,
+        mod_path: &Option<PathBuf>,
+        errs: &mut Vec<String>,
+    ) -> u16 {
         if let Some(name) = spec.strip_prefix('@') {
             return *self.slots.get(name).unwrap_or_else(|| {
                 errs.push(format!("unknown builtin texture @{name}"));

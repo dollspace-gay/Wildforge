@@ -1,15 +1,12 @@
 //! World labels layout and UI composition.
 
-use crate::world::TerrainRead;
-use crate::identity;
+use super::project_world_label;
+use crate::game::Game;
 use crate::raycast;
 use crate::ui::UiBatch;
 use glam::Vec3;
-use crate::game::Game;
-use super::{project_world_label};
 
 impl Game {
-
     pub(in crate::game) fn draw_world_nameplate(
         &self,
         ui: &mut UiBatch,

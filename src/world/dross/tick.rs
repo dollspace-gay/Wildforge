@@ -1,9 +1,9 @@
 //! Tick dross transaction coordination.
 
-use std::collections::BTreeSet;
 use crate::dross::DrossAdvance;
 use crate::dross::DrossConditions;
 use crate::world::World;
+use std::collections::BTreeSet;
 
 impl World {
     /// Slice one planetary dross hour. Weather routing, heart mortality, and
@@ -15,9 +15,13 @@ impl World {
         let Some(atlas) = self.planet_atlas.as_ref().cloned() else {
             return Ok(DrossAdvance::default());
         };
-        let target_hour = self.weather_state.live()
+        let target_hour = self
+            .weather_state
+            .live()
             .map_or(0, |weather| weather.completed_hours);
-        let runoff_routes = self.weather_state.live()
+        let runoff_routes = self
+            .weather_state
+            .live()
             .map_or_else(Vec::new, |weather| weather.last_runoff_routes().to_vec());
         let mut living_hearts = atlas
             .biomes

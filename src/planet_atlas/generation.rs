@@ -1,18 +1,35 @@
 //! Explicit whole-planet generation and stage evidence coordination.
 
 use crate::planet::{FACE_BLOCKS, PLANET_RADIUS, surface_to_unit};
-use crate::planet_atlas::{ATLAS_ALGORITHM_VERSION, ATLAS_DYNAMIC_VERSION, ATLAS_FORMAT_VERSION, ATLAS_HISTORY_VERSION, AXIAL_TILT_DEGREES, AtlasConfig, AtlasError, AtlasManifest, AtlasProgress, AtlasStage, BIOME_SCHEMA_VERSION, CancellationToken, DynamicCell, DynamicLayers, GEOLOGY_SCHEMA_VERSION, GenesisLayers, GeologyOutput, GeometryCell, HYDROLOGY_SCHEMA_VERSION, HYDRO_UNITS_PER_VISIBLE_LEVEL, HistoryLayers, HydrologyOutput, PRIME_MERIDIAN, PlanetAtlas, ROTATION_AXIS, ReservoirMass, StageRecord, WATER_CYCLE_SCHEMA_VERSION, dynamic_water_total, encode_water_cycle, generate_biomes_and_countries, generate_climate, generate_geology, generate_ground_layer, generate_hydrology, initial_water_cycle, route_placer_deposits};
-use crate::planet_atlas::codec::{FILE_HEADER_BYTES};
-use crate::planet_atlas::codec::dynamic::{encode_dynamic};
-use crate::planet_atlas::codec::fingerprints::{fingerprint_biomes, fingerprint_climate, fingerprint_geometry, fingerprint_ground, fingerprint_hydrology, fingerprint_resources, fingerprint_tectonics, fingerprint_terrain};
-use crate::planet_atlas::codec::genesis::{encode_genesis};
-use crate::planet_atlas::codec::models::{encode_biomes, encode_geology, encode_history, encode_hydrology};
+use crate::planet_atlas::codec::FILE_HEADER_BYTES;
+use crate::planet_atlas::codec::dynamic::encode_dynamic;
+use crate::planet_atlas::codec::fingerprints::{
+    fingerprint_biomes, fingerprint_climate, fingerprint_geometry, fingerprint_ground,
+    fingerprint_hydrology, fingerprint_resources, fingerprint_tectonics, fingerprint_terrain,
+};
+use crate::planet_atlas::codec::genesis::encode_genesis;
+use crate::planet_atlas::codec::models::{
+    encode_biomes, encode_geology, encode_history, encode_hydrology,
+};
 use crate::planet_atlas::grid::{atlas_count, cell_area, generate_grid};
 use crate::planet_atlas::identity::{stable_hash, unit_noise};
-use crate::planet_atlas::manifest::{layer_versions};
-use crate::planet_atlas::validation::{validate_biomes, validate_climate, validate_geometry, validate_ground, validate_hydrology, validate_layers, validate_tectonics, validate_terrain};
-use noise::{Perlin};
-use std::time::{Instant};
+use crate::planet_atlas::manifest::layer_versions;
+use crate::planet_atlas::validation::{
+    validate_biomes, validate_climate, validate_geometry, validate_ground, validate_hydrology,
+    validate_layers, validate_tectonics, validate_terrain,
+};
+use crate::planet_atlas::{
+    ATLAS_ALGORITHM_VERSION, ATLAS_DYNAMIC_VERSION, ATLAS_FORMAT_VERSION, ATLAS_HISTORY_VERSION,
+    AXIAL_TILT_DEGREES, AtlasConfig, AtlasError, AtlasManifest, AtlasProgress, AtlasStage,
+    BIOME_SCHEMA_VERSION, CancellationToken, DynamicCell, DynamicLayers, GEOLOGY_SCHEMA_VERSION,
+    GenesisLayers, GeologyOutput, GeometryCell, HYDRO_UNITS_PER_VISIBLE_LEVEL,
+    HYDROLOGY_SCHEMA_VERSION, HistoryLayers, HydrologyOutput, PRIME_MERIDIAN, PlanetAtlas,
+    ROTATION_AXIS, ReservoirMass, StageRecord, WATER_CYCLE_SCHEMA_VERSION, dynamic_water_total,
+    encode_water_cycle, generate_biomes_and_countries, generate_climate, generate_geology,
+    generate_ground_layer, generate_hydrology, initial_water_cycle, route_placer_deposits,
+};
+use noise::Perlin;
+use std::time::Instant;
 
 impl PlanetAtlas {
     pub fn generate(

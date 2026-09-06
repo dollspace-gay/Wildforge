@@ -1,10 +1,13 @@
 //! Hydrology manifest, dense-cell, drainage, and reservoir consistency.
 
-use crate::chunk::SEA_LEVEL;
-use crate::planet_atlas::{AtlasError, AtlasGrid, HydrologyCell, TerrainCell};
-use super::{HydrologyModel, StoragePoint, WaterBodyKind, HYDROLOGY_SCHEMA_VERSION, MAX_EROSION_ITERATIONS, HYDRO_RIVER};
 use super::flood::neighbors8_indices;
 use super::flow::topological_order;
+use super::{
+    HYDRO_RIVER, HYDROLOGY_SCHEMA_VERSION, HydrologyModel, MAX_EROSION_ITERATIONS, StoragePoint,
+    WaterBodyKind,
+};
+use crate::chunk::SEA_LEVEL;
+use crate::planet_atlas::{AtlasError, AtlasGrid, HydrologyCell, TerrainCell};
 
 impl HydrologyModel {
     pub fn validate(

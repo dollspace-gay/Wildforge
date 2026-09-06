@@ -21,29 +21,29 @@ pub(crate) use dialogue::apply_recipe_unlock_reward;
 pub(crate) use dialogue::apply_reputation_reward;
 mod frame;
 mod input;
-mod navigation;
-mod presentation;
-mod startup;
 mod interaction;
-mod inventory_ui;
 mod inventory_panel;
-mod widgets;
-mod keymap;
+mod inventory_ui;
 mod keyboard_events;
-mod text_input;
+mod keymap;
 mod menus;
 mod mesh_jobs;
+mod navigation;
+mod presentation;
 mod remote;
-mod runtime;
 mod roster_ui;
+mod runtime;
 mod session;
 mod skills;
+mod startup;
 mod stats;
 mod status;
 mod streaming;
 mod survival;
+mod text_input;
 mod tooltip;
 mod ui;
+mod widgets;
 mod world_loading;
 mod world_loading_ui;
 
@@ -52,16 +52,18 @@ pub(super) use app::run_windowed;
 pub(crate) use browser::browser_items;
 #[cfg(test)]
 pub(crate) use content_watch::content_tree_stamp_of;
-#[cfg(test)]
-pub(crate) use survival::reduced_damage;
-#[cfg(test)]
-pub(crate) use world_loading_ui::next_world_name;
 use content_watch::{content_tree_stamp, script_mod_dirs};
 use input::InputState;
 use navigation::{Screen, UiState};
 use presentation::PresentationState;
+#[cfg(test)]
+pub(crate) use survival::reduced_damage;
+#[cfg(test)]
+pub(crate) use world_loading_ui::next_world_name;
 
-use crate::{atlas, audio, bounce, identity, mobs, mp, net, renderer, script, server, style, visual_capture};
+use crate::{
+    atlas, audio, bounce, identity, mobs, mp, net, renderer, script, style, visual_capture,
+};
 
 use std::sync::Arc;
 use std::time::Instant;

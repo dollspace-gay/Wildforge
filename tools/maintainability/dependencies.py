@@ -72,7 +72,7 @@ class Dependencies:
                 parent.pop()
                 remaining.pop(0)
             canonical = ('crate',) + tuple(parent) + tuple(remaining)
-        elif head in self.externals:
+        elif head in self.externals and (imported or len(path) > 1):
             canonical = tuple(path)
         elif bindings := self.aliases.get(scope + (head,)):
             result = set()
@@ -81,7 +81,7 @@ class Dependencies:
                                            imported=True, seen=seen))
             return result
         elif scope + (head,) in self.units or any(
-            head in unit.children for unit in self.units.get(scope, ())
+            head in unit.children or head in unit.names for unit in self.units.get(scope, ())
         ):
             canonical = ('crate',) + scope + tuple(path)
         else:

@@ -1,7 +1,7 @@
 //! Transfers between atmospheric, coarse, detailed, and portable water custody.
 
-use crate::planet_atlas::{AtlasPos, ReservoirMass, WaterClass, HYDRO_UNITS_PER_BLOCK};
 use super::{PlanetaryWeather, PrecipitationForm};
+use crate::planet_atlas::{AtlasPos, HYDRO_UNITS_PER_BLOCK, ReservoirMass, WaterClass};
 
 impl PlanetaryWeather {
     /// Move already-landed precipitation out of the coarse climate reserve
@@ -98,7 +98,10 @@ impl PlanetaryWeather {
         }
         self.cells.cells.values_mut()[index].atmospheric_vapor = next;
         if self.active_hour.is_some() && index < self.cursor {
-            let Some(next) = self.scratch.values()[index].atmospheric_vapor.checked_add(water_hu) else {
+            let Some(next) = self.scratch.values()[index]
+                .atmospheric_vapor
+                .checked_add(water_hu)
+            else {
                 return false;
             };
             self.scratch.values_mut()[index].atmospheric_vapor = next;

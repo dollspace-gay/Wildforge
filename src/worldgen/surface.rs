@@ -1,10 +1,10 @@
 //! Surface materials produce post-carve heights and biome labels for planting.
 
+use super::Biome;
 use super::Generator;
+use super::shape::ShapeColumns;
 use crate::chunk::{CHUNK_X, CHUNK_Y, CHUNK_Z, Chunk, ChunkPos, SEA_LEVEL};
 use crate::registry::AIR;
-use super::Biome;
-use super::shape::ShapeColumns;
 use crate::registry::BlockId;
 
 pub(super) struct SurfaceColumns {
@@ -13,7 +13,12 @@ pub(super) struct SurfaceColumns {
 }
 
 impl Generator {
-    pub(super) fn apply_surface(&self, pos: ChunkPos, c: &mut Chunk, shape: &ShapeColumns) -> SurfaceColumns {
+    pub(super) fn apply_surface(
+        &self,
+        pos: ChunkPos,
+        c: &mut Chunk,
+        shape: &ShapeColumns,
+    ) -> SurfaceColumns {
         let shape_top = &shape.top;
         let fills = &shape.fills;
         let armors = &shape.armors;
@@ -71,7 +76,8 @@ impl Generator {
                     && top >= 150
                     && Self::noise_at(&self.geography.detail, surface, 9.0, [0.0; 3]) > -0.2);
 
-                let scrub_sandy = Self::noise_at(&self.geography.detail, surface, 33.0, [0.0; 3]) > 0.15;
+                let scrub_sandy =
+                    Self::noise_at(&self.geography.detail, surface, 33.0, [0.0; 3]) > 0.15;
                 // None = leave the natural rock exposed (bare mountains,
                 // steep faces — the strata read in the cliffs).
                 let (top_b, under_b): (Option<BlockId>, Option<BlockId>) = if underwater {
@@ -87,7 +93,8 @@ impl Generator {
                         || top < SEA_LEVEL - 14
                     {
                         (Some(self.gravel), Some(self.gravel))
-                    } else if Self::noise_at(&self.geography.detail, surface, 23.0, [0.0; 3]) > 0.34 {
+                    } else if Self::noise_at(&self.geography.detail, surface, 23.0, [0.0; 3]) > 0.34
+                    {
                         // Clay beds: patches where still shallows let
                         // the fine sediment settle (wild arc, stage 5
                         // — the crock starts here).

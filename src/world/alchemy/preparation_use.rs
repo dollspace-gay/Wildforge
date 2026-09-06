@@ -1,23 +1,23 @@
 //! Preparation use alchemy transaction coordination.
 
-use crate::alchemy::AlchemyAuditEvent;
-use crate::alchemy::AlchemyCue;
-use crate::alchemy::AlchemyCueKind;
-use crate::alchemy::AlchemyTarget;
-use crate::arcane::ArcaneAuthority;
-use crate::arcane::ArcaneOwner;
-use crate::alchemy::BatchOutcome;
-use crate::planet::BlockPos;
-use crate::arcane::Current;
-use crate::inventory::Inventory;
-use crate::inventory::ItemStack;
-use crate::alchemy::PreparationHandler;
-use crate::alchemy::PreparationUseResult;
-use crate::world::World;
 use super::incompatible_status_groups;
 use super::preparation_color;
 use super::produced;
 use super::settle_immediate_current;
+use crate::alchemy::AlchemyAuditEvent;
+use crate::alchemy::AlchemyCue;
+use crate::alchemy::AlchemyCueKind;
+use crate::alchemy::AlchemyTarget;
+use crate::alchemy::BatchOutcome;
+use crate::alchemy::PreparationHandler;
+use crate::alchemy::PreparationUseResult;
+use crate::arcane::ArcaneAuthority;
+use crate::arcane::ArcaneOwner;
+use crate::arcane::Current;
+use crate::inventory::Inventory;
+use crate::inventory::ItemStack;
+use crate::planet::BlockPos;
+use crate::world::World;
 
 impl World {
     /// Consume or apply one exact stable preparation container. The caller

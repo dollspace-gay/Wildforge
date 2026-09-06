@@ -1,14 +1,11 @@
 //! Apparatus interaction adapter.
 
-use crate::world::TerrainRead;
 use crate::audio::Sfx;
-use crate::identity;
+use crate::game::Game;
 use crate::net;
 use crate::world;
-use crate::game::Game;
 
 impl Game {
-
     pub(in crate::game) fn open_discovery_folio(&mut self, pos: crate::planet::BlockPos) {
         if let Some(remote) = &self.multiplayer.remote {
             self.ui_state.discovery_holder = Some(net::RecordHolderSnap::Folio { pos });
@@ -26,7 +23,12 @@ impl Game {
                 return;
             }
         };
-        match self.runtime.local().world.discovery_library_index(object_id, true) {
+        match self
+            .runtime
+            .local()
+            .world
+            .discovery_library_index(object_id, true)
+        {
             Ok(index) => {
                 self.open_discovery_catalogue(
                     net::RecordHolderSnap::Folio { pos },
@@ -45,7 +47,11 @@ impl Game {
             remote.session.send(&net::C2S::AssembleTuningLens { pos });
             return;
         }
-        match self.runtime.local_mut().world.assemble_tuning_lens_at(pos, &mut self.inventory)
+        match self
+            .runtime
+            .local_mut()
+            .world
+            .assemble_tuning_lens_at(pos, &mut self.inventory)
         {
             Ok(_) => {
                 self.toast("The Wellglass settles against the Echo Slate plate.".into());
@@ -55,7 +61,10 @@ impl Game {
         }
     }
 
-    pub(in crate::game) fn exchange_discovery_apparatus_item(&mut self, pos: crate::planet::BlockPos) {
+    pub(in crate::game) fn exchange_discovery_apparatus_item(
+        &mut self,
+        pos: crate::planet::BlockPos,
+    ) {
         let slot = self.input.hotbar_sel;
         if let Some(kind) = self.inventory.slots[slot]
             .and_then(|stack| self.content.reg.item(stack.item).discovery.as_ref())
@@ -73,8 +82,11 @@ impl Game {
             });
             return;
         }
-        match self.runtime.local_mut().world.exchange_experiment_item_at(pos, &mut self.inventory, slot)
-        {
+        match self.runtime.local_mut().world.exchange_experiment_item_at(
+            pos,
+            &mut self.inventory,
+            slot,
+        ) {
             Ok(message) => self.toast(message),
             Err(error) => self.toast(error),
         }
@@ -103,7 +115,11 @@ impl Game {
                 pos,
             ) {
                 Ok(result) => {
-                    if let Some(cue) = self.runtime.local().world.working_cues()
+                    if let Some(cue) = self
+                        .runtime
+                        .local()
+                        .world
+                        .working_cues()
                         .into_iter()
                         .find(|cue| cue.stable_id == result.stable_id)
                     {

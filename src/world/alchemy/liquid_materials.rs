@@ -132,7 +132,10 @@ pub(super) fn split_materials(
     (retained, residue)
 }
 
-pub(super) fn add_materials(into: &mut MaterialVector, from: &MaterialVector) -> Result<(), String> {
+pub(super) fn add_materials(
+    into: &mut MaterialVector,
+    from: &MaterialVector,
+) -> Result<(), String> {
     for (name, units) in from {
         let value = into
             .get(name)
@@ -144,4 +147,3 @@ pub(super) fn add_materials(into: &mut MaterialVector, from: &MaterialVector) ->
     }
     Ok(())
 }
-

@@ -1,11 +1,16 @@
 //! Bounded water-cycle checkpoint encoding and decoding.
 
+use super::{
+    AquiferLayer, ChunkWaterCommitment, FluxInbox, ReservoirMass, SparseAquiferState, SpringState,
+    SurfaceReservoirState, WaterCell, WaterCycleState, WaterLedger,
+};
 use crate::chunk::ChunkPos;
 use crate::planet::Face;
-use crate::planet_atlas::{AtlasError, AtlasGrid, AtlasPos};
+use crate::planet_atlas::codec::primitives::{
+    ByteReader, put_i32, put_u8, put_u16, put_u32, put_u64,
+};
 use crate::planet_atlas::grid::atlas_count;
-use crate::planet_atlas::codec::primitives::{ByteReader, put_i32, put_u16, put_u32, put_u64, put_u8};
-use super::{AquiferLayer, ChunkWaterCommitment, FluxInbox, ReservoirMass, SparseAquiferState, SpringState, SurfaceReservoirState, WaterCell, WaterCycleState, WaterLedger};
+use crate::planet_atlas::{AtlasError, AtlasGrid, AtlasPos};
 
 const WATER_PREFIX_BYTES: usize = 156;
 const WATER_CELL_BYTES: usize = 80;
@@ -49,7 +54,9 @@ fn read_layer(reader: &mut ByteReader<'_>) -> Result<AquiferLayer, AtlasError> {
     }
 }
 
-pub(in crate::planet_atlas) fn encode_water_cycle(state: &WaterCycleState) -> Result<Vec<u8>, AtlasError> {
+pub(in crate::planet_atlas) fn encode_water_cycle(
+    state: &WaterCycleState,
+) -> Result<Vec<u8>, AtlasError> {
     let mut out =
         Vec::with_capacity(WATER_PREFIX_BYTES + state.cells.len().saturating_mul(WATER_CELL_BYTES));
     put_u64(&mut out, state.completed_surface_hours);
@@ -139,7 +146,10 @@ pub(in crate::planet_atlas) fn encode_water_cycle(state: &WaterCycleState) -> Re
     Ok(out)
 }
 
-pub(in crate::planet_atlas) fn decode_water_cycle(side: u16, payload: &[u8]) -> Result<WaterCycleState, AtlasError> {
+pub(in crate::planet_atlas) fn decode_water_cycle(
+    side: u16,
+    payload: &[u8],
+) -> Result<WaterCycleState, AtlasError> {
     let count = atlas_count(side)?;
     let minimum = WATER_PREFIX_BYTES
         .checked_add(count.checked_mul(WATER_CELL_BYTES).ok_or_else(|| {

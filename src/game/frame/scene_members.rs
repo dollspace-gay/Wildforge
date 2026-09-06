@@ -1,15 +1,14 @@
 //! Scene members in the graphical frame pipeline.
 
-use crate::world::TerrainRead;
+use super::Geometry;
 use crate::atlas;
+use crate::game::Game;
 use crate::mesher;
 use crate::mobs;
 use crate::registry::ItemId;
 use crate::style;
-use crate::world;
+use crate::world::TerrainRead;
 use glam::Vec3;
-use crate::game::Game;
-use super::{Geometry};
 
 impl Game {
     pub(in crate::game) fn prepare_scene_members(&mut self, dt: f32) -> Geometry {
@@ -115,27 +114,20 @@ impl Game {
                 );
             }
         }
-        if self.multiplayer.remote.is_some() {
-            let entries: Vec<(u32, Vec3, crate::planet::EntityPos, f32)> = self
-                .multiplayer
-                .remote
-                .as_ref()
-                .map(|r| {
-                    r.players
-                        .iter()
-                        .filter_map(|(id, (_, p, y))| {
-                            r.player_positions
-                                .get(id)
-                                .copied()
-                                .map(|logical| (*id, *p, logical, *y))
-                        })
-                        .collect()
+        if let Some(r) = self.multiplayer.remote.as_ref() {
+            let entries: Vec<(u32, Vec3, crate::planet::EntityPos, f32)> = r
+                .players
+                .iter()
+                .filter_map(|(id, (_, p, y))| {
+                    r.player_positions
+                        .get(id)
+                        .copied()
+                        .map(|logical| (*id, *p, logical, *y))
                 })
-                .unwrap_or_default();
+                .collect();
             for (id, pos, logical, yaw) in entries {
                 let gait = self.presentation.gait_for(id, pos, dt);
                 let (held, implement, st) = {
-                    let r = self.multiplayer.remote.as_ref().unwrap();
                     let held = r
                         .player_held
                         .get(&id)
@@ -282,6 +274,9 @@ impl Game {
             }
         }
 
-        Geometry { vertices: entity_verts, indices: entity_idx }
+        Geometry {
+            vertices: entity_verts,
+            indices: entity_idx,
+        }
     }
 }

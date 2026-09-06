@@ -1,13 +1,13 @@
 //! Nutrition graphical status adapter.
 
+use super::dross_warning_text;
 use crate::audio::Sfx;
+use crate::game::Game;
+use crate::game::navigation::Screen;
 use crate::inventory::ItemStack;
 use crate::net;
 use crate::physics;
 use crate::world;
-use crate::game::Game;
-use crate::game::navigation::Screen;
-use super::dross_warning_text;
 
 impl Game {
     pub(in crate::game) fn update_food(&mut self, dt: f32, input: &physics::Input) {
@@ -62,7 +62,10 @@ impl Game {
                 )
                 .unwrap_or(crate::identity::PlayerId([0; 16]))
                 .0;
-                let pack_temperature_millic = (self.runtime.view().weather_at_surface(self.player.pos.surface())
+                let pack_temperature_millic = (self
+                    .runtime
+                    .view()
+                    .weather_at_surface(self.player.pos.surface())
                     .temperature_c
                     * 1_000.0)
                     .round()
@@ -147,19 +150,22 @@ impl Game {
                 if let Some(at) = self.player.pos.block() {
                     for slot in 0..self.inventory.slots.len() {
                         if let Some(stack) = self.inventory.slots[slot]
-                            && let Err(error) = self.runtime.local_mut().world.leak_fragile_item_charge(
-                                actor,
-                                slot,
-                                stack,
-                                at,
-                                SWEEP as u32,
-                            )
+                            && let Err(error) = self
+                                .runtime
+                                .local_mut()
+                                .world
+                                .leak_fragile_item_charge(actor, slot, stack, at, SWEEP as u32)
                         {
                             eprintln!("arcane specimen leakage failed: {error}");
                         }
                     }
                 }
-                if let Err(error) = self.runtime.local_mut().world.record_consumed_stacks(consumed) {
+                if let Err(error) = self
+                    .runtime
+                    .local_mut()
+                    .world
+                    .record_consumed_stacks(consumed)
+                {
                     eprintln!("materials: spoiled carried food accounting failed: {error}");
                 }
             }
@@ -188,7 +194,11 @@ impl Game {
                         strain: 0.0,
                         bodily_dross: self.survival.bodily_dross,
                     };
-                    match self.runtime.local_mut().world.tick_preparation_statuses(actor.0, actor_pos, physiology)
+                    match self
+                        .runtime
+                        .local_mut()
+                        .world
+                        .tick_preparation_statuses(actor.0, actor_pos, physiology)
                     {
                         Ok(result) => {
                             let old_dross_band = self.survival.preparation_modifiers.dross_band;
@@ -258,7 +268,9 @@ impl Game {
             && let Some(f) = food
         {
             let want = crate::player_ops::nutrition::wants_food(
-                self.survival.hunger, &self.survival.nutrition, &f,
+                self.survival.hunger,
+                &self.survival.nutrition,
+                &f,
             );
             if want {
                 self.survival.eating += dt;
@@ -268,13 +280,19 @@ impl Game {
                         remote.session.send(&net::C2S::EatSelected);
                     }
                     crate::player_ops::nutrition::eat(
-                        &mut self.survival.hunger, &mut self.survival.nutrition, &f,
+                        &mut self.survival.hunger,
+                        &mut self.survival.nutrition,
+                        &f,
                     );
                     let consumed = self.inventory.slots[self.input.hotbar_sel]
                         .map(|stack| ItemStack::new(&self.content.reg, stack.item, 1));
                     if self.multiplayer.remote.is_none()
                         && let Some(stack) = consumed
-                        && let Err(error) = self.runtime.local_mut().world.record_consumed_stacks([stack])
+                        && let Err(error) = self
+                            .runtime
+                            .local_mut()
+                            .world
+                            .record_consumed_stacks([stack])
                     {
                         eprintln!("materials: eaten food accounting failed: {error}");
                     }

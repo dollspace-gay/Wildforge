@@ -1,14 +1,12 @@
 //! Animals capture scene construction.
 
-use crate::world::TerrainRead;
-use crate::world;
-use glam::Vec3;
-use crate::game::Game;
-use crate::planet::{BlockPos, EntityPos, Face, SurfacePos};
 use super::DemoChart;
+use crate::game::Game;
+use crate::planet::EntityPos;
+use glam::Vec3;
 
 impl Game {
-    pub(in crate::game) fn stage_capture_wardens(&mut self, spawn: EntityPos, chart: DemoChart) {
+    pub(super) fn stage_capture_wardens(&mut self, spawn: EntityPos, chart: DemoChart) {
         // Dev: a row of wardens near spawn (rendering/combat verification).
         if std::env::var("WILDFORGE_DEMO_WARDENS").is_ok() {
             for (i, name) in [
@@ -38,7 +36,7 @@ impl Game {
         }
     }
 
-    pub(in crate::game) fn stage_capture_mobs(&mut self, spawn: EntityPos, chart: DemoChart) {
+    pub(super) fn stage_capture_mobs(&mut self, spawn: EntityPos, chart: DemoChart) {
         // Dev: a small menagerie near spawn (rendering/combat verification).
         if std::env::var("WILDFORGE_DEMO_MOBS").is_ok() {
             for (i, name) in [
@@ -68,7 +66,7 @@ impl Game {
         }
     }
 
-    pub(in crate::game) fn stage_capture_flight(&mut self, spawn: EntityPos, chart: DemoChart) {
+    pub(super) fn stage_capture_flight(&mut self, spawn: EntityPos, chart: DemoChart) {
         // Dev: a line of fliers at eye level ahead, wings mid-beat
         // (flight and wingbeat verification — the one thing you cannot
         // judge from a still of a bird standing on the ground).

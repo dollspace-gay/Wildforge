@@ -1,23 +1,36 @@
 //! Parsed documents and their provider bundle, private to registry linking.
 
 mod files;
-pub(in crate::registry) use files::{BlocksFile, ItemsFile, ModesFile, RecipesFile, AliasesFile, FeaturesFile, TagsFile};
+pub(in crate::registry) use files::{
+    AliasesFile, BlocksFile, FeaturesFile, ItemsFile, ModesFile, RecipesFile, TagsFile,
+};
 mod manifest;
 pub(in crate::registry) use manifest::{ModToml, ModeToml};
 mod blocks;
-pub(in crate::registry) use blocks::{TexSpec, BlockToml, one_u8, BonusDropToml, HarvestToml};
+pub(in crate::registry) use blocks::{BlockToml, BonusDropToml, HarvestToml, TexSpec, one_u8};
 mod items;
-pub(in crate::registry) use items::{ItemToml, CharmToml, SalvageToml};
+pub(in crate::registry) use items::{CharmToml, ItemToml, SalvageToml};
 mod magic;
-pub(in crate::registry) use magic::{ObservationToml, DiscoveryItemToml, DiscoveryFixtureToml, ArcaneContentToml, ArcaneEcologyToml, permille, ResonanceToml, ArcaneSiteToml, ArcaneFile};
+pub(in crate::registry) use magic::{
+    ArcaneContentToml, ArcaneEcologyToml, ArcaneFile, ArcaneSiteToml, DiscoveryFixtureToml,
+    DiscoveryItemToml, ObservationToml, ResonanceToml,
+};
 mod fauna;
-pub(in crate::registry) use fauna::{BoxToml, ResistTomlList, AnimalToml};
+pub(in crate::registry) use fauna::{AnimalToml, BoxToml, ResistTomlList};
 mod recipes;
-pub(in crate::registry) use recipes::{RecipeToml, SmeltToml, FuelToml, BloomeryToml, KilnToml, KilnBaseToml, WorkedToml, AliasToml, TagToml, FeatureToml};
+pub(in crate::registry) use recipes::{
+    AliasToml, BloomeryToml, FeatureToml, FuelToml, KilnBaseToml, KilnToml, RecipeToml, SmeltToml,
+    TagToml, WorkedToml,
+};
 mod structures;
-pub(in crate::registry) use structures::{BrushToml, one_u32, LootToml, StructureToml, StructuresFile, PieceToml, PoolToml, AssemblyToml, SettlementToml, PiecesFile};
+pub(in crate::registry) use structures::{
+    AssemblyToml, BrushToml, LootToml, PieceToml, PiecesFile, PoolToml, SettlementToml,
+    StructureToml, StructuresFile, one_u32,
+};
 mod narrative;
-pub(in crate::registry) use narrative::{AnimalsFile, NpcsFile, DialogueFile, QuestsFile, NpcToml, DialogueToml, QuestToml};
+pub(in crate::registry) use narrative::{
+    AnimalsFile, DialogueFile, DialogueToml, NpcToml, NpcsFile, QuestToml, QuestsFile,
+};
 
 // Raw content bundle, private to registry loading/linking.
 
@@ -67,4 +80,3 @@ pub struct NestFileToml {
     #[serde(default)]
     pub nest: Vec<RawNestToml>,
 }
-

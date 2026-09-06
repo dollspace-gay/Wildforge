@@ -1,12 +1,12 @@
 //! Workstations machines transaction coordination.
 
-use crate::world::BlockEntity;
-use crate::planet::BlockPos;
-use crate::inventory::ItemStack;
-use crate::world::World;
 use super::STATION_BULK;
 use super::station_powered;
 use super::worked_table_for;
+use crate::inventory::ItemStack;
+use crate::planet::BlockPos;
+use crate::world::BlockEntity;
+use crate::world::World;
 
 impl World {
     /// The station kind ("anvil"/"quern"/"millstone"/...) of the block at pos.
@@ -53,7 +53,8 @@ impl World {
         {
             return false;
         }
-        let e = self.installations
+        let e = self
+            .installations
             .entry(pos)
             .or_insert_with(|| BlockEntity::Anvil(Default::default()));
         if let BlockEntity::Anvil(a) = e {

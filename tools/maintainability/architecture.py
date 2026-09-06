@@ -93,7 +93,9 @@ def scan(root: Path, contract: dict) -> dict:
             dependency = '::'.join(target)
             edges.add((unit.path, line, dependency, kind))
             broad = kind == 'glob' and target == ('crate',)
-            if broad or not any(matches_prefix(dependency, prefix) for prefix in allowed):
+            own_module = ('crate',) + unit.module
+            local = target[:len(own_module)] == own_module and len(target) > len(own_module)
+            if broad or (not local and not any(matches_prefix(dependency, prefix) for prefix in allowed)):
                 reason = 'unrestricted parent namespace' if broad else 'dependency outside allowlist'
                 findings.add((rule['name'], unit.path, line, dependency, kind, reason))
     empty = [name for name, paths in counts.items() if not paths]

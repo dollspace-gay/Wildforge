@@ -1,7 +1,7 @@
 //! Offerings calendar transaction coordination.
 
-use crate::world::BlockEntity;
 use crate::inventory::ItemStack;
+use crate::world::BlockEntity;
 use crate::world::RegionCell;
 use crate::world::World;
 
@@ -12,10 +12,6 @@ impl World {
     #[cfg(test)]
     pub fn season_want(&self) -> (usize, &'static str) {
         Self::want_for_season(self.season())
-    }
-
-    pub fn season_want_at_surface(&self, pos: crate::planet::SurfacePos) -> (usize, &'static str) {
-        Self::want_for_season(self.season_at_surface(pos))
     }
 
     pub(super) fn want_for_season(season: usize) -> (usize, &'static str) {

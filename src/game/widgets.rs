@@ -91,7 +91,12 @@ pub(super) fn slot(
     }
 }
 
-pub(super) fn held_stack(reg: &Registry, ui: &mut UiBatch, cursor: (f32, f32), stack: Option<ItemStack>) {
+pub(super) fn held_stack(
+    reg: &Registry,
+    ui: &mut UiBatch,
+    cursor: (f32, f32),
+    stack: Option<ItemStack>,
+) {
     if let Some(s) = stack {
         let (cx, cy) = cursor;
         let icon = reg.item(s.item).icon;

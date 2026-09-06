@@ -1,11 +1,15 @@
 //! Finite mineral placement and per-chunk extraction envelopes.
 
+use super::{
+    BasinKind, BedrockFamily, ContinentRecord, DepositRecord, IntrusionRecord, MineralKind,
+};
+use crate::chunk::CHUNK_X;
+use crate::planet::geodesic_distance;
+use crate::planet_atlas::{
+    AtlasGrid, AtlasPos, GeometryCell, ResourceCell, TectonicCell, TerrainCell, cell_hash,
+};
 use std::cmp::Ordering as CmpOrdering;
 use std::collections::BTreeMap;
-use crate::planet_atlas::{AtlasGrid, AtlasPos, GeometryCell, TectonicCell, TerrainCell, ResourceCell, cell_hash};
-use crate::planet::geodesic_distance;
-use crate::chunk::CHUNK_X;
-use super::{MineralKind, BedrockFamily, BasinKind, DepositRecord, ContinentRecord, IntrusionRecord};
 
 pub(super) fn host_allows(kind: MineralKind, cell: TectonicCell, latitude: f32) -> bool {
     let rock = BedrockFamily::from_id(cell.bedrock_family);

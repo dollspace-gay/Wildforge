@@ -530,7 +530,7 @@ fn glass_smelts_passes_light_and_grows_winter_crops() {
     assert_eq!(sl, 15, "sky light passes glass");
 
     // Winter: glass-roofed crops grow at 0.75x; sky-open twins sleep.
-    w.day = 3 * crate::world::SEASON_DAYS;
+    w.set_calendar_day(3 * crate::world::SEASON_DAYS);
     for x in 0..16 {
         w.set_block(x, h + 6, 4, b("base:farmland"));
         w.set_block(x, h + 7, 4, b("base:wheat_seeds"));

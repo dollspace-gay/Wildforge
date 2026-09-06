@@ -1,9 +1,9 @@
 //! Experiments discovery transaction coordination.
 
-use crate::world::BlockEntity;
-use crate::planet::BlockPos;
 use crate::discovery::ExperimentKind;
 use crate::inventory::ItemStack;
+use crate::planet::BlockPos;
+use crate::world::BlockEntity;
 use crate::world::World;
 
 impl World {
@@ -74,7 +74,8 @@ impl World {
                 let _ = inventory.add_stack(&self.reg, physical);
                 return Err(error.to_string());
             }
-            let entity = self.installations
+            let entity = self
+                .installations
                 .entry(pos)
                 .or_insert_with(|| BlockEntity::DiscoveryApparatus(Default::default()));
             let BlockEntity::DiscoveryApparatus(apparatus) = entity else {
@@ -92,8 +93,7 @@ impl World {
                 Ok("Loaded one physical sample into the apparatus holder.".into())
             }
         } else {
-            let Some(BlockEntity::DiscoveryApparatus(apparatus)) =
-                self.installations.get_mut(&pos)
+            let Some(BlockEntity::DiscoveryApparatus(apparatus)) = self.installations.get_mut(&pos)
             else {
                 return Err("The apparatus bays are empty.".into());
             };

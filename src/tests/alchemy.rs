@@ -170,7 +170,7 @@ fn mint_ready_dose(
         }
         CarrierKind::Alcohol | CarrierKind::PlantOil => ReservoirMass::default(),
     };
-    let now = (world.clock.max(0.0) * 20.0).round() as u64;
+    let now = (world.clock().max(0.0) * 20.0).round() as u64;
     let empty = it(&world.reg, &definition.empty_vessel);
     let vessel_materials =
         crate::materials::stack_materials(&world.reg, ItemStack::new(&world.reg, empty, 1));
@@ -303,7 +303,7 @@ fn closed_world_alchemy_audit_reconciles_all_parent_ledgers() {
     );
     entity.durability = stack.durability;
     entity.arcane_id = stack.arcane_id;
-    world.loose_items_mut().push(entity);
+    world.spawn_loose_item(entity);
     save_world(&mut world);
 
     let audit = crate::alchemy::audit_world(&world.save_dir_for_test()).unwrap();
@@ -613,7 +613,7 @@ fn every_base_preparation_completes_through_its_real_apparatus_sequence() {
                         .as_ref()
                         .unwrap()
                         .due_tick;
-                    world.clock = world.clock.max((due + 1) as f64 / 20.0);
+                    world.set_simulation_clock(world.clock().max((due + 1) as f64 / 20.0));
                     operate(
                         &mut world,
                         &mut inventory,
@@ -628,7 +628,7 @@ fn every_base_preparation_completes_through_its_real_apparatus_sequence() {
                         .as_ref()
                         .unwrap()
                         .due_tick;
-                    world.clock = world.clock.max((due + 1) as f64 / 20.0);
+                    world.set_simulation_clock(world.clock().max((due + 1) as f64 / 20.0));
                     if step == ProcessStep::Settle {
                         operate(
                             &mut world,
@@ -815,7 +815,7 @@ fn hearth_healing_pays_hunger_and_nutrients_as_health_moves() {
             overdose_until_tick: 0,
         }],
     );
-    world.clock = definition.effect.duration_ticks as f64 / 40.0;
+    world.set_simulation_clock(definition.effect.duration_ticks as f64 / 40.0);
     let result = world
         .tick_preparation_statuses(
             actor,
@@ -855,7 +855,7 @@ fn hearth_healing_pays_hunger_and_nutrients_as_health_moves() {
 fn root_wash_improves_only_viable_growth_and_overconcentration_burns() {
     let mut world = super::implements::embodied_implements_world("alchemy-root-wash");
     let plot = bp(8, 100, 8);
-    let now = (world.clock * 20.0).round() as u64;
+    let now = (world.clock() * 20.0).round() as u64;
     world
         .alchemy_state
         .as_mut()
@@ -884,7 +884,7 @@ fn root_wash_improves_only_viable_growth_and_overconcentration_burns() {
         .unwrap()
         .concentration_permille = 1_750;
     assert!(world.root_uptake_multiplier_at(plot) < 1.0);
-    world.clock += 6.0;
+    world.set_simulation_clock(world.clock() + 6.0);
     assert_eq!(world.root_uptake_multiplier_at(plot), 1.0);
 }
 
@@ -1046,10 +1046,12 @@ fn antidote_status_survives_reopen_then_death_settles_exactly_once() {
     let mut loaded = World::load_or_create(root, base_reg()).unwrap();
     let status = loaded.alchemy_state().unwrap().statuses[&actor][0].clone();
     assert_eq!(status.status_id, status_id);
-    loaded.clock = status
-        .started_tick
-        .saturating_add(definition.effect.duration_ticks / 2) as f64
-        / 20.0;
+    loaded.set_simulation_clock(
+        status
+            .started_tick
+            .saturating_add(definition.effect.duration_ticks / 2) as f64
+            / 20.0,
+    );
     let ticked = loaded
         .tick_preparation_statuses(
             actor,
@@ -1155,7 +1157,7 @@ fn duplicate_refresh_recovery_and_incompatible_draughts_are_authoritative() {
 
     let third_id = mint_ready_dose(&mut world, &mut inventory, 3, &settling.id, 5, 1);
     let status = world.alchemy_state().unwrap().statuses[&actor][0].clone();
-    world.clock = status.due_tick.saturating_add(1) as f64 / 20.0;
+    world.set_simulation_clock(status.due_tick.saturating_add(1) as f64 / 20.0);
     world
         .tick_preparation_statuses(actor, at, PreparationPhysiology::default())
         .unwrap();
@@ -1178,7 +1180,7 @@ fn duplicate_refresh_recovery_and_incompatible_draughts_are_authoritative() {
             .contains_key(&third_id)
     );
 
-    world.clock = status.recovery_until_tick.saturating_add(1) as f64 / 20.0;
+    world.set_simulation_clock(status.recovery_until_tick.saturating_add(1) as f64 / 20.0);
     world
         .tick_preparation_statuses(actor, at, PreparationPhysiology::default())
         .unwrap();
@@ -1230,7 +1232,7 @@ fn hearth_overdose_is_one_bounded_sickness_independent_of_tick_cadence() {
 
     // One delayed host tick crossing the entire sickness interval must pay
     // exactly the same bounded cost as many small live-play ticks.
-    world.clock = sickness_end.saturating_add(200) as f64 / 20.0;
+    world.set_simulation_clock(sickness_end.saturating_add(200) as f64 / 20.0);
     let result = world
         .tick_preparation_statuses(
             actor,
@@ -1248,7 +1250,7 @@ fn hearth_overdose_is_one_bounded_sickness_independent_of_tick_cadence() {
     assert!((result.physiology.hunger - 9.5).abs() < f32::EPSILON);
     assert_eq!(result.physiology.health, 14.0);
 
-    world.clock = sickness_end.saturating_add(400) as f64 / 20.0;
+    world.set_simulation_clock(sickness_end.saturating_add(400) as f64 / 20.0);
     let settled = world
         .tick_preparation_statuses(actor, at, result.physiology)
         .unwrap();
@@ -1340,7 +1342,7 @@ fn embodied_frostlace_coats_one_botanical_and_returns_jar_and_spent_carrier() {
         25
     );
     assert!(world.coated_specimen_age_advance(specimen_id, 100, 5_000) > 0);
-    world.clock = coating.expires_tick.saturating_add(1) as f64 / 20.0;
+    world.set_simulation_clock(coating.expires_tick.saturating_add(1) as f64 / 20.0);
     for _ in 0..4 {
         world.tick_alchemy(128).unwrap();
     }
@@ -1498,7 +1500,7 @@ fn chest_storage_uses_the_same_preparation_clock_and_cellars_slow_it() {
     cellar_chest.slots[0] = inventory.slots[1].take();
     world.insert_block_entity_at(cellar_pos, BlockEntity::Chest(cellar_chest));
 
-    world.clock = 20.0;
+    world.set_simulation_clock(20.0);
     world.tick_entities(20.0);
     let open = &world.alchemy_state().unwrap().containers[&open_id];
     let cellar = &world.alchemy_state().unwrap().containers[&cellar_id];
@@ -1665,7 +1667,7 @@ fn large_alchemy_census_stays_inside_save_wire_and_server_tick_budgets() {
 
     let mut world = super::implements::embodied_implements_world("alchemy-budget-ticks");
     world.alchemy_state = Some(state);
-    world.clock = 1.0;
+    world.set_simulation_clock(1.0);
     let maintenance_started = Instant::now();
     world.tick_alchemy(128).unwrap();
     assert!(
@@ -1725,7 +1727,7 @@ fn preparation_modifiers_are_closed_and_expire_without_hidden_state() {
     assert!(active.trace_sight > 0);
     assert_eq!(active.throughput_permille, 1_000);
     assert!(!active.storm_warning);
-    world.clock = 6.0;
+    world.set_simulation_clock(6.0);
     assert_eq!(world.preparation_modifiers(actor).trace_sight, 0);
 }
 
@@ -1762,7 +1764,7 @@ fn settling_draught_limits_new_working_strain_without_erasing_existing_strain() 
             overdose_until_tick: 0,
         }],
     );
-    world.clock = 1.0;
+    world.set_simulation_clock(1.0);
     let result = world
         .tick_preparation_statuses(
             actor,
@@ -1934,7 +1936,7 @@ fn embodied_hearth_batch_is_exact_transactional_and_cannot_overfill() {
             },
         );
     }
-    world.clock = 100.0;
+    world.set_simulation_clock(100.0);
     operate(
         &mut world,
         &mut inventory,
@@ -2037,7 +2039,7 @@ fn embodied_hearth_batch_is_exact_transactional_and_cannot_overfill() {
         .copied()
         .unwrap();
     let expires_before = world.alchemy_state().unwrap().containers[&stored_id].expires_tick;
-    world.clock += 20.0;
+    world.set_simulation_clock(world.clock() + 20.0);
     assert_eq!(
         world
             .age_preparation_storage(stored_stack, 50_000, 400)
@@ -2541,7 +2543,7 @@ fn ordinary_carriers_use_timed_apparatus_without_free_water_or_magic_yield() {
     );
     assert!(early.unwrap_err().contains("still needs"));
     let due = world.alchemy_state().unwrap().ordinary_jobs[&basin].due_tick;
-    world.clock = (due + 1) as f64 / 20.0;
+    world.set_simulation_clock((due + 1) as f64 / 20.0);
     let fermented = operate(
         &mut world,
         &mut inventory,
@@ -2578,7 +2580,7 @@ fn ordinary_carriers_use_timed_apparatus_without_free_water_or_magic_yield() {
         ApparatusAction::PressOil { seed_slot: 0 },
     );
     let due = world.alchemy_state().unwrap().ordinary_jobs[&mortar].due_tick;
-    world.clock = (due + 1) as f64 / 20.0;
+    world.set_simulation_clock((due + 1) as f64 / 20.0);
     let oil = operate(
         &mut world,
         &mut inventory,
@@ -2672,7 +2674,7 @@ fn ordinary_automation_uses_the_same_timing_inputs_and_yield_as_manual_control()
     assert_eq!(manual_job.due_tick, automated_job.due_tick);
     assert_eq!(manual_job.input_materials, automated_job.input_materials);
     assert_eq!(manual_job.output_count, automated_job.output_count);
-    world.clock = (manual_job.due_tick + 1) as f64 / 20.0;
+    world.set_simulation_clock((manual_job.due_tick + 1) as f64 / 20.0);
     let manual_result = operate_as(
         &mut world,
         &mut manual_inventory,

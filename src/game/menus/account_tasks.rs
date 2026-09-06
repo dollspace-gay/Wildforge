@@ -1,8 +1,8 @@
 //! Account tasks menu actions.
 
-use crate::identity;
 use crate::game::Game;
 use crate::game::navigation::AccountTaskResult;
+use crate::identity;
 
 impl Game {
     pub(in crate::game) fn start_account_link(&mut self) {

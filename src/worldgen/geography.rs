@@ -1,18 +1,18 @@
 //! Immutable geography queries with no content bindings or chunk output API.
 
+use noise::Perlin;
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
-use noise::Perlin;
 
 use super::{ProvinceKey, ProvinceLabel, Spline, hash2};
 use crate::planet::SurfacePos;
 use crate::planet_atlas::PlanetAtlas;
 
 mod climate;
+mod deposits;
+mod prospecting;
 mod provinces;
 mod relief;
-mod prospecting;
-mod deposits;
 
 /// Owns seeded climate and province classification, including the derived label
 /// cache. Generation and guest observations share this algorithm without giving
@@ -78,7 +78,13 @@ impl Geography {
         )
     }
 
-    fn radial_noise_at(noise: &Perlin, pos: SurfacePos, y: f64, scale: f64, offset: [f64; 3]) -> f32 {
+    fn radial_noise_at(
+        noise: &Perlin,
+        pos: SurfacePos,
+        y: f64,
+        scale: f64,
+        offset: [f64; 3],
+    ) -> f32 {
         crate::climate::radial_noise(noise, pos, y, scale, offset)
     }
 

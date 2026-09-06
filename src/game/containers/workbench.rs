@@ -1,19 +1,24 @@
 //! Workbench graphical containers adapter.
 
+use super::recipe_gates_met;
 use crate::audio::Sfx;
-use crate::inventory;
+use crate::game::Game;
 use crate::inventory::ItemStack;
 use crate::world;
-use crate::game::Game;
-use super::recipe_gates_met;
 
 impl Game {
     /// Craft a workbench recipe from the inventory (capability E7). The
     /// screen lists the machine's `station` recipes; clicking one consumes
     /// one of each ingredient and adds the output, exactly like the free
     /// grid but bound to the machine rather than the player's hands.
-    pub(in crate::game) fn workbench_craft(&mut self, pos: crate::planet::BlockPos, recipe_index: usize) {
-        if self.reject_guest_action() { return; }
+    pub(in crate::game) fn workbench_craft(
+        &mut self,
+        pos: crate::planet::BlockPos,
+        recipe_index: usize,
+    ) {
+        if self.reject_guest_action() {
+            return;
+        }
         let reg = self.content.reg.clone();
         let Some(world::BlockEntity::Multiblock(m)) = self.runtime.view().block_entity_at(&pos)
         else {

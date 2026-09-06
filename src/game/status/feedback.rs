@@ -1,7 +1,6 @@
 //! Feedback graphical status adapter.
 
 use crate::audio::Sfx;
-use crate::world;
 use crate::game::Game;
 
 impl Game {
@@ -48,8 +47,13 @@ impl Game {
         let Some(t) = self.runtime.local().world.template(name).cloned() else {
             return vec![format!("no template named {name}")];
         };
-        match self.runtime.local_mut().world.stamp_instant(&t, pos, rot, &mut self.inventory, self.creative)
-        {
+        match self.runtime.local_mut().world.stamp_instant(
+            &t,
+            pos,
+            rot,
+            &mut self.inventory,
+            self.creative,
+        ) {
             Ok(msg) => vec![msg],
             Err(error) => vec![format!("stamp {name}: {error}")],
         }

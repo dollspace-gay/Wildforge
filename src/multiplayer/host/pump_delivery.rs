@@ -125,6 +125,5 @@ impl HostSession {
         for id in changed {
             self.send_player_state(id);
         }
-
     }
 }

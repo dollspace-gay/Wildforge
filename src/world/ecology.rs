@@ -1,16 +1,16 @@
 //! Authoritative population access and coordinated mob manifestation.
 
-use crate::world::World;
 use crate::mobs::Mob;
 use crate::planet::EntityPos;
+use crate::world::World;
 
-mod items;
 mod death;
 mod habitat;
-mod wildlife;
-mod step;
-mod projectiles;
 mod hostiles;
+mod items;
+mod projectiles;
+mod step;
+mod wildlife;
 
 #[derive(Clone, Debug)]
 pub struct SettledMobDeath {
@@ -19,7 +19,6 @@ pub struct SettledMobDeath {
 }
 
 impl World {
-
     pub fn mobs(&self) -> &[Mob] {
         self.population.mobs()
     }
@@ -28,6 +27,7 @@ impl World {
         self.population.mobs_mut()
     }
 
+    #[cfg(test)]
     pub fn mob(&self, index: usize) -> Option<&Mob> {
         self.population.mob(index)
     }
@@ -44,6 +44,7 @@ impl World {
         self.population.mob_by_id_mut(id)
     }
 
+    #[cfg(test)]
     pub fn mob_count(&self) -> usize {
         self.population.mob_count()
     }
@@ -118,6 +119,7 @@ impl World {
         self.population.push_mob(mob);
     }
 
+    #[cfg(test)]
     pub fn replace_mobs(&mut self, mobs: Vec<Mob>) {
         self.population.replace_mobs(mobs)
     }
@@ -125,5 +127,4 @@ impl World {
     pub fn for_each_mob_mut(&mut self, update: impl FnMut(&mut Mob)) {
         self.population.for_each_mob_mut(update)
     }
-
 }

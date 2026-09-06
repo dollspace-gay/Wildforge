@@ -5,20 +5,30 @@ use crate::world::{ReplicaWorld, WorldView};
 
 pub(super) enum PlayRuntime {
     Local(Box<Server>),
-    Guest { world: Box<ReplicaWorld>, time_of_day: f32 },
+    Guest {
+        world: Box<ReplicaWorld>,
+        time_of_day: f32,
+    },
 }
 
 impl PlayRuntime {
-    pub(super) fn is_guest(&self) -> bool { matches!(self, Self::Guest { .. }) }
+    pub(super) fn is_guest(&self) -> bool {
+        matches!(self, Self::Guest { .. })
+    }
 
-    pub(super) fn local_session(server: Server) -> Self { Self::Local(Box::new(server)) }
+    pub(super) fn local_session(server: Server) -> Self {
+        Self::Local(Box::new(server))
+    }
 
     pub(super) fn set_local(&mut self, server: Server) {
         *self = Self::local_session(server);
     }
 
     pub(super) fn set_guest(&mut self, world: ReplicaWorld, time_of_day: f32) {
-        *self = Self::Guest { world: Box::new(world), time_of_day };
+        *self = Self::Guest {
+            world: Box::new(world),
+            time_of_day,
+        };
     }
 
     pub(super) fn view(&self) -> WorldView<'_> {
@@ -53,7 +63,11 @@ impl PlayRuntime {
         }
     }
 
-    pub(super) fn remap_loose_items(&mut self, old: &crate::registry::Registry, registry: &crate::registry::Registry) {
+    pub(super) fn remap_loose_items(
+        &mut self,
+        old: &crate::registry::Registry,
+        registry: &crate::registry::Registry,
+    ) {
         match self {
             Self::Local(server) => server.world.remap_loose_items(old, registry),
             Self::Guest { world, .. } => world.remap_loose_items(old, registry),
@@ -75,17 +89,30 @@ impl PlayRuntime {
     }
 
     pub(super) fn finish_craft(
-        &mut self, effects: crate::player_ops::craft::CraftEffects,
-        position: Option<crate::planet::BlockPos>, inventory: &mut crate::inventory::Inventory,
+        &mut self,
+        effects: crate::player_ops::craft::CraftEffects,
+        position: Option<crate::planet::BlockPos>,
+        inventory: &mut crate::inventory::Inventory,
     ) -> crate::player_ops::craft::CraftKind {
         match self {
-            Self::Local(server) => effects.finish(&mut server.world, position, inventory, true, "full inventory after crafting"),
-            Self::Guest { world, .. } => effects.finish_prediction(crate::world::TerrainRead::registry(world.as_ref()), inventory),
+            Self::Local(server) => effects.finish(
+                &mut server.world,
+                position,
+                inventory,
+                true,
+                "full inventory after crafting",
+            ),
+            Self::Guest { world, .. } => effects.finish_prediction(
+                crate::world::TerrainRead::registry(world.as_ref()),
+                inventory,
+            ),
         }
     }
 
     pub(super) fn click_container(
-        &mut self, position: crate::planet::BlockPos, cursor: &mut Option<crate::inventory::ItemStack>,
+        &mut self,
+        position: crate::planet::BlockPos,
+        cursor: &mut Option<crate::inventory::ItemStack>,
         request: crate::player_ops::container::Click,
     ) -> Result<crate::player_ops::container::Effect, crate::player_ops::container::Rejected> {
         match self {
@@ -94,16 +121,27 @@ impl PlayRuntime {
         }
     }
 
-    pub(super) fn present_mob_feeding(&mut self, id: u32, plan: crate::player_ops::feeding::FeedPlan) -> bool {
+    pub(super) fn present_mob_feeding(
+        &mut self,
+        id: u32,
+        plan: crate::player_ops::feeding::FeedPlan,
+    ) -> bool {
         let mob = match self {
             Self::Local(server) => server.world.mob_by_id_mut(id),
             Self::Guest { world, .. } => world.mob_by_id_mut(id),
         };
-        let Some(mob) = mob else { return false; };
+        let Some(mob) = mob else {
+            return false;
+        };
         plan.apply(mob)
     }
 
-    pub(super) fn present_ridden_mob(&mut self, id: u32, position: crate::planet::EntityPos, yaw: f32) {
+    pub(super) fn present_ridden_mob(
+        &mut self,
+        id: u32,
+        position: crate::planet::EntityPos,
+        yaw: f32,
+    ) {
         let mob = match self {
             Self::Local(server) => server.world.mob_by_id_mut(id),
             Self::Guest { world, .. } => world.mob_by_id_mut(id),
@@ -130,13 +168,19 @@ impl PlayRuntime {
     }
 
     pub(super) fn evict_chunks(
-        &mut self, candidates: Vec<crate::chunk::ChunkPos>,
+        &mut self,
+        candidates: Vec<crate::chunk::ChunkPos>,
     ) -> (crate::world::ResidencyReport, Vec<crate::chunk::ChunkPos>) {
         match self {
             Self::Local(server) => server.world.evict_chunks(candidates),
             Self::Guest { world, .. } => {
-                for &position in &candidates { world.unload_chunk(position); }
-                let report = crate::world::ResidencyReport { released: candidates.len(), ..Default::default() };
+                for &position in &candidates {
+                    world.unload_chunk(position);
+                }
+                let report = crate::world::ResidencyReport {
+                    released: candidates.len(),
+                    ..Default::default()
+                };
                 (report, candidates)
             }
         }
@@ -153,12 +197,17 @@ impl PlayRuntime {
 
     pub(super) fn present_loose_item(&mut self, item: crate::entity::ItemEntity) {
         match self {
-            Self::Local(server) => { server.world.spawn_loose_item(item); }
+            Self::Local(server) => {
+                server.world.spawn_loose_item(item);
+            }
             Self::Guest { world, .. } => world.present_loose_item(item),
         }
     }
 
-    pub(super) fn settle_spawn_at(&mut self, wanted: crate::planet::EntityPos) -> crate::planet::EntityPos {
+    pub(super) fn settle_spawn_at(
+        &mut self,
+        wanted: crate::planet::EntityPos,
+    ) -> crate::planet::EntityPos {
         match self {
             Self::Local(server) => server.world.settle_spawn_at(wanted),
             Self::Guest { world, .. } => world.settle_spawn_at(wanted),
@@ -170,7 +219,9 @@ impl PlayRuntime {
             Self::Local(server) => server.world.mob_by_id_mut(id),
             Self::Guest { world, .. } => world.mob_by_id_mut(id),
         };
-        if let Some(mob) = mob { mob.hurt_flash = 0.35; }
+        if let Some(mob) = mob {
+            mob.hurt_flash = 0.35;
+        }
     }
 
     pub(super) fn time_of_day(&self) -> f32 {
@@ -193,7 +244,9 @@ impl super::Game {
     /// snapshots. Reject before charging inventory; supported actions send their
     /// explicit request instead. This does not introduce new protocol variants.
     pub(super) fn reject_guest_action(&mut self) -> bool {
-        if !self.runtime.is_guest() { return false; }
+        if !self.runtime.is_guest() {
+            return false;
+        }
         self.toast("This action is not supported in multiplayer yet.".into());
         self.input.right_held = false;
         self.input.action_cooldown = 0.35;

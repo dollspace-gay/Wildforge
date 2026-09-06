@@ -1,9 +1,9 @@
 //! Cave carving consumes the pre-carve top map without changing it.
 
 use super::Generator;
+use super::{ATLAS_CAVE_ROOF, RING};
 use crate::chunk::{CHUNK_X, CHUNK_Y, CHUNK_Z, Chunk, ChunkPos, SEA_LEVEL};
 use crate::registry::AIR;
-use super::{ATLAS_CAVE_ROOF, RING};
 
 impl Generator {
     pub(super) fn carve(&self, pos: ChunkPos, c: &mut Chunk, shape_top: &[[i32; RING]; RING]) {
@@ -57,6 +57,5 @@ impl Generator {
                 }
             }
         }
-
     }
 }

@@ -1,15 +1,14 @@
 //! Industry capture scene construction.
 
-use crate::world::TerrainRead;
+use super::DemoChart;
+use crate::game::Game;
 use crate::inventory::ItemStack;
+use crate::planet::EntityPos;
 use crate::registry::AIR;
 use crate::world;
-use crate::game::Game;
-use crate::planet::{BlockPos, EntityPos, Face, SurfacePos};
-use super::DemoChart;
 
 impl Game {
-    pub(in crate::game) fn stage_capture_steelworks(&mut self, spawn: EntityPos, chart: DemoChart) {
+    pub(super) fn stage_capture_steelworks(&mut self, spawn: EntityPos, chart: DemoChart) {
         // Dev: a ready steelworks near spawn (bloomery shell + anvil +
         // materials) for screenshots and hands-on QA.
         if std::env::var("WILDFORGE_DEMO_STEELWORKS").is_ok() {
@@ -45,7 +44,14 @@ impl Game {
                             if rx == 0 && rz == 0 {
                                 continue;
                             }
-                            demo_set!(self.runtime.local_mut().world, chart, sx + rx, sy + ly, sz + rz, fb);
+                            demo_set!(
+                                self.runtime.local_mut().world,
+                                chart,
+                                sx + rx,
+                                sy + ly,
+                                sz + rz,
+                                fb
+                            );
                         }
                     }
                     demo_set!(
@@ -58,7 +64,14 @@ impl Game {
                     );
                 }
                 demo_set!(self.runtime.local_mut().world, chart, sx - 1, sy, sz, mouth);
-                demo_set!(self.runtime.local_mut().world, chart, sx - 3, sy, sz + 2, anvil);
+                demo_set!(
+                    self.runtime.local_mut().world,
+                    chart,
+                    sx - 3,
+                    sy,
+                    sz + 2,
+                    anvil
+                );
                 // A second stack, already charged and burning.
                 let (lx, lz) = (sx, sz + 8);
                 let ly = floor_y + 1;
@@ -68,7 +81,14 @@ impl Game {
                             if rx == 0 && rz == 0 {
                                 continue;
                             }
-                            demo_set!(self.runtime.local_mut().world, chart, lx + rx, ly + dy, lz + rz, fb);
+                            demo_set!(
+                                self.runtime.local_mut().world,
+                                chart,
+                                lx + rx,
+                                ly + dy,
+                                lz + rz,
+                                fb
+                            );
                         }
                     }
                     demo_set!(
@@ -100,7 +120,11 @@ impl Game {
                         (lx - 1, ly, lz),
                         world::BlockEntity::Multiblock(st)
                     );
-                    let _ = self.runtime.local_mut().world.light_bloomery_at(chart.block(lx - 1, ly, lz));
+                    let _ = self
+                        .runtime
+                        .local_mut()
+                        .world
+                        .light_bloomery_at(chart.block(lx - 1, ly, lz));
                 }
                 // A bloom resting on the anvil, ready for the hammer.
                 if let Some(bl) = reg2.item_id("base:steel_bloom") {
@@ -129,7 +153,7 @@ impl Game {
         }
     }
 
-    pub(in crate::game) fn stage_capture_glassworks(&mut self, spawn: EntityPos, chart: DemoChart) {
+    pub(super) fn stage_capture_glassworks(&mut self, spawn: EntityPos, chart: DemoChart) {
         if std::env::var("WILDFORGE_DEMO_GLASSWORKS").is_ok() {
             let reg = self.content.reg.clone();
             let b = |n: &str| reg.block_id(n);
@@ -144,7 +168,14 @@ impl Game {
                             if rx == 0 && rz == 0 {
                                 continue;
                             }
-                            demo_set!(self.runtime.local_mut().world, chart, sx + rx, sy + ly, sz + rz, fb);
+                            demo_set!(
+                                self.runtime.local_mut().world,
+                                chart,
+                                sx + rx,
+                                sy + ly,
+                                sz + rz,
+                                fb
+                            );
                         }
                     }
                     demo_set!(
@@ -157,7 +188,14 @@ impl Game {
                     );
                 }
                 demo_set!(self.runtime.local_mut().world, chart, sx - 1, sy, sz, kiln);
-                demo_set!(self.runtime.local_mut().world, chart, sx - 3, sy, sz + 2, quern);
+                demo_set!(
+                    self.runtime.local_mut().world,
+                    chart,
+                    sx - 3,
+                    sy,
+                    sz + 2,
+                    quern
+                );
                 if let (Some(sand), Some(coal), Some(pow)) = (
                     reg.item_id("base:sand"),
                     reg.item_id("base:charcoal"),
@@ -178,7 +216,11 @@ impl Game {
                         (sx - 1, sy, sz),
                         world::BlockEntity::Multiblock(st)
                     );
-                    let _ = self.runtime.local_mut().world.light_kiln_at(chart.block(sx - 1, sy, sz));
+                    let _ =
+                        self.runtime
+                            .local_mut()
+                            .world
+                            .light_kiln_at(chart.block(sx - 1, sy, sz));
                 }
                 for (name, n) in [
                     ("base:sand", 16),
@@ -229,7 +271,14 @@ impl Game {
                             }
                         }
                         demo_set!(self.runtime.local_mut().world, chart, tx2, ty2, z, torch);
-                        demo_set!(self.runtime.local_mut().world, chart, tx2 + 1, ty2, z, *pane);
+                        demo_set!(
+                            self.runtime.local_mut().world,
+                            chart,
+                            tx2 + 1,
+                            ty2,
+                            z,
+                            *pane
+                        );
                     }
                 }
                 // A stained window row so the tint shows in shots.
@@ -247,8 +296,22 @@ impl Game {
                 .enumerate()
                 {
                     if let Some(gb) = b(g) {
-                        demo_set!(self.runtime.local_mut().world, chart, wx, wy, wz + i as i32, gb);
-                        demo_set!(self.runtime.local_mut().world, chart, wx, wy + 1, wz + i as i32, gb);
+                        demo_set!(
+                            self.runtime.local_mut().world,
+                            chart,
+                            wx,
+                            wy,
+                            wz + i as i32,
+                            gb
+                        );
+                        demo_set!(
+                            self.runtime.local_mut().world,
+                            chart,
+                            wx,
+                            wy + 1,
+                            wz + i as i32,
+                            gb
+                        );
                     }
                 }
             }

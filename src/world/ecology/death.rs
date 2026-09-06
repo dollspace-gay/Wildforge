@@ -1,9 +1,9 @@
 //! Mob death, harvest, hacking, and ordered Current/material disposition.
 
-use crate::world::World;
 use super::SettledMobDeath;
 use crate::inventory::ItemStack;
 use crate::planet::EntityPos;
+use crate::world::World;
 
 impl World {
     pub(super) fn arcane_region_at(&self, pos: EntityPos) -> Option<crate::planet_atlas::AtlasPos> {
@@ -253,7 +253,9 @@ impl World {
         radius: f32,
     ) -> Option<usize> {
         let reg = self.reg.clone();
-        let idx = self.population.mobs()
+        let idx = self
+            .population
+            .mobs()
             .iter()
             .enumerate()
             .filter(|(_, m)| {

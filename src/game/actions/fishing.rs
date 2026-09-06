@@ -1,17 +1,18 @@
 //! Fishing in the ordered graphical action pipeline.
 
-use crate::game::Game;
-use crate::world::TerrainRead;
+use super::ActionFrame;
 use crate::audio::Sfx;
+use crate::game::Game;
 use crate::inventory::ItemStack;
 use crate::raycast;
-use super::ActionFrame;
+use crate::world::TerrainRead;
 
 impl Game {
     pub(in crate::game) fn interact_fishing(&mut self, frame: &ActionFrame) -> bool {
         let reg = &frame.reg;
-        let hit = &frame.hit;
-        let rod_held = frame.held.is_some_and(|item| frame.reg.item(item).name == "base:fishing_rod");
+        let rod_held = frame
+            .held
+            .is_some_and(|item| frame.reg.item(item).name == "base:fishing_rod");
         // Rod clicks live outside the block-hit path: open water is
         // rarely a solid target. Strike on a bite, reel in early, or
         // cast at the first water the look-ray touches.
@@ -20,18 +21,25 @@ impl Game {
             self.input.right_held = false;
             match self.interaction.fishing.take() {
                 Some((bobber, _, bite)) if bite > 0.0 => {
-                    if self.reject_guest_action() { return true; }
+                    if self.reject_guest_action() {
+                        return true;
+                    }
                     // The strike: a real fish first, thin luck second.
-                    let caught = self.runtime.local_mut().world.catch_fish_near_at(bobber, 6.0).is_some()
+                    let caught = self
+                        .runtime
+                        .local_mut()
+                        .world
+                        .catch_fish_near_at(bobber, 6.0)
+                        .is_some()
                         || self.rand01() < 0.25;
                     if caught {
                         if let Some(fish) = reg.item_id("base:raw_fish") {
-                            let left = self.inventory.add(&reg, fish, 1);
+                            let left = self.inventory.add(reg, fish, 1);
                             if left > 0 {
-                                self.drop_stack(ItemStack::new(&reg, fish, left));
+                                self.drop_stack(ItemStack::new(reg, fish, left));
                             }
                         }
-                        self.inventory.wear_tool(&reg, self.input.hotbar_sel);
+                        self.inventory.wear_tool(reg, self.input.hotbar_sel);
                         self.sfx(Sfx::Pickup);
                         self.grant_xp("fish");
                     } else {

@@ -1,10 +1,10 @@
 //! Dross reconciliation chunks transaction coordination.
 
-use crate::planet::BlockPos;
 use crate::chunk::CHUNK_X;
 use crate::chunk::CHUNK_Y;
 use crate::chunk::CHUNK_Z;
 use crate::chunk::ChunkPos;
+use crate::planet::BlockPos;
 use crate::world::World;
 
 impl World {
