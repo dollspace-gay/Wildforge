@@ -22,6 +22,7 @@ Each row identifies its owning domain and the next concrete review trigger.
 
 | Exact file | Domain and scope of change | Next review point |
 |---|---|---|
+| `src/workings.rs` | Declarative effect and transaction schemas retain their historical codec/migration surface; the ordered effect-position query now also serves live execution. | Next workings schema or recovery version change; retain exact historical DTO fixtures. |
 | `src/agent/mod.rs` | Agent composition retains its public facade while using shared GuestSession and independent ReplicaWorld. | Next agent lifecycle or MCP surface change. |
 | `src/agent/work.rs` | Agent task policies send network actions and read the replica; they are distinct from authoritative player transaction rules. | Next task/navigation workflow change; separate action families with native parity evidence. |
 | `src/mesher.rs` | CPU voxel mesh emission consumes TerrainRead; vertex ordering, face/material rules and lighting interpolation remain the existing algorithm. | Next meshing performance or material-emission change, with pinned buffers and actual GPU captures. |

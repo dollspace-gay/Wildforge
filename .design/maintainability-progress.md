@@ -2299,3 +2299,29 @@ The new full GPU campaign is running at
 and independently prepares both cracked-geode/closeout fixtures. Its 92 still
 captures, 56 native motion frames, visual review and qualification remain pending.
 The original campaign remains unchanged until a fresh complete result qualifies.
+
+
+## Independent generation comparison
+
+The same disposable test probe on main `8c1ec408` and candidate `70de48ac`
+produces exactly matching atlas/stage checksums and 54 chunk SHA-256 values.
+Three seeds cover all six faces at center/edge/corner chunks. Each revision also
+asserts equality across serial/parallel atlas generation, 1/2/4 chunk workers,
+and forward/reverse request orders. The byte corpus includes block metadata,
+water salt, soil salinity, lighting and ordered hydrology-volume records.
+[The experiment and full probe](generation-compatibility.md) and
+[matching hashes](generation-compatibility.json) make the check reproducible.
+Both runs pass; their test-only instrumentation never changes the frozen GPU
+candidate. This is finite fixture evidence, not an all-seeds proof.
+
+The refreshed compiler-backed function report is complete (`functions-2`);
+its size/cognitive-complexity findings remain advisory and are not suppressed.
+An additional exact size exception records the existing workings schema/codec
+surface now exporting the shared effect-position query. Every migrated/new
+source above 500 lines has a corresponding exact review entry.
+
+The completed `d6dccef` hosted subsystem log confirms the same seven local
+failures: two already-corrected empty-chunk palette fixtures and five stale GPU
+fingerprints. Its 1,137 other scenarios pass. No additional hosted-only regression
+was found. The superseded `70de48ac` workflow was cancelled after its other six
+jobs passed; the current head retains the complete required workflow.
