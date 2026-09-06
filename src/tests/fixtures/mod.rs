@@ -3,3 +3,5 @@
 mod host;
 
 pub(crate) use host::TestHost;
+
+pub(in crate::tests) mod geography;

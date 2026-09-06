@@ -185,21 +185,7 @@ impl World {
             .operation_id()
             .map_err(|error| error.to_string())?;
         if let Some(record) = next_state.instances.get_mut(&output.arcane_id) {
-            let instability = match &record.kind {
-                ImplementKind::Wand { resolved, .. } => u64::from(
-                    1_000u16
-                        .saturating_sub(resolved.stability)
-                        .saturating_add(resolved.saturation_instability),
-                ),
-                ImplementKind::Charm { stability, .. } => {
-                    u64::from(1_000u16.saturating_sub(*stability))
-                }
-                ImplementKind::Vessel { containment, .. } => {
-                    u64::from(1_000u16.saturating_sub(*containment))
-                }
-                ImplementKind::Fragments { .. } => 1_000,
-            }
-            .max(25);
+            let instability = super::implement_instability(&record.kind);
             record.strain = record
                 .strain
                 .saturating_add(amount.saturating_mul(instability).div_ceil(350) as u32)

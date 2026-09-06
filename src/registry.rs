@@ -193,3 +193,9 @@ fn qualify(modid: &str, name: &str) -> String {
 mod arcane_schema_tests;
 #[cfg(test)]
 mod npc_spec_tests;
+
+/// Minimal linked definitions for ownership tests that do not access game content.
+#[cfg(test)]
+pub(crate) fn empty_for_test() -> Registry {
+    linking::build(Vec::new(), Vec::new())
+}

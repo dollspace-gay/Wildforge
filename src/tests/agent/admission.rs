@@ -66,6 +66,19 @@ fn delivered(host: &TestHost, agent: &mut Agent, marker: &str) {
     }));
 }
 
+fn refused(agent: &mut Agent) {
+    assert!(
+        pump_until(agent, Duration::from_secs(5), |agent| {
+            agent
+                .events
+                .iter()
+                .any(|event| event.starts_with("refused: "))
+        }),
+        "entry did not report refusal: {:?}",
+        agent.events
+    );
+}
+
 fn ready_messages(host: &TestHost, agent: &Agent) -> usize {
     let marker = "entry-outgoing-barrier";
     agent.send(&C2S::Chat(marker.into()));
@@ -123,7 +136,8 @@ fn malformed_entry_chunks_do_not_acknowledge_terrain_or_accept_entry() {
     assert!(!agent.in_world);
     assert_eq!(ready_messages(&host, &agent), 0);
     host.with(|session, _| session.net.send(agent.my_id, &S2C::EntryAccepted));
-    delivered(&host, &mut agent, "premature-acceptance-delivered");
+    // Refusal terminates this batch; a later toast is not a delivery barrier.
+    refused(&mut agent);
     assert!(!agent.in_world);
     assert!(
         agent
@@ -138,7 +152,7 @@ fn a_new_welcome_cannot_reuse_acknowledgement_from_the_previous_world() {
     let (host, mut agent) = paused_host("entry-replaced");
     welcome(&host, &agent);
     host.with(|session, _| session.net.send(agent.my_id, &S2C::EntryAccepted));
-    delivered(&host, &mut agent, "replacement-acceptance-delivered");
+    refused(&mut agent);
     assert!(!agent.in_world);
     assert_eq!(ready_messages(&host, &agent), 0);
     assert!(

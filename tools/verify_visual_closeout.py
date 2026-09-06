@@ -188,14 +188,7 @@ def build_closeout_readability(baseline_commit: str = STRATA_BASELINE_COMMIT) ->
         source_reports.add(path.as_posix())
         pre = SHARED.named_stratum(report, "marble", "pre-fog")
         end = SHARED.named_stratum(report, "marble", "fog")
-        passed = (
-            float(pre["expected_fog_blend"]) <= float(end["expected_fog_blend"])
-            and float(end["expected_fog_blend"]) >= 0.999
-            and float(end["rms_contrast_4px"]) <= float(pre["rms_contrast_4px"]) + 2.0 / 255.0
-            and float(end["rms_contrast_16px"]) <= float(pre["rms_contrast_16px"]) + 2.0 / 255.0
-            and float(end["silhouette_weber_magnitude"])
-            <= float(pre["silhouette_weber_magnitude"]) + 2.0 / 255.0
-        )
+        passed = SHARED.fog_endpoint_passes(pre, end)
         fog.append(
             {
                 "condition": condition,
@@ -207,31 +200,7 @@ def build_closeout_readability(baseline_commit: str = STRATA_BASELINE_COMMIT) ->
             }
         )
 
-    family_distinction = []
-    pale = tuple(cases)
-    for rock in pale:
-        for band in ("near", "middle"):
-            row = representatives[(rock, band)]
-            distinct = []
-            for other in pale:
-                if other == rock:
-                    continue
-                candidate = representatives[(other, band)]
-                structure_delta = abs(
-                    float(row["rms_contrast_16px"]) - float(candidate["rms_contrast_16px"])
-                )
-                chroma_delta = abs(float(row["median_chroma"]) - float(candidate["median_chroma"]))
-                if structure_delta >= 0.005 or chroma_delta >= 0.005:
-                    distinct.append(other)
-            family_distinction.append(
-                {
-                    "rock": rock,
-                    "distance_band": band,
-                    "distinguishable_from": distinct,
-                    "minimum_distinct_families": 2,
-                    "passed": len(distinct) >= 2,
-                }
-            )
+    family_distinction = SHARED.distinguish_families(cases, representatives)
 
     baseline_path, baseline_dark_report = SHARED.named_report("baseline", "basalt-v4-near-noon-gemini")
     closeout_path, closeout_dark_report = SHARED.named_report("closeout", "basalt-v4-near-noon-gemini")

@@ -38,10 +38,15 @@ Each row identifies its owning domain and the next concrete review trigger.
 | `tools/verify_visual_polish.py` | Campaign-specific visual interpretation retains its own thresholds and layout semantics; common file/scalar helpers are shared. | Next campaign schema/metric change; split semantic metric families without weakening evidence. |
 | `tools/verify_visual_closeout.py` | Closeout-specific grouping and acceptance remain distinct from ordinary visual metrics; common IO is shared. | Next closeout manifest change, with malformed and incomplete evidence fixtures. |
 
-## Final test organization
+## Scenario organization
 
-The remaining large scenario files and inline test families are reviewed during
-the final testing phase. They must receive cohesive scenario modules or their own
-specific exception before acceptance. This includes world, multiplayer, ecology,
-agent, rendering and visual-evidence checks, plus inline tooltip/spawn/host tests.
-This paragraph is an outstanding task, not a test-directory exemption.
+World, multiplayer, agent, ecology, rendering, workings, implements, alchemy,
+machines, mobs, hydrology, dross, water-cycle, climate and interior scenarios now
+have operation-focused modules. Shared setup stays in each parent; reusable
+geography selection lives in tests/fixtures. Tooltip, spawn and host identity
+cases are separate modules. Visual qualification schemas and validation stages
+have distinct files under visual_capture without changing acceptance thresholds.
+
+| Exact file | Domain and reason retained | Next review point |
+|---|---|---|
+| `src/tests/multiplayer/loopback_join_stream_and_edit.rs` | A single real QUIC scenario follows admission, registry/chunk/lighting receipt, authoritative edits and guest feedback with one pair of endpoints. Shared loopback setup is already outside it. Keeping this stateful compatibility sequence intact makes the wire ordering visible. | Next wire/admission version; introduce named phase helpers with a typed scenario context if the sequence grows. |

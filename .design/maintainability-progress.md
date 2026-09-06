@@ -2204,3 +2204,35 @@ compiler integration attempts, `clippy-2` (pass), architecture reports and Pytho
 fixture runs. No runtime, fresh GPU campaign, or final-head CI acceptance is
 claimed. Test organization, transaction/unsafe regression additions and the
 complete final gates remain in progress.
+
+## Scenario and final verification checkpoint
+
+Fifteen large subsystem/agent files now group scenarios by operation, with shared
+setup in their parent or tests/fixtures. Existing test names and top-level lane
+filters are preserved. Tooltip, spawn and host identity tests are separate;
+visual capture schemas and ordinary/geode/closeout validators have named owners.
+The single long real-QUIC admission-to-edit sequence has an exact size review.
+
+Added regressions cover barter identity/overflow/partial-staging rollback,
+authority-versus-replica container mutations and refusals, food/equipment/feeding
+admission, and nested/unwinding/thread-local script reads. Ten player-operation
+tests pass. Three scoped script tests pass normally and under Miri on nightly
+1.99.0 (2026-08-08), using real ReplicaWorld/WorldView owners with minimal linked
+content. The first Miri attempt was interrupted during unnecessary full base
+content setup; `miri-2` completed all three checks in 10.65 seconds.
+
+The agent runner on `1ce1bdd` exposed two test synchronization errors: a toast
+following a rejected EntryAccepted message is not a valid completion barrier,
+because refusal terminates the batch. Both failures reproduced locally. Those
+scenarios now wait for the actual refusal event, retaining empty-terrain,
+not-in-world and zero-EntryReady assertions. All 20 serial real-QUIC agent tests
+now pass (`agent-tests-1`). Strict Clippy (`final-clippy-1`) and all 53 Python
+fixtures (`python-5`) pass. The latest directory/boundary reports show 126 guided
+directories and 486 protected source files, with no findings.
+
+The clone review found duplicated fog/family acceptance arithmetic in the two
+visual verifiers and one recharge-instability rule. These now have shared
+implementations; different campaign output fields and transfer strain divisors
+remain explicit. The complete subsystem run, compiler function report, remaining
+build gates and fresh native/full-GPU campaign are still in progress. Historical
+capture manifests are unchanged and cannot validate this source head.

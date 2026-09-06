@@ -76,6 +76,23 @@ fn implement_transfer_properties(kind: &ImplementKind) -> (u64, u64, u16) {
     }
 }
 
+/// Physical instability shared by incoming recharge paths.
+fn implement_instability(kind: &ImplementKind) -> u64 {
+    match kind {
+        ImplementKind::Wand { resolved, .. } => u64::from(
+            1_000u16
+                .saturating_sub(resolved.stability)
+                .saturating_add(resolved.saturation_instability),
+        ),
+        ImplementKind::Charm { stability, .. } => u64::from(1_000u16.saturating_sub(*stability)),
+        ImplementKind::Vessel { containment, .. } => {
+            u64::from(1_000u16.saturating_sub(*containment))
+        }
+        ImplementKind::Fragments { .. } => 1_000,
+    }
+    .max(25)
+}
+
 fn apparatus_neighbors(pos: BlockPos) -> Vec<BlockPos> {
     let mut out = horizontal_neighbors(pos);
     out.extend([1, -1].into_iter().filter_map(|dy| pos.offset(0, dy, 0)));

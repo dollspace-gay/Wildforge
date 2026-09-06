@@ -492,3 +492,6 @@ impl ScriptHost {
         crate::identity::atomic_write(&path, text.as_bytes(), false)
     }
 }
+
+#[cfg(test)]
+mod context_tests;
