@@ -96,3 +96,8 @@ These are application coordinators, while shared rules remain in player_ops.
 selection use typed owned results; entity, station, weather, overlay, and hand
 geometry are assembled into explicit batches before FrameInput submission.
 Capture milestones and renderer error handling remain after the same submission.
+
+`ui.rs` owns the screen batch and ordered composition; `ui/` groups menu,
+station/storage, journal/loadout, HUD, and world-label painters. Shared inventory
+rendering remains in inventory_ui and inventory_panel. The batch is published
+before the final tooltip even when a selected screen has no available data.

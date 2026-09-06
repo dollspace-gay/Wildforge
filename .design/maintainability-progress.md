@@ -2034,3 +2034,16 @@ review. Existing characterization tests remain at the parent until final test
 organization. No compiler/format/tests/analyzers or GPU runs occurred. Fresh
 framing, movement, sky/lighting/weather, native, motion, and timing proof remains
 required before accepting the extraction.
+
+
+## UI screen composition checkpoint
+
+- Replaced the monolithic UI dispatcher with named screen-family painters and
+  shared layout helpers. The parent still owns one UiBatch and the same menu-only,
+  status/HUD, panel, publication, and final-tooltip order.
+- Preserved the existing inventory painter directly, avoiding an extra forwarding
+  method. Drawing consumes existing runtime observations and does not gain a
+  simulation mutation path. New screen modules remain below the 500-line review
+  threshold before final formatting.
+- Implementation checkpoint only: tests, formatting, Rust gates, native interaction,
+  and actual GPU captures are deferred to the requested final verification phase.
