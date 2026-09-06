@@ -2152,3 +2152,19 @@ required before accepting the extraction.
 - New directories have local guides and source modules remain below 500 lines
   before final formatting. This is an implementation checkpoint only; final Rust,
   UI/session/parity, native and actual GPU evidence is still pending.
+
+
+## Installation, sidecar, discovery and dross coordination checkpoint
+
+- Split physical-machine World adapters by admission/operation responsibility;
+  retained shared shell recognition and BlockRead/BlockStore interfaces. Shared
+  bloomery/forge/kiln/separator algorithms now have named files and still serve
+  world and independent-structure callers without copied recipe rules.
+- Separated installation sidecar schema, writer and loader. Original accepted
+  versions, Serde defaults, text encoding, insertion order and charge/water/belt/
+  depot identity remain; each source module is below 500 lines before formatting.
+- Discovery and environmental dross now expose named custody, observation,
+  transport, scar, recovery and persistence coordinators over their existing
+  state/ledger owners. Pure qualitative discovery helpers remain shared.
+- New directories are guided. Structural implementation remains unverified until
+  the final compatibility, conservation/replay, compiler and native/GPU gates.
