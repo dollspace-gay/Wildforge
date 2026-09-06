@@ -2047,3 +2047,16 @@ required before accepting the extraction.
   threshold before final formatting.
 - Implementation checkpoint only: tests, formatting, Rust gates, native interaction,
   and actual GPU captures are deferred to the requested final verification phase.
+
+
+## Capture fixture organization checkpoint
+
+- Split the 2,900-line scene harness into named lighting/material, ecology,
+  industry, trade/storage, flow, override, and planet fixture modules. The parent
+  retains a visible ordered call list and the shared canonical chart/accounting
+  macros; authored scene bodies and environment selectors are preserved.
+- Preserved the lava fixture's early termination of later staging and repeated
+  UI/calendar override precedence. Alchemy and implement fixtures still use real
+  authority operations and the same inventory/profile custody sequence.
+- This is an unverified implementation checkpoint. Final Rust gates and a fresh
+  complete GPU campaign will validate the migrated fixtures and frame pipeline.
