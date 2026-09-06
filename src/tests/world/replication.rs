@@ -23,7 +23,7 @@ fn replicated_block_burst_preserves_state_and_settles_shared_lighting() {
     let torch_pos = bp(8, 90, 8);
     let water_pos = bp(9, 90, 8);
     let bytes = crate::world::encode_chunk_for_test(&crate::chunk::Chunk::new());
-    world.insert_remote_chunks([(torch_pos.chunk(), bytes.as_slice())], &[]);
+    world.insert_remote_chunks([(torch_pos.chunk(), bytes.as_slice())], &[AIR]);
     world
         .observations_mut()
         .set_arcane_cue([u8::MAX; 2], u8::MAX, None);

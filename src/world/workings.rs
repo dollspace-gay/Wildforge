@@ -10,6 +10,7 @@ use crate::workings::WorkingHandler;
 use crate::workings::WorkingPhase;
 use crate::workings::WorkingTargetSnapshot;
 use crate::workings::WorkingTransaction;
+use crate::workings::working_effect_positions as effect_path;
 use crate::world::BlockPos;
 use std::collections::BTreeMap;
 use std::collections::BTreeSet;
@@ -226,41 +227,6 @@ fn dross_medium(handler: WorkingHandler) -> DrossMedium {
         WorkingHandler::Fieldmend
         | WorkingHandler::SettlingRite
         | WorkingHandler::TransferCircle => DrossMedium::Soil,
-    }
-}
-
-fn effect_path(effect: &WorkingEffect) -> Vec<BlockPos> {
-    match effect {
-        WorkingEffect::Observe { origin, .. } => vec![*origin],
-        WorkingEffect::PointLight { source, target, .. } => vec![*source, *target],
-        WorkingEffect::Ignite {
-            fuel, fire_cell, ..
-        } => vec![*fuel, *fire_cell],
-        WorkingEffect::AdvancePlant(advance) => {
-            let mut path = vec![advance.pos];
-            path.extend(advance.soil_pos);
-            path.extend(advance.water_source);
-            path
-        }
-        WorkingEffect::TransferWater { from, to, .. } => vec![*from, *to],
-        WorkingEffect::Settle { controller, .. } => vec![*controller],
-        WorkingEffect::AdvanceBed {
-            controller, plants, ..
-        } => std::iter::once(*controller)
-            .chain(plants.iter().map(|plant| plant.pos))
-            .collect(),
-        WorkingEffect::Ward {
-            controller,
-            segments,
-            ..
-        } => std::iter::once(*controller)
-            .chain(segments.iter().map(|segment| segment.pos))
-            .collect(),
-        WorkingEffect::Impulse { source, target, .. }
-        | WorkingEffect::OperateMechanism { source, target, .. } => vec![*source, *target],
-        WorkingEffect::RepairItem { .. }
-        | WorkingEffect::Preserve { .. }
-        | WorkingEffect::TransferCurrent { .. } => Vec::new(),
     }
 }
 

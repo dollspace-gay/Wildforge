@@ -44,7 +44,8 @@ fn chunk_bytes(_reg: &Arc<Registry>) -> Vec<u8> {
 
 fn seed_empty(world: &mut ReplicaWorld, center: crate::chunk::ChunkPos) {
     let bytes = chunk_bytes(world.registry());
-    world.insert_remote_chunks([(center, bytes.as_slice())], &[]);
+    // The encoded empty chunk contains only wire ID zero; it still needs a palette.
+    world.insert_remote_chunks([(center, bytes.as_slice())], &[registry::AIR]);
 }
 
 #[test]

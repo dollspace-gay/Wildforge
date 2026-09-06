@@ -2236,3 +2236,28 @@ implementations; different campaign output fields and transfer strain divisors
 remain explicit. The complete subsystem run, compiler function report, remaining
 build gates and fresh native/full-GPU campaign are still in progress. Historical
 capture manifests are unchanged and cannot validate this source head.
+
+## Native readiness and refusal proof
+
+The two empty-terrain session failures were test-fixture palette errors: even an
+all-air encoded chunk requires wire ID zero to map to AIR. The session and two
+world fixture callers now supply that palette. All 34 client-session tests pass.
+MSRV 1.95.0, dependency advisories, workflow syntax, and doctests also pass
+(`client-session-tests-1`, `msrv-1`, `advisories-1`, `actionlint-1`, `doctests-1`).
+
+Native attempt 3 passes on NVIDIA RTX 5070 Ti Laptop discrete Vulkan hardware.
+It checks all four actual depot mouse interactions, first uploaded guest mesh,
+shared roster/chat with the real agent, 3.50 blocks of ordinary movement received
+by the host, unsupported boat use retaining inventory, full normal disconnect,
+and warm re-entry/disconnect. The renderer screenshot was inspected. This is an
+integration run with dirty-source provenance, retained under
+`target/maintainability/client-session-native/attempt-3`; the final clean build
+will supply a separate run. The proof now reports raw update percentiles, entry
+latency, initial terrain/mesh pending-work peak and process peak resident memory.
+It explicitly distinguishes test-profile functional timing from production GPU
+performance, and fresh guest state from a cold content/process initialization.
+
+The manual clone review found identical physical-route rules in restored working
+transactions and live World execution. Both now use the workings domain's ordered
+position query. AdvancePlant retains the same plant/soil/water order, and all
+other effect routes retain their former ordering and inventory-only empty route.

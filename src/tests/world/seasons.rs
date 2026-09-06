@@ -386,7 +386,7 @@ fn snow_trod_swaps_persists_melts_and_drops() {
     // Guest movement consumes read-only terrain; the host echo owns tread edits.
     let mut wr = ReplicaWorld::new(0, reg.clone(), 0.0);
     let bytes = crate::world::encode_chunk_for_test(&crate::chunk::Chunk::new());
-    wr.insert_remote_chunks([(print.chunk(), bytes.as_slice())], &[]);
+    wr.insert_remote_chunks([(print.chunk(), bytes.as_slice())], &[AIR]);
     wr.apply_remote_block_states([(ground, dirt, 0, 0, 0), (print, layer, 0, 0, 0)]);
     let _ = wr
         .view()

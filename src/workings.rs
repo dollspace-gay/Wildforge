@@ -1182,7 +1182,8 @@ fn legacy_working_source() -> BlockPos {
         .expect("legacy workings fallback is inside the finite planet")
 }
 
-fn working_effect_positions(effect: &WorkingEffect) -> Vec<BlockPos> {
+/// Ordered physical route shared by restored transactions and live execution.
+pub(crate) fn working_effect_positions(effect: &WorkingEffect) -> Vec<BlockPos> {
     match effect {
         WorkingEffect::Observe { origin, .. } => vec![*origin],
         WorkingEffect::PointLight { source, target, .. } => vec![*source, *target],

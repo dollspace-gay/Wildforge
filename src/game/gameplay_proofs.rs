@@ -22,6 +22,12 @@ use winit::window::{Window, WindowId};
 #[path = "gameplay_proofs/guest.rs"]
 mod guest;
 
+#[path = "gameplay_proofs/metrics.rs"]
+mod metrics;
+
+#[path = "gameplay_proofs/refusal.rs"]
+mod refusal;
+
 #[derive(Default)]
 struct ProofApp {
     failures: Vec<String>,
