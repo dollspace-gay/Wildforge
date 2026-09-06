@@ -22,3 +22,8 @@ The final implementation inventory is `maintainability-final.json`, compared
 against the recorded main baseline. [clone-review.md](clone-review.md) records
 retained candidate decisions and [source-size-review.md](source-size-review.md)
 records exact oversized-source exceptions. Neither file suppresses the analyzer.
+
+[maintainability-acceptance.md](maintainability-acceptance.md) consolidates the
+final criterion-to-proof mapping, gate commands and measurement limits.
+Generation hashes, native lifecycle observations and the selected hardware
+campaign complement the ordinary Rust/Python fixtures.

@@ -7,7 +7,9 @@ authoritative player operations, and world domains. Keep ordinary source files
 around 400 lines, use 500 lines as a soft review limit, and continuously report
 copy/paste candidates. Deliver small, tested slices that preserve the game.
 
-Status: implementation in progress on `refactor/engine-maintainability`.
+Status: architecture implementation and local qualification complete on
+`refactor/engine-maintainability`; see [acceptance evidence](maintainability-acceptance.md).
+Latest-head PR checks provide hosted acceptance.
 The user subsequently authorized the full migration and directory guidance.
 Track completed slices and remaining criteria in [the progress record](maintainability-progress.md).
 Originally prepared on 2026-09-05 from the working tree based on `8c1ec40`,
@@ -308,34 +310,34 @@ bucket counts explicitly.
 
 ## Acceptance Criteria
 
-- [ ] AC-1 (REQ-1): Each structural slice records unchanged save/codec fixtures,
+- [x] AC-1 (REQ-1): Each structural slice records unchanged save/codec fixtures,
   deterministic output checks, public API/MSRV status, and applicable gameplay gates.
-- [ ] AC-2 (REQ-2): Authoritative and replica owners are distinct; read consumers
+- [x] AC-2 (REQ-2): Authoritative and replica owners are distinct; read consumers
   compile against bounded queries and replicas lack authoritative persistence/generation APIs.
-- [ ] AC-3 (REQ-3): Both hosting paths use one terrain job owner; tests cover
+- [x] AC-3 (REQ-3): Both hosting paths use one terrain job owner; tests cover
   deduplication, priority, cancellation, stale completion, edits, and exactly-once adoption.
-- [ ] AC-4 (REQ-4): Graphical guest and agent use one admission/replication owner;
+- [x] AC-4 (REQ-4): Graphical guest and agent use one admission/replication owner;
   shared protocol scenarios plus real graphical/agent smoke checks pass.
-- [ ] AC-5 (REQ-5): Migrated local and network operations produce equivalent
+- [x] AC-5 (REQ-5): Migrated local and network operations produce equivalent
   authoritative results in success and rejection cases; their copied rule bodies are removed.
-- [ ] AC-6 (REQ-6): Extracted world domains own private state and behavior;
+- [x] AC-6 (REQ-6): Extracted world domains own private state and behavior;
   cross-domain transaction tests preserve accounting and side-effect order.
-- [ ] AC-7 (REQ-7): Named generation stages preserve pinned chunk/atlas output
+- [x] AC-7 (REQ-7): Named generation stages preserve pinned chunk/atlas output
   across worker counts and request orders and can be exercised independently.
-- [ ] AC-8 (REQ-8): Migrated content/UI/render/tool modules expose narrow APIs;
+- [x] AC-8 (REQ-8): Migrated content/UI/render/tool modules expose narrow APIs;
   registry remap/hot-reload, real UI actions, and affected render checks pass.
-- [ ] AC-9 (REQ-9): Every migrated/new oversized source file has a split or a
+- [x] AC-9 (REQ-9): Every migrated/new oversized source file has a split or a
   specific exception record; reports retain the 400/500 soft thresholds.
 - [x] AC-10 (REQ-10): The linter emits deterministic clone locations and JSON;
   tests cover comments, raw strings, literals, overlap, and advisory exit behavior.
-- [ ] AC-11 (REQ-11): A documented import/dependency contract and a check with
+- [x] AC-11 (REQ-11): A documented import/dependency contract and a check with
   intentionally violating fixtures cover each established architectural boundary.
-- [ ] AC-12 (REQ-12): Every slice records focused tests and applicable Rust gates;
+- [x] AC-12 (REQ-12): Every slice records focused tests and applicable Rust gates;
   controlled entry/travel tests report frame-time percentiles, queue depth, peak
   memory, and entry latency, with reproducible regressions resolved before acceptance.
-- [ ] AC-13 (REQ-13): Shutdown/world-switch tests leave no owned worker alive,
+- [x] AC-13 (REQ-13): Shutdown/world-switch tests leave no owned worker alive,
   reject old-session results, and report persistence failures without losing dirty state.
-- [ ] AC-14 (REQ-14): A migration record ties each completed slice to its diff,
+- [x] AC-14 (REQ-14): A migration record ties each completed slice to its diff,
   test evidence, debt changes, and separately reviewed behavior corrections.
 
 Rust gates remain formatting, strict Clippy, MSRV, subsystem and serial agent
@@ -351,15 +353,16 @@ suite. Preserve budgets during extraction and measure tuning as separate work.
 
 No blocking questions for this plan or the advisory tooling. The soft limit,
 single-package starting point, and first terrain-service slice follow the
-discussion. Renamed-clone analysis, syntax-aware complexity tooling, and later
-merge enforcement remain explicit future evaluations, not implemented features.
+discussion. PR-delta/rename reporting and compiler-backed function reporting are
+now implemented. Merge-blocking size/clone debt thresholds remain a separate
+future policy decision; the requested limits stay advisory.
 
 ## Scope boundaries
 
 The original planning change excluded execution and local runtime work. The
 subsequent implementation goal authorizes the migration, local checkpoints,
-and controlled verification. Publishing and unrelated gameplay changes remain
-outside this work.
+and controlled verification. Subsequent instructions authorize regular commits
+and pushes to draft PR #88. Unrelated gameplay changes remain outside this work.
 
 - Changing terrain appearance, ecology balance, or player-facing mechanics.
 - Replacing the engine, introducing an ECS, or forcing async simulation.

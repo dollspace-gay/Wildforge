@@ -1,0 +1,20 @@
+{
+  "binaries": {
+    "baseline": {
+      "revision": "8c1ec4082931d4414ef6e2daca2f1a3dbd5d1bb3",
+      "sha256": "d3e1768ca378f958129420717ab8b218698568b2da6fa7e9b6c3b0ae9ca0e0bd"
+    },
+    "candidate": {
+      "revision": "70de48ac1e455db2ff38abea674a9d0622ae2fcf",
+      "sha256": "dde8b0040c5a98ee24e76d960f252ef8e0a4bc0f621a565a3b3f9b2e8b72b20c"
+    }
+  },
+  "capture_count": 92,
+  "date": "2026-09-06",
+  "derivation": "derivation.json",
+  "motion_frame_count": 56,
+  "native_capture_count_including_initial_timing_trial": 102,
+  "raw_artifact_directory": "target/maintainability/visual-campaign-20260906",
+  "rejected_initial_timing_metadata": "trials/initial-closeout",
+  "source_sha256": "ec379a2553b2189159113f6e03c7cac9305fc6351f63bc8a7379c59d882c9a03"
+}

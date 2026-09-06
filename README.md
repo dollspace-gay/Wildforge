@@ -1084,4 +1084,4 @@ checker follows Git source inventory, excluding ignored builds and personal
 runtime data. New guides use an explicit HTML marker to avoid changing mod
 content identity; existing unmarked documentation retains its historical hash
 contribution. See [the implementation record](.design/maintainability-progress.md)
-for the architecture migration and outstanding verification.
+for the architecture migration and [acceptance evidence](.design/maintainability-acceptance.md).

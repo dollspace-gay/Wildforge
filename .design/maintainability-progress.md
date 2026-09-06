@@ -8,52 +8,43 @@ every maintained repository directory. Include logical new folders as owners
 are extracted. Runtime data, build output, Git internals, and ignored third-party
 installations are outside the maintained source-directory inventory.
 
-The previous planning turn made progress: it delivered the plan, advisory
-analyzer, CI job, and verified analyzer tests. This is the first implementation
-goal turn. The full objective is active; no architecture phase is claimed done.
+All planned architecture coding and local qualification are complete on the
+draft branch. The final subsystem suite passes all 1,144 scenarios, and the Rust,
+Python, native lifecycle, Miri, generation and fresh GPU checks pass. External
+acceptance is the latest-head GitHub check set on PR #88. The sections below
+retain historical checkpoints and their original verification limits.
 
 Local baseline checkpoints:
 
 - `f41df43`: existing agent navigation and predator repairs, separately recorded.
 - `c6d9589`: design, baseline measurements, and advisory tooling.
 - Initial local branch: `refactor/maintainable-engine`.
-- Published work branch: `refactor/engine-maintainability` (draft review; full migration remains active).
+- Published work branch: `refactor/engine-maintainability` (draft PR #88).
 
 Baseline verification completed at `c6d9589`: format, strict all-feature
 Clippy, Rust 1.95 MSRV, 1,017 subsystem tests (24 ignored), 15 serial agent
 tests, doctests (none defined), and release build all passed. Exact commands,
 exit codes, timings, and logs are in `target/maintainability/baseline/`. The
 baseline release executable is preserved there as `wildforge` for controlled
-runtime comparisons. Cold/warm runtime measurements remain outstanding.
+runtime comparisons. That historical baseline did not measure cold/warm runtime.
+The final native report records fresh-session/re-entry and travel observations
+with explicit cache and build-profile limits; it does not claim a speedup.
 
 ## Requirement audit
 
-| Criterion | Current implementation | Required final evidence |
-|---|---|---|
-| AC-1 compatibility | Structural checkpoints and behavior corrections have separate commits | Fresh save/codec/genesis/API/MSRV and gameplay gates across the final diff |
-| AC-2 authority/replica | Distinct World and ReplicaWorld; bounded TerrainRead/SceneRead/WorldView | Compile-time boundary fixtures and no guest generation/save native proof |
-| AC-3 terrain jobs | Shared owned jobs, context/revision rejection, joined homeland work | Deduplication/order/cancellation/reload/edit/adoption and runtime qualification |
-| AC-4 common client | Shared GuestSession admission/content/replication/transport; explicit graphical adapters | Recorded sequences plus real agent/graphical entry, disconnect and reconnect |
-| AC-5 player operations | Shared trade, craft/repair, equipment, container, nutrition, feeding, melee and physical terrain rules | Adapter success/rejection/capacity/identity/conservation parity; preserve documented adapter policies |
-| AC-6 world domains | Private terrain/population/calendar/weather/installations/construction owners and explicit ledger coordinators | Cross-domain fan-out, rollback/replay and persistence fixtures |
-| AC-7 generation stages | Named chunk and atlas generation/codec/domain stages | Pinned chunk/atlas output across workers and request order |
-| AC-8 app/content/render/tools | Content publication, input/navigation/presentation, UI/actions, typed GPU stages and shared tooling implemented | Reload, real UI/native interactions, WGSL, capture and hardware timing proof |
-| AC-9 source size | Cohesive module splits and exact reviewed exceptions in source-size-review.md | Final formatted inventory and remaining test scenario organization |
-| AC-10 clone analyzer | Advisory deterministic scanner and historical passing fixture set | Full current tooling suite and final clone-family review |
-| AC-11 dependencies | Explicit authority/replica/guest/render allowlists and compiler-backed function report | Violating fixtures, exclusions/alias resolution and complete final reports |
-| AC-12 tests/performance | Historical evidence retained at its original source head | Fresh complete Rust/Python/native/GPU campaign and all latest-head runners |
-| AC-13 shutdown | Joined workers and session lifetimes; failure-preserving save/unload | Dedicated/graphical/world-switch/capture exit and save-failure runtime proof |
-| AC-14 migration record | Each checkpoint records implementation and its verification limits | Final commit/proof/debt mapping and accepted criterion updates |
-| Folder guidance | Every newly created implementation directory has local guides | Final complete coverage and content-identity checks |
+[The acceptance record](maintainability-acceptance.md) maps all 14 criteria to
+the final owners and verification artifacts. All local acceptance criteria are
+satisfied; the PR check set is the authority for hosted acceptance.
+Final directory coverage is 131 maintained directories with zero missing or
+invalid guides. The original checkpoints below remain historical evidence.
 
-## Compatibility observations requiring explicit treatment
+## Content compatibility correction
 
-`net::content_hash` and `collect_mod_files` currently include non-script
-documentation files. Adding guides inside a mod directory therefore affects
-the transport content hash. Before adding those guides, characterize this
-behavior and separate documentation from runtime content without altering
-registry identities or rewriting immutable saved-world manifests. Record the
-compatibility outcome and regression evidence as its own corrective slice.
+The initial inspection found that `net::content_hash` and `collect_mod_files`
+included non-script documentation. The separately recorded guide-marker
+correction below excludes only new marked README/AGENTS guides, preserves
+historical unmarked content, and verifies the installed content hash is unchanged.
+It does not rewrite saved-world manifests or registry identities.
 
 ## First implementation slice (historical)
 
@@ -2325,3 +2316,63 @@ failures: two already-corrected empty-chunk palette fixtures and five stale GPU
 fingerprints. Its 1,137 other scenarios pass. No additional hosted-only regression
 was found. The superseded `70de48ac` workflow was cancelled after its other six
 jobs passed; the current head retains the complete required workflow.
+
+
+## Fresh GPU qualification and final runner repair
+
+The completed hosted Tests jobs at `b85eb2a` and `b748b57` each report 1,139
+passes and five failures. All five reject the old campaign's source fingerprint;
+the corrected empty-chunk and agent refusal fixtures now pass. The other six
+jobs pass on `b748b57`. Logs are retained as `ci-tests-b85eb2a.log` and
+`ci-tests-b748b57.log` under the final validation directory.
+
+The fresh hardware campaign captured all 92 declared still/timing cases and
+56 native motion frames from clean frozen binaries. All individual capture,
+provenance and settlement checks passed. All 52 visual stills and all 56 motion
+frames were reviewed, including full-size representatives. Both motion windows
+closed normally. The initial aggregate run failed exactly the closeout geode
+simulation budget: +0.124632 ms exceeded +0.100 ms; the ordinary independent
+geode group passed at +0.018419 ms. Every other aggregate gate passed.
+
+One predefined complete repeat of the ten closeout timing captures used the
+same binary, unchanged input worlds and alternating opened/sealed order. All ten
+new samples are retained and used. The repeat measured -0.0007777 ms simulation
+and -0.03116734 ms draw, passing the unchanged limits. Comparison of the two
+independently prepared opened worlds found identical entity/mark/stamp records;
+the four differing file hashes reflect serialized record order. The failure did
+not reproduce, and no further timing repeats were scheduled.
+
+The final bundle keeps the original 82 other captures and the complete ten-case
+repeat at their original byte identities. Every selected artifact was checked
+against its originating attempt's hashes. Rebuilt aggregate reports all pass.
+[screenshots/qualification-20260906](../screenshots/qualification-20260906/README.md)
+is now selected for CI. It includes the original failed aggregate and all ten
+original timing sidecars/reports, the repeat protocol, per-capture derivation,
+clean executable identities and review observations. Raw data and failed trials
+remain under `target/maintainability/visual-campaign-20260906/`; neither the old
+campaign nor the initial failed qualification was rewritten.
+
+The first post-publication local run (`subsystems-2`) reused the instrumented
+candidate test executable from the disposable generation checkout's shared
+Cargo target directory. Its inventory contained the test-only generation probe,
+which is absent from the actual branch, and resolved fixtures relative to that
+checkout. The run was stopped and is not acceptance evidence. The crate's dev
+artifacts were cleaned with `cargo clean --package wildforge --profile dev`,
+and the full suite rebuilt from the actual checkout (`subsystems-3`).
+The frozen GPU binaries and raw campaign evidence are separate and unchanged.
+
+
+## Local acceptance complete
+
+The clean rebuild (`subsystems-3.log`) passes all 1,144 subsystem tests with
+zero failures, 24 intentionally ignored operator/native probes and 20 agent
+scenarios filtered into their serial lane. Runtime was 160.98 seconds after the
+88-second crate rebuild. The binary entrypoint has no unit tests. All five
+previously stale visual checks now pass against the fresh selected evidence.
+
+The final advisory scan matches the committed source inventory exactly:
+1,023 source files, 233,506 lines, 84 above 400, 46 above 500 and 61 clone groups.
+Strict boundary checking still covers 486 files with zero findings, and all 131
+maintained directories have valid local guides. No source, thresholds or debt
+suppressions changed during evidence publication. All locally required gates are
+complete; the latest-head PR checks provide the external acceptance result.

@@ -2,7 +2,7 @@
 
 The 400/500 physical-line guidance remains advisory. The analyzer still reports
 all maintained source, including these reviewed exceptions; there are no size or
-clone suppressions. Final formatting and reports will supply the accepted counts.
+clone suppressions. The final formatted inventory records 46 source files above 500 lines.
 This record supersedes the early migration's temporary-exception table.
 
 ## Migrated transaction coordinators
