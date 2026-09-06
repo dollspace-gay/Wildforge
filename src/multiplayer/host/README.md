@@ -39,3 +39,16 @@ dispatch. A domain adapter then borrows the admitted guest and calls the same
 physical operations. Packet/variant definitions, reply order, counters, and
 observer selection are unchanged. Shared gameplay rules live in player_ops;
 these modules own protocol decoding and guest-specific responses.
+
+`pump.rs` preserves the explicit session order: network events/entry progress,
+guest clocks and survival, world edits and item delivery/pickup, terrain and
+snapshots, live containers, spoilage, rider positions, periodic observations,
+then sleep votes. The phase helpers retain their own timer reset policies and
+state publication order; observe that guest status checks the upcoming state
+interval before the later observation phase advances/resets that timer.
+
+Startup, join admission, entry completion, moderation, damage, and wire replies
+have dedicated adapters. `discovery_context.rs`, `working_context.rs`,
+`inventory_runtime.rs`, and `observation_packet.rs` take explicit world/guest
+inputs for physical reach, signed holders, active workings, inventory views, and
+bounded inspection. Public HostSession/Guest entry points and protocol stay stable.

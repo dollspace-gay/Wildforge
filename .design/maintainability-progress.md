@@ -1996,3 +1996,20 @@ was added or removed. All new request modules are below 250 lines before format.
 No tests/compiler/format/analyzers ran. Final requests must exercise unauthenticated,
 not-ready, muted/role-limited, rate-limited, unreachable, rejected, and accepted
 paths, plus multi-observer magic effects and ordinary graphical/agent guests.
+
+
+## Host lifecycle and ordered pump (coding checkpoint; unverified)
+
+Host startup, joining, entry completion, actor contexts, moderation, damage,
+request admission, and replies are dedicated modules. The pump visibly sequences
+network/entry, guest status, edit/item delivery, streaming, live containers,
+spoilage, riders, observations, and sleep voting. Phase helpers preserve every
+existing timer comparison/reset and shared state dependency, including status
+checking the upcoming observation interval before the later timer advance.
+
+Physical discovery/holder, working, inventory-runtime, and bounded-inspection
+helpers now take explicit World/Guest inputs in their own modules. All new files
+are below 250 lines before formatting. Existing host test scenarios remain at
+the parent until the final test-organization pass. No tests/compiler/format or
+analyzers ran. Final joins/departures, timing, survival/status, inventories,
+ordered replication, sleep, and native host/guest lifetimes remain unverified.
