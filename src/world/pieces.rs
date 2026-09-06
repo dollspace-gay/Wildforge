@@ -499,7 +499,7 @@ impl World {
                     inherited_stacks.push(stack);
                     state.slots[slot] = Some(stack);
                 }
-                self.block_entities.insert(world, BlockEntity::Chest(state));
+                self.installations.insert(world, BlockEntity::Chest(state));
             }
         }
         for marker in &piece.markers {

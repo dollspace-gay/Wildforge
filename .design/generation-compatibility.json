@@ -1,0 +1,305 @@
+{
+  "baseline_revision": "8c1ec4082931d4414ef6e2daca2f1a3dbd5d1bb3",
+  "candidate_revision": "70de48ac1e455db2ff38abea674a9d0622ae2fcf",
+  "instrumentation": "The same appended cfg(test) module in two disposable detached checkouts; no production source edits.",
+  "probe_sha256": "fb06475038a32674a808199be7b321879431944b255b6dbc1249c815d5c07fd9",
+  "atlas_side": 8,
+  "content_hash": 2748,
+  "workers": [
+    1,
+    2,
+    4
+  ],
+  "request_orders": [
+    "forward",
+    "reverse"
+  ],
+  "atlas_modes": [
+    "serial",
+    "parallel"
+  ],
+  "matching_chunk_hashes": 54,
+  "matching_corpus": true,
+  "corpus": [
+    {
+      "atlas": {
+        "biome": 3628347596380571704,
+        "dynamic": 2309375969407861327,
+        "genesis": 13519613865680741445,
+        "geology": 2885027384092012485,
+        "hydrology": 6012079484486186044,
+        "stages": [
+          [
+            "topology",
+            1,
+            7,
+            16196603044667922533
+          ],
+          [
+            "tectonics_crust",
+            1,
+            7,
+            3843167899086442063
+          ],
+          [
+            "preliminary_elevation",
+            1,
+            7,
+            17141511890415368669
+          ],
+          [
+            "climate_normals_winds",
+            1,
+            7,
+            7425530943290038195
+          ],
+          [
+            "erosion_basins_drainage",
+            1,
+            7,
+            15797232067968167907
+          ],
+          [
+            "hydrological_equilibrium",
+            1,
+            7,
+            15797232067968167907
+          ],
+          [
+            "soils_groundwater_habitats",
+            1,
+            7,
+            12862908532336822037
+          ],
+          [
+            "biomes_provinces",
+            1,
+            7,
+            143548862694118977
+          ],
+          [
+            "finite_resource_sites",
+            1,
+            7,
+            7154731974471294449
+          ],
+          [
+            "validation",
+            1,
+            7,
+            13519613865680741445
+          ]
+        ],
+        "water_cycle": 11060000527012433393
+      },
+      "chunks": {
+        "ChunkPos { face: NegX, u: 0, v: 255 }": "5cf3dc95a96046a69cf157333e49ea44ff1e3cb8454f5afdf79e501795ccfd34",
+        "ChunkPos { face: NegX, u: 256, v: 256 }": "65960dd8ee7477db79ab110ebe191a96cca94d9d563003796213035fe381d82a",
+        "ChunkPos { face: NegX, u: 511, v: 511 }": "2bd36d86aa2c8df8be25e0d2f0c883029d3796a7d5492602ace9351f52b4158e",
+        "ChunkPos { face: NegY, u: 0, v: 255 }": "bc7ea60e6b4ebdd6eb2bfcad541ccdd612a1da24fb09ad05760ed35231c783c7",
+        "ChunkPos { face: NegY, u: 256, v: 256 }": "d347d8b7e9061daf975dcc7f6fbeff4747df27cb5c8964b2fb7073023f63ceeb",
+        "ChunkPos { face: NegY, u: 511, v: 511 }": "bda018b7dc011d6cbced90239b28a327638664bb4990ddb6bb3009badbeea22b",
+        "ChunkPos { face: NegZ, u: 0, v: 255 }": "e0437f826a47e3500c04cd5fe6b0b0ad3075b4ff6f063dc1d8be9256ab35672b",
+        "ChunkPos { face: NegZ, u: 256, v: 256 }": "4db7f2eaf65f49a52396ce821e836e7cd9ab1c153f581e781363c9af60bd24ec",
+        "ChunkPos { face: NegZ, u: 511, v: 511 }": "ba0bb920e1738b936b553083251c8ce30aae1d2b3b39a0635ec3e74c96245241",
+        "ChunkPos { face: PosX, u: 0, v: 255 }": "f90be704583ec207a347ab7c57eb45d642d2ad90078890bb829cd732ccbb57fe",
+        "ChunkPos { face: PosX, u: 256, v: 256 }": "23205cfbf616ad1181540c4cd6e636449a46348674a327ea6176a6bc658d933d",
+        "ChunkPos { face: PosX, u: 511, v: 511 }": "8db9bcf600deeb15d44b7b30ae7a79d64d59a7b26e4e2d0a6eebc09a831d98af",
+        "ChunkPos { face: PosY, u: 0, v: 255 }": "6cd3d6f10a7f8a6571c4ac9e63d804c497cccaa08c8589b4fdb2f991ebb4c70d",
+        "ChunkPos { face: PosY, u: 256, v: 256 }": "97d4d1a2ab74214b42dccb47fdfff4eddb8972bfe156fd5e913ead2f6cc044d9",
+        "ChunkPos { face: PosY, u: 511, v: 511 }": "11608f1c55ff764f9c1d0a66b7f4072f4fe79846e20152ecc588b72068f40163",
+        "ChunkPos { face: PosZ, u: 0, v: 255 }": "89477dbf6899f879acfb5aea0908417da195538266427faa5c44a2bcaaacff56",
+        "ChunkPos { face: PosZ, u: 256, v: 256 }": "fc0eb6dcb7d5f05b93109f360ab5541618ac591b46e84e563352b5ba8c931d57",
+        "ChunkPos { face: PosZ, u: 511, v: 511 }": "b6ab4d058f8957464912a2c869bc2033f082ea6b672c02c07548f855973ef9e1"
+      },
+      "seed": 42
+    },
+    {
+      "atlas": {
+        "biome": 7394858196583991283,
+        "dynamic": 15312888823076858773,
+        "genesis": 12015822971746455934,
+        "geology": 6205882838411202299,
+        "hydrology": 10006162550663685534,
+        "stages": [
+          [
+            "topology",
+            1,
+            7,
+            16196603044667922533
+          ],
+          [
+            "tectonics_crust",
+            1,
+            7,
+            13632920439926664058
+          ],
+          [
+            "preliminary_elevation",
+            1,
+            7,
+            10177565896120869007
+          ],
+          [
+            "climate_normals_winds",
+            1,
+            7,
+            14592945126939120445
+          ],
+          [
+            "erosion_basins_drainage",
+            1,
+            7,
+            2116966231005916232
+          ],
+          [
+            "hydrological_equilibrium",
+            1,
+            7,
+            2116966231005916232
+          ],
+          [
+            "soils_groundwater_habitats",
+            1,
+            7,
+            3749166033364379630
+          ],
+          [
+            "biomes_provinces",
+            1,
+            7,
+            11436409635647569430
+          ],
+          [
+            "finite_resource_sites",
+            1,
+            7,
+            10805561112978674941
+          ],
+          [
+            "validation",
+            1,
+            7,
+            12015822971746455934
+          ]
+        ],
+        "water_cycle": 15446528498761342348
+      },
+      "chunks": {
+        "ChunkPos { face: NegX, u: 0, v: 255 }": "7e55932be1c1c049c43c78b61575ccfd7ec5b6e1ff78b377dfa809b0ea527494",
+        "ChunkPos { face: NegX, u: 256, v: 256 }": "a4a1e655168668d91a3b70b6d4d9d8b7817f11a14ef77fd18551c48f864e18a1",
+        "ChunkPos { face: NegX, u: 511, v: 511 }": "c4078b55b47a982059736d5a5ccf2d7a5e57e8778d581725234749be6f741321",
+        "ChunkPos { face: NegY, u: 0, v: 255 }": "e140862da1b6c1f27e89d23af7b26768d799eabcde15262638e320d4dc1de8d4",
+        "ChunkPos { face: NegY, u: 256, v: 256 }": "22295da30bc80d560a9cd589febcc000dbb8d8b096719a86107cc18e368663a6",
+        "ChunkPos { face: NegY, u: 511, v: 511 }": "98598881133e9b879fff953a9f693e7bf55111afc2bae0ea80c06c6d8833abc7",
+        "ChunkPos { face: NegZ, u: 0, v: 255 }": "26366466f5985f57f229bd2771928e70cf538da73437a351c4bd918058977c1e",
+        "ChunkPos { face: NegZ, u: 256, v: 256 }": "520b32cbc1a1d75a663d49e05a49b189198191b7b4d31d346747670e93231b61",
+        "ChunkPos { face: NegZ, u: 511, v: 511 }": "7e8966c70bcc3ebec13da895b30cabcfc1d551b5aba6fd63946dc0a62b66f664",
+        "ChunkPos { face: PosX, u: 0, v: 255 }": "7ad4e9249f517ea59e8294c32f425901aa6fd429b17e5810b8eafa3f93a67a2e",
+        "ChunkPos { face: PosX, u: 256, v: 256 }": "6ab44e08703998c53af54e05ead27f5d6c3fcd2158f157227e1faf843e598a65",
+        "ChunkPos { face: PosX, u: 511, v: 511 }": "63660c6f9a075170ac0b224633cc84d9d4367ea18307578bbefafa34de1466b2",
+        "ChunkPos { face: PosY, u: 0, v: 255 }": "fc670e3ad5d989408cc67d110bdb86ca2215ed8798d25d56f70e70908f22b371",
+        "ChunkPos { face: PosY, u: 256, v: 256 }": "3e77c955a0619b7d10695671fab42c564c82c71823d02ea92ac2bb06a5096d42",
+        "ChunkPos { face: PosY, u: 511, v: 511 }": "53da56c5058de43bd07793c79c61613fe82d386393c936295e5021ba8daf250b",
+        "ChunkPos { face: PosZ, u: 0, v: 255 }": "f293fc37c8f0780fa42a5265c804ae130a7215d92736b1b297fe17d18729f177",
+        "ChunkPos { face: PosZ, u: 256, v: 256 }": "480fb4dbb6858721362e12f23a2f4473642fa8f54c6090492f5d5ce3ae94502b",
+        "ChunkPos { face: PosZ, u: 511, v: 511 }": "bbc61bd1f23399015c9622d33cb02eb915a32e7fbb76e3ba82648aa0ea98f33f"
+      },
+      "seed": 303
+    },
+    {
+      "atlas": {
+        "biome": 9965161331953043920,
+        "dynamic": 4945445258807225821,
+        "genesis": 12712654368192583630,
+        "geology": 5438682045871787187,
+        "hydrology": 7560590368963871618,
+        "stages": [
+          [
+            "topology",
+            1,
+            7,
+            16196603044667922533
+          ],
+          [
+            "tectonics_crust",
+            1,
+            7,
+            14748118462426125987
+          ],
+          [
+            "preliminary_elevation",
+            1,
+            7,
+            5440767931344230928
+          ],
+          [
+            "climate_normals_winds",
+            1,
+            7,
+            5012417144455061403
+          ],
+          [
+            "erosion_basins_drainage",
+            1,
+            7,
+            9510039807273994988
+          ],
+          [
+            "hydrological_equilibrium",
+            1,
+            7,
+            9510039807273994988
+          ],
+          [
+            "soils_groundwater_habitats",
+            1,
+            7,
+            5301993875915103122
+          ],
+          [
+            "biomes_provinces",
+            1,
+            7,
+            14264932309850651903
+          ],
+          [
+            "finite_resource_sites",
+            1,
+            7,
+            2176632714234837326
+          ],
+          [
+            "validation",
+            1,
+            7,
+            12712654368192583630
+          ]
+        ],
+        "water_cycle": 5332923244195597393
+      },
+      "chunks": {
+        "ChunkPos { face: NegX, u: 0, v: 255 }": "2f2320b13dfd41fe34ccab71dd18de095fb5255f18a51ae0a1c06886fd68cb9f",
+        "ChunkPos { face: NegX, u: 256, v: 256 }": "b83a2a821937cfc8fc0baf2f4b2daef97a8fcbd148f70f044c2c2e5869406c28",
+        "ChunkPos { face: NegX, u: 511, v: 511 }": "8db6a09174e09834f739cb68844a6cd70620d2c1e276196b5dcfe130778e49a2",
+        "ChunkPos { face: NegY, u: 0, v: 255 }": "da6d93b43ef11bd370c37bdcf300261df3b7aba1b391d7ea3c9678e618a4643a",
+        "ChunkPos { face: NegY, u: 256, v: 256 }": "0124db09131e2f34acd3753256814b611ae4bcafbb0508fe78d3f6cfff7618d0",
+        "ChunkPos { face: NegY, u: 511, v: 511 }": "37143b8c00edcc05a0a05c3439803fd236994708f2304d0178ad188653aaeaea",
+        "ChunkPos { face: NegZ, u: 0, v: 255 }": "3953dd59e7764a0b305a06bd568f975edfe3cf3122d03e664ff934c89e90eeec",
+        "ChunkPos { face: NegZ, u: 256, v: 256 }": "02bcd685f1c51537bf5b60b34e8ac1b90bfd01411b90a5c36a7a225b0f24d622",
+        "ChunkPos { face: NegZ, u: 511, v: 511 }": "88fade40ee01b0ff0cda993dfc6fb71ada4101278189e50035723dd2e04cd06e",
+        "ChunkPos { face: PosX, u: 0, v: 255 }": "2b610abf14a734e3692ba45785c0cfc8ac1bde1e7fff1dff1c803ba0975a6f17",
+        "ChunkPos { face: PosX, u: 256, v: 256 }": "0e7b59f980fcb2a7c380b6ced852b1859a883127f7bdb4c74275e8b73c43d536",
+        "ChunkPos { face: PosX, u: 511, v: 511 }": "2d289fd820903b139cf61dfbbe02cc50f3b9a499c6483a2c733ddac5883175a6",
+        "ChunkPos { face: PosY, u: 0, v: 255 }": "cb57584e112082caa533c805b830dfc5ca0f9f7565b0573299e545747aad27ee",
+        "ChunkPos { face: PosY, u: 256, v: 256 }": "6721bedcf66f017a0d3bf2597083de30765b8244620009ddd8a25296b9ab4f9f",
+        "ChunkPos { face: PosY, u: 511, v: 511 }": "b01c94ba3c30215e644c25f55649bb3276dc49ed40a3fa1e035c3c17e36990f6",
+        "ChunkPos { face: PosZ, u: 0, v: 255 }": "6944eda0eff2b967105cb799e4cece9994cbce1061801c48c59283d3964408e9",
+        "ChunkPos { face: PosZ, u: 256, v: 256 }": "ae9c4e014b2a95518f83ed5da71a8ddbdc8290965c659d0b175f1670ad794850",
+        "ChunkPos { face: PosZ, u: 511, v: 511 }": "cfc67952ab91765f4a41928333c8be27e4755d7957f7b730626fa666a07be962"
+      },
+      "seed": 335597
+    }
+  ],
+  "artifact_directory": "target/maintainability/determinism-20260906"
+}

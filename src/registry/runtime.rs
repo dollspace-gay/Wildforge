@@ -1,6 +1,6 @@
 //! Runtime registry lookup and gameplay queries.
 
-use super::*;
+use super::{AIR, BlockDef, BlockId, ItemDef, ItemId, RecipeDef, Registry, SmeltDef};
 
 impl Registry {
     #[inline]

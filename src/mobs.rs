@@ -445,6 +445,14 @@ impl Mob {
         }
     }
 
+    /// Apply the presentation pose when reconstructing a guest replica. Keep
+    /// the initial facing state consistent with construction at this yaw.
+    pub(crate) fn present_replica_at(&mut self, yaw: f32, phase: f32) {
+        self.yaw = yaw;
+        self.charge_yaw = yaw;
+        self.anim_phase = phase;
+    }
+
     /// One taming meal: rolls the requirement on the first feeding
     /// (3-5, deterministic per mob), counts up, and returns true the
     /// moment trust lands.
@@ -640,9 +648,18 @@ impl Mob {
                 self.target = near.pos;
             }
         }
+        // Wildlife must continue to qualify for a desperation hunt. Food
+        // becoming available or hunger ending also ends an existing chase.
+        if self.state == MobState::Hunt && !def.hostile && !def.fierce && !self.bold {
+            self.state = MobState::Idle;
+            self.state_timer = 1.0;
+            self.lose_aggro = 0.0;
+        }
         // Wardens take notice (the quiet charm shortens their attention).
         if let Some((player_index, p)) = prey
-            && (def.hostile || def.fierce || (self.bold && def.attack > 0.0))
+            && (def.hostile
+                || def.fierce
+                || (self.bold && def.attack > 0.0 && self.state != MobState::Flee))
             && !self.tamed
             && !self.watcher
             && self.state != MobState::Hunt

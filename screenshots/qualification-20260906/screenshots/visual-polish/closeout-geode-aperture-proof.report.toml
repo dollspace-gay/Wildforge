@@ -1,0 +1,96 @@
+report_schema_version = 2
+capture_schema_version = 1
+capture_id = "closeout-geode-aperture-proof"
+scene_id = "closeout-geode-20260906"
+identity_sha256 = "7f2426357d8e784a57dd521d8e5063e89304bd3b666c684c39d73f6955d114f2"
+sidecar = "screenshots/closeout-geode-aperture-proof.capture.toml"
+sidecar_sha256 = "adf0cd51f5918e5cf6e7e6b9785badc8782ab9924e9e3b6874f92aa93f984414"
+width = 1920
+height = 1080
+color_ppm_sha256 = "fa349550ac6355890ab894be7b75469c3bd5d43fc1a34432e89506bdde930d92"
+diagnostic_sha256 = "f5983696103c3a07e99d5aecbeb4503a32a5b1bb69dfa17e2f3a9ae1e6915caa"
+color_png = "screenshots/closeout-geode-aperture-proof.capture.png"
+color_png_sha256 = "1b43e211669c7355473f5a8d451ae028fe9630a52ee2225f04d0acc2aefeb13d"
+diagnostic_png = "screenshots/closeout-geode-aperture-proof.capture.diagnostic.png"
+diagnostic_png_sha256 = "eccca7720b393575d6888b17d5cfbd1f91e39ff5fbe1ff84634c7d17cd14330f"
+conversion = "python-stdlib-p6-rgb8-filter0-zlib9-v1"
+conversion_tool = "tools/verify_visual_polish.py"
+conversion_tool_sha256 = "44d7e0ee627988e2c4cd008258b943b6619d1196a9825559419665602fdae980"
+python = "3.14.7"
+zlib = "1.3.1.zlib-ng"
+pixel_count = 2073600
+sky_pixels = 0
+overlay_pixels = 63332
+material_pixels = 2010268
+sky_fraction = 0.000000000
+overlay_fraction = 0.030542052
+material_fraction = 0.969457948
+luminance_mean = 0.022517695
+luminance_stddev = 0.029919726
+local_contrast_rms = 0.003200005
+
+[[family]]
+diagnostic_id = 3
+atlas_slot = 2
+names = ["base:dirt", "base:farmland", "base:grass", "item:base:dirt", "item:base:farmland"]
+pixels = 493968
+pixel_fraction = 0.238217593
+mean_normalized_depth = 0.005431755
+
+[[family]]
+diagnostic_id = 7
+atlas_slot = 6
+names = ["base:gravel", "item:base:gravel"]
+pixels = 1635
+pixel_fraction = 0.000788484
+mean_normalized_depth = 0.032762044
+
+[[family]]
+diagnostic_id = 245
+atlas_slot = 244
+names = ["base:limestone", "item:base:limestone", "texture:base/limestone"]
+pixels = 1184032
+pixel_fraction = 0.571003086
+mean_normalized_depth = 0.007363340
+
+[[family]]
+diagnostic_id = 264
+atlas_slot = 263
+names = ["base:quartz_block", "item:base:quartz_block", "texture:base/quartz_block"]
+pixels = 209040
+pixel_fraction = 0.100810185
+mean_normalized_depth = 0.019612477
+
+[[family]]
+diagnostic_id = 265
+atlas_slot = 264
+names = ["base:amethyst_block", "base:charge_vessel", "base:wellglass_bud", "item:base:amethyst_block", "item:base:wellglass_bud", "texture:base/amethyst_block"]
+pixels = 121593
+pixel_fraction = 0.058638600
+mean_normalized_depth = 0.029810885
+
+[[stratum]]
+rock = "limestone"
+distance_band = "near"
+pixels = 1184032
+coverage = 0.571003086
+connected_components = 1
+one_pixel_fringe = 15
+one_pixel_fringe_fraction = 0.000012669
+median_luminance = 0.013311339
+p10_luminance = 0.006830529
+p90_luminance = 0.078484610
+luminance_span = 0.071654081
+rms_contrast_1px = 0.003140076
+rms_contrast_4px = 0.003584188
+rms_contrast_16px = 0.006537476
+contrast_pairs_1px = 2362332
+contrast_pairs_4px = 2347177
+contrast_pairs_16px = 2295480
+adjacent_sky_pairs = 0
+silhouette_weber = 0.000000000
+silhouette_weber_magnitude = 0.000000000
+median_chroma = 0.002741989
+greyscale_structure_score = 0.491120889
+expected_fog_blend = 0.000000000
+display_black_fraction = 0.000000000

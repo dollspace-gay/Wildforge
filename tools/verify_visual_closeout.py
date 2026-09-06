@@ -14,12 +14,9 @@ written for review and the Rust-side CI validator.
 from __future__ import annotations
 
 import argparse
-import hashlib
 import importlib.util
 import json
-import math
 import sys
-import tomllib
 from pathlib import Path
 from typing import Any
 
@@ -63,32 +60,20 @@ SHARED = load_module("wildforge_visual_evidence", "verify_visual_polish.py")
 GEODE = load_module("wildforge_geode_evidence", "verify_cracked_geode.py")
 
 
-def sha256(data: bytes) -> str:
-    return hashlib.sha256(data).hexdigest()
+# The shared converter owns byte identity and deterministic scalar encoding.
+sha256 = SHARED.sha256
+write_atomic = SHARED.write_atomic
 
 
 def read_toml(path: Path) -> tuple[bytes, dict[str, Any]]:
-    try:
-        data = path.read_bytes()
-        return data, tomllib.loads(data.decode("utf-8"))
-    except (OSError, UnicodeError, tomllib.TOMLDecodeError) as error:
-        raise CloseoutEvidenceError(f"read {path}: {error}") from error
+    return SHARED.read_toml(path, error_type=CloseoutEvidenceError)
 
 
 def toml_value(value: Any) -> str:
-    if isinstance(value, bool):
-        return "true" if value else "false"
-    if isinstance(value, int):
-        return str(value)
-    if isinstance(value, float):
-        if not math.isfinite(value):
-            raise CloseoutEvidenceError("closeout reports cannot contain non-finite values")
-        return format(value, ".9f")
-    if isinstance(value, str):
-        return json.dumps(value, ensure_ascii=True)
-    if isinstance(value, list):
-        return "[" + ", ".join(toml_value(item) for item in value) + "]"
-    raise CloseoutEvidenceError(f"unsupported TOML value {type(value).__name__}")
+    return SHARED.toml_value(
+        value, error_type=CloseoutEvidenceError,
+        nonfinite_message="closeout reports cannot contain non-finite values",
+    )
 
 
 def render(report: dict[str, Any]) -> bytes:
@@ -105,13 +90,6 @@ def render(report: dict[str, Any]) -> bytes:
             lines.append(f"[[{key}]]")
             lines.extend(f"{k} = {toml_value(v)}" for k, v in row.items())
     return ("\n".join(lines) + "\n").encode()
-
-
-def write_atomic(path: Path, data: bytes) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    temporary = path.with_name(path.name + ".tmp")
-    temporary.write_bytes(data)
-    temporary.replace(path)
 
 
 def sidecar_commit(report: dict[str, Any], commits: set[str]) -> None:
@@ -131,7 +109,7 @@ def single_commit(commits: set[str], label: str) -> str:
     return next(iter(commits))
 
 
-def build_closeout_readability() -> dict[str, Any]:
+def build_closeout_readability(baseline_commit: str = STRATA_BASELINE_COMMIT) -> dict[str, Any]:
     cases = {
         "sandstone": ("sandstone-v4-near-noon-base", "sandstone-v12-prefog-overcast-gemini"),
         "limestone": ("limestone-v4-near-dawn-gemini", "limestone-v12-prefog-overcast-dusk"),
@@ -210,14 +188,7 @@ def build_closeout_readability() -> dict[str, Any]:
         source_reports.add(path.as_posix())
         pre = SHARED.named_stratum(report, "marble", "pre-fog")
         end = SHARED.named_stratum(report, "marble", "fog")
-        passed = (
-            float(pre["expected_fog_blend"]) <= float(end["expected_fog_blend"])
-            and float(end["expected_fog_blend"]) >= 0.999
-            and float(end["rms_contrast_4px"]) <= float(pre["rms_contrast_4px"]) + 2.0 / 255.0
-            and float(end["rms_contrast_16px"]) <= float(pre["rms_contrast_16px"]) + 2.0 / 255.0
-            and float(end["silhouette_weber_magnitude"])
-            <= float(pre["silhouette_weber_magnitude"]) + 2.0 / 255.0
-        )
+        passed = SHARED.fog_endpoint_passes(pre, end)
         fog.append(
             {
                 "condition": condition,
@@ -229,31 +200,7 @@ def build_closeout_readability() -> dict[str, Any]:
             }
         )
 
-    family_distinction = []
-    pale = tuple(cases)
-    for rock in pale:
-        for band in ("near", "middle"):
-            row = representatives[(rock, band)]
-            distinct = []
-            for other in pale:
-                if other == rock:
-                    continue
-                candidate = representatives[(other, band)]
-                structure_delta = abs(
-                    float(row["rms_contrast_16px"]) - float(candidate["rms_contrast_16px"])
-                )
-                chroma_delta = abs(float(row["median_chroma"]) - float(candidate["median_chroma"]))
-                if structure_delta >= 0.005 or chroma_delta >= 0.005:
-                    distinct.append(other)
-            family_distinction.append(
-                {
-                    "rock": rock,
-                    "distance_band": band,
-                    "distinguishable_from": distinct,
-                    "minimum_distinct_families": 2,
-                    "passed": len(distinct) >= 2,
-                }
-            )
+    family_distinction = SHARED.distinguish_families(cases, representatives)
 
     baseline_path, baseline_dark_report = SHARED.named_report("baseline", "basalt-v4-near-noon-gemini")
     closeout_path, closeout_dark_report = SHARED.named_report("closeout", "basalt-v4-near-noon-gemini")
@@ -287,7 +234,7 @@ def build_closeout_readability() -> dict[str, Any]:
     return {
         "qualification_schema_version": QUALIFICATION_SCHEMA_VERSION,
         "kind": READABILITY_KIND,
-        "baseline_commit": STRATA_BASELINE_COMMIT,
+        "baseline_commit": baseline_commit,
         "after_commit": single_commit(commits, "closeout readability"),
         "source_reports": sorted(source_reports),
         "passed": passed,
@@ -299,7 +246,7 @@ def build_closeout_readability() -> dict[str, Any]:
     }
 
 
-def build_closeout_strata_performance() -> dict[str, Any]:
+def build_closeout_strata_performance(expected_baseline: str = STRATA_BASELINE_COMMIT) -> dict[str, Any]:
     samples: dict[str, list[float]] = {
         "baseline_draw": [],
         "baseline_sim": [],
@@ -321,9 +268,9 @@ def build_closeout_strata_performance() -> dict[str, Any]:
             samples[f"{phase}_sim"].append(float(telemetry["simulation_ms"]))
     baseline_commit = single_commit(phase_commits["baseline"], "closeout strata baseline performance")
     closeout_commit = single_commit(phase_commits["closeout"], "closeout strata performance")
-    if baseline_commit != STRATA_BASELINE_COMMIT:
+    if baseline_commit != expected_baseline:
         raise CloseoutEvidenceError(
-            "closeout baseline performance captures must come from the goal-2 baseline build"
+            "closeout baseline performance captures must come from the declared baseline build"
         )
     medians = {name: SHARED.percentile(values.copy(), 0.5) for name, values in samples.items()}
     draw_budget = max(0.30, medians["baseline_draw"] * 0.05)
@@ -355,6 +302,9 @@ def build_closeout_strata_performance() -> dict[str, Any]:
         "simulation_budget_basis": (
             "cross-arc: baseline executable predates the magic arc's"
             " simulation systems; draw keeps the goal-2 budget"
+            if expected_baseline == STRATA_BASELINE_COMMIT else
+            "unchanged cross-scene closeout budget; the separate strata-performance"
+            " qualification retains its 0.10 ms simulation gate"
         ),
         "maximum_closeout_draw_ms": max(samples["closeout_draw"]),
         "maximum_allowed_single_draw_ms": 2.0 * max(samples["baseline_draw"]),

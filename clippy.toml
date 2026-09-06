@@ -1,0 +1,4 @@
+# Advisory function reports opt into these lints through report_rust_functions.py.
+# Ordinary strict Clippy retains its existing lint selection.
+too-many-lines-threshold = 100
+cognitive-complexity-threshold = 25

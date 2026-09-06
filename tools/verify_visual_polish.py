@@ -65,6 +65,44 @@ class EvidenceError(RuntimeError):
     pass
 
 
+def fog_endpoint_passes(pre, end):
+    """The fog endpoint reaches sky and does not regain local structure."""
+    return (
+        float(pre["expected_fog_blend"]) <= float(end["expected_fog_blend"])
+        and float(end["expected_fog_blend"]) >= 0.999
+        and float(end["rms_contrast_4px"]) <= float(pre["rms_contrast_4px"]) + 2.0 / 255.0
+        and float(end["rms_contrast_16px"]) <= float(pre["rms_contrast_16px"]) + 2.0 / 255.0
+        and float(end["silhouette_weber_magnitude"]) <= float(pre["silhouette_weber_magnitude"]) + 2.0 / 255.0
+    )
+
+def distinguish_families(cases, representatives):
+    """Require two distinct pale families in each near/middle view."""
+    result = []
+    pale = tuple(cases)
+    for rock in pale:
+        for band in ("near", "middle"):
+            row = representatives[(rock, band)]
+            distinct = []
+            for other in pale:
+                if other == rock:
+                    continue
+                candidate = representatives[(other, band)]
+                structure_delta = abs(float(row["rms_contrast_16px"]) - float(candidate["rms_contrast_16px"]))
+                chroma_delta = abs(float(row["median_chroma"]) - float(candidate["median_chroma"]))
+                if structure_delta >= 0.005 or chroma_delta >= 0.005:
+                    distinct.append(other)
+            result.append(
+                {
+                    "rock": rock,
+                    "distance_band": band,
+                    "distinguishable_from": distinct,
+                    "minimum_distinct_families": 2,
+                    "passed": len(distinct) >= 2,
+                }
+            )
+
+    return result
+
 def sha256(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
 
@@ -73,20 +111,28 @@ def quoted(value: str) -> str:
     return json.dumps(value, ensure_ascii=True)
 
 
-def toml_value(value: Any) -> str:
+def toml_value(
+    value: Any,
+    *,
+    error_type: type[RuntimeError] = EvidenceError,
+    nonfinite_message: str = "reports cannot contain non-finite metrics",
+) -> str:
     if isinstance(value, bool):
         return "true" if value else "false"
     if isinstance(value, int):
         return str(value)
     if isinstance(value, float):
         if not math.isfinite(value):
-            raise EvidenceError("reports cannot contain non-finite metrics")
+            raise error_type(nonfinite_message)
         return format(value, ".9f")
     if isinstance(value, str):
         return quoted(value)
     if isinstance(value, list):
-        return "[" + ", ".join(toml_value(item) for item in value) + "]"
-    raise EvidenceError(f"unsupported TOML value {type(value).__name__}")
+        return "[" + ", ".join(
+            toml_value(item, error_type=error_type, nonfinite_message=nonfinite_message)
+            for item in value
+        ) + "]"
+    raise error_type(f"unsupported TOML value {type(value).__name__}")
 
 
 def render_report(report: dict[str, Any]) -> str:
@@ -119,12 +165,14 @@ def render_tables(report: dict[str, Any], tables: tuple[str, ...]) -> str:
     return "\n".join(lines) + "\n"
 
 
-def read_toml(path: Path) -> tuple[bytes, dict[str, Any]]:
+def read_toml(
+    path: Path, *, error_type: type[RuntimeError] = EvidenceError
+) -> tuple[bytes, dict[str, Any]]:
     try:
         data = path.read_bytes()
         parsed = tomllib.loads(data.decode("utf-8"))
     except (OSError, UnicodeError, tomllib.TOMLDecodeError) as error:
-        raise EvidenceError(f"read {path}: {error}") from error
+        raise error_type(f"read {path}: {error}") from error
     return data, parsed
 
 
@@ -787,7 +835,10 @@ def named_stratum(report: dict[str, Any], rock: str, band: str) -> dict[str, Any
     return matches[0]
 
 
-def build_readability_qualification() -> dict[str, Any]:
+def build_readability_qualification(
+    baseline_commit: str = "60486636fcfacd36de75e970a79ff6f806a0e9ac",
+    after_commit: str = "b7a4498e059ce3a5a43997f2b7f3c207a55e9505",
+) -> dict[str, Any]:
     cases = {
         "sandstone": ("sandstone-v4-near-noon-base", "sandstone-v12-prefog-overcast-gemini"),
         "limestone": ("limestone-v4-near-dawn-gemini", "limestone-v12-prefog-overcast-dusk"),
@@ -862,13 +913,7 @@ def build_readability_qualification() -> dict[str, Any]:
         source_reports.add(path.as_posix())
         pre = named_stratum(report, "marble", "pre-fog")
         end = named_stratum(report, "marble", "fog")
-        passed = (
-            float(pre["expected_fog_blend"]) <= float(end["expected_fog_blend"])
-            and float(end["expected_fog_blend"]) >= 0.999
-            and float(end["rms_contrast_4px"]) <= float(pre["rms_contrast_4px"]) + 2.0 / 255.0
-            and float(end["rms_contrast_16px"]) <= float(pre["rms_contrast_16px"]) + 2.0 / 255.0
-            and float(end["silhouette_weber_magnitude"]) <= float(pre["silhouette_weber_magnitude"]) + 2.0 / 255.0
-        )
+        passed = fog_endpoint_passes(pre, end)
         fog.append(
             {
                 "condition": condition,
@@ -884,29 +929,7 @@ def build_readability_qualification() -> dict[str, Any]:
             }
         )
 
-    family_distinction = []
-    pale = tuple(cases)
-    for rock in pale:
-        for band in ("near", "middle"):
-            row = representatives[(rock, band)]
-            distinct = []
-            for other in pale:
-                if other == rock:
-                    continue
-                candidate = representatives[(other, band)]
-                structure_delta = abs(float(row["rms_contrast_16px"]) - float(candidate["rms_contrast_16px"]))
-                chroma_delta = abs(float(row["median_chroma"]) - float(candidate["median_chroma"]))
-                if structure_delta >= 0.005 or chroma_delta >= 0.005:
-                    distinct.append(other)
-            family_distinction.append(
-                {
-                    "rock": rock,
-                    "distance_band": band,
-                    "distinguishable_from": distinct,
-                    "minimum_distinct_families": 2,
-                    "passed": len(distinct) >= 2,
-                }
-            )
+    family_distinction = distinguish_families(cases, representatives)
 
     baseline_path, baseline_dark_report = named_report("baseline", "basalt-v4-near-noon-gemini")
     after_path, after_dark_report = named_report("after", "basalt-v4-near-noon-gemini")
@@ -931,10 +954,10 @@ def build_readability_qualification() -> dict[str, Any]:
     return {
         "qualification_schema_version": QUALIFICATION_SCHEMA_VERSION,
         "kind": "strata-readability",
-        "baseline_commit": "60486636fcfacd36de75e970a79ff6f806a0e9ac",
-        "after_commit": "b7a4498e059ce3a5a43997f2b7f3c207a55e9505",
+        "baseline_commit": baseline_commit,
+        "after_commit": after_commit,
         "source_reports": sorted(source_reports),
-        "fog_endpoint_contract": "src/shader.wgsl sky_radiance(rd); mirrored by above_water_fog_is_monotonic_and_reaches_directional_sky",
+        "fog_endpoint_contract": "src/shader/sky.wgsl sky_radiance(rd); mirrored by above_water_fog_is_monotonic_and_reaches_directional_sky",
         "passed": passed,
         "retention": retention,
         "silhouette": silhouette,
@@ -944,7 +967,10 @@ def build_readability_qualification() -> dict[str, Any]:
     }
 
 
-def build_performance_qualification() -> dict[str, Any]:
+def build_performance_qualification(
+    baseline_commit: str = "60486636fcfacd36de75e970a79ff6f806a0e9ac",
+    after_commit: str = "b7a4498e059ce3a5a43997f2b7f3c207a55e9505",
+) -> dict[str, Any]:
     samples: dict[str, list[float]] = {"baseline_draw": [], "baseline_sim": [], "after_draw": [], "after_sim": []}
     source_reports = []
     for phase in ("baseline", "after"):
@@ -969,8 +995,8 @@ def build_performance_qualification() -> dict[str, Any]:
     return {
         "qualification_schema_version": QUALIFICATION_SCHEMA_VERSION,
         "kind": "strata-performance",
-        "baseline_commit": "60486636fcfacd36de75e970a79ff6f806a0e9ac",
-        "after_commit": "b7a4498e059ce3a5a43997f2b7f3c207a55e9505",
+        "baseline_commit": baseline_commit,
+        "after_commit": after_commit,
         "source_reports": source_reports,
         "baseline_draw_ms": samples["baseline_draw"],
         "after_draw_ms": samples["after_draw"],

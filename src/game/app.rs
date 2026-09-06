@@ -1,6 +1,18 @@
 //! Winit application lifecycle and platform event bridge.
 
-use super::*;
+use crate::world::TerrainRead;
+
+use super::{BUILD_MARKER, Game, Screen};
+use crate::inventory::HOTBAR_SLOTS;
+use crate::raycast;
+use std::sync::Arc;
+use winit::application::ApplicationHandler;
+use winit::dpi::{LogicalSize, PhysicalSize};
+use winit::event::{
+    DeviceEvent, DeviceId, ElementState, MouseButton, MouseScrollDelta, WindowEvent,
+};
+use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop};
+use winit::window::{Window, WindowId};
 
 const SHOT_MIN_WIDTH: u32 = 320;
 const SHOT_MIN_HEIGHT: u32 = 200;
@@ -98,258 +110,7 @@ impl ApplicationHandler for App {
                 game.camera.aspect = size.width as f32 / size.height.max(1) as f32;
             }
             WindowEvent::KeyboardInput { event, .. } => {
-                // New-planet seeds are explicit and reproducible. Keep this
-                // field deliberately numeric so the UI and world.toml agree
-                // on the complete u32 domain without a locale/parser layer.
-                if game.ui_state.screen == Screen::NewWorld && event.state.is_pressed() {
-                    match event.physical_key {
-                        PhysicalKey::Code(KeyCode::Backspace) => {
-                            game.ui_state.new_world_seed.pop();
-                        }
-                        PhysicalKey::Code(KeyCode::Enter) => game.create_new_world(),
-                        _ => {
-                            if let Some(text) = &event.text {
-                                for ch in text.chars() {
-                                    if ch.is_ascii_digit()
-                                        && game.ui_state.new_world_seed.len() < 10
-                                    {
-                                        game.ui_state.new_world_seed.push(ch);
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    if !matches!(event.physical_key, PhysicalKey::Code(KeyCode::Escape)) {
-                        return;
-                    }
-                }
-                // First-run/profile and ATProto account text entry. OAuth
-                // itself runs on a worker so the render/event loop stays live.
-                if game.ui_state.screen == Screen::Accounts && event.state.is_pressed() {
-                    match event.physical_key {
-                        PhysicalKey::Code(KeyCode::Tab) => {
-                            game.ui_state.account_focus = 1 - game.ui_state.account_focus;
-                        }
-                        PhysicalKey::Code(KeyCode::Backspace) => {
-                            if game.ui_state.account_focus == 0 {
-                                game.ui_state.account_name.pop();
-                            } else {
-                                game.ui_state.account_handle.pop();
-                            }
-                        }
-                        _ => {
-                            if let Some(t) = &event.text {
-                                for ch in t.chars() {
-                                    if game.ui_state.account_focus == 0
-                                        && (ch.is_ascii_alphanumeric()
-                                            || matches!(ch, ' ' | '-' | '.'))
-                                        && game.ui_state.account_name.chars().count()
-                                            < identity::DISPLAY_NAME_MAX
-                                    {
-                                        game.ui_state.account_name.push(ch);
-                                    } else if game.ui_state.account_focus == 1
-                                        && (ch.is_ascii_alphanumeric()
-                                            || matches!(ch, '.' | ':' | '-' | '@'))
-                                        && game.ui_state.account_handle.len() < 255
-                                    {
-                                        game.ui_state.account_handle.push(ch);
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    if !matches!(event.physical_key, PhysicalKey::Code(KeyCode::Escape)) {
-                        return;
-                    }
-                }
-                // Join-screen IP entry.
-                if game.ui_state.screen == Screen::Join && event.state.is_pressed() {
-                    match event.physical_key {
-                        PhysicalKey::Code(KeyCode::Backspace) => {
-                            game.multiplayer.join_ip.pop();
-                        }
-                        _ => {
-                            if let Some(t) = &event.text {
-                                for ch in t.chars() {
-                                    if (ch.is_ascii_alphanumeric() || ".:".contains(ch))
-                                        && game.multiplayer.join_ip.len() < 40
-                                    {
-                                        game.multiplayer.join_ip.push(ch);
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    // Esc still handled below for leaving the screen.
-                    if !matches!(event.physical_key, PhysicalKey::Code(KeyCode::Escape)) {
-                        return;
-                    }
-                }
-                // Chat entry (multiplayer).
-                if game.multiplayer.chat_open && event.state.is_pressed() {
-                    match event.physical_key {
-                        PhysicalKey::Code(KeyCode::Escape) => {
-                            game.multiplayer.chat_open = false;
-                            game.multiplayer.chat_text.clear();
-                        }
-                        PhysicalKey::Code(KeyCode::Enter) => {
-                            let msg: String = game
-                                .multiplayer
-                                .chat_text
-                                .trim()
-                                .chars()
-                                .take(200)
-                                .collect();
-                            game.multiplayer.chat_open = false;
-                            game.multiplayer.chat_text.clear();
-                            if !msg.is_empty() {
-                                let me = game.config.display_name.clone();
-                                if let Some(r) = &game.multiplayer.remote {
-                                    r.client.send(&net::C2S::Chat(msg.clone()));
-                                } else if msg.starts_with('!') {
-                                    // Capture & stamp commands (spec Part 1.4)
-                                    // run against the local/host world and
-                                    // answer with toasts instead of chat.
-                                    for reply in game.template_command(&msg) {
-                                        game.toast(reply);
-                                    }
-                                } else if let Some(h) = &game.multiplayer.host {
-                                    h.net.broadcast(&net::S2C::Chat {
-                                        from: me.clone(),
-                                        msg: msg.clone(),
-                                    });
-                                    game.toast(format!("{me}: {msg}"));
-                                } else {
-                                    game.toast(format!("{me}: {msg}"));
-                                }
-                            }
-                        }
-                        PhysicalKey::Code(KeyCode::Backspace) => {
-                            game.multiplayer.chat_text.pop();
-                        }
-                        _ => {
-                            if let Some(t) = &event.text {
-                                for ch in t.chars() {
-                                    if !ch.is_control() && game.multiplayer.chat_text.len() < 200 {
-                                        game.multiplayer.chat_text.push(ch);
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    return;
-                }
-                if let Screen::SignEdit(pos) = game.ui_state.screen
-                    && event.state.is_pressed()
-                {
-                    match event.physical_key {
-                        PhysicalKey::Code(KeyCode::Backspace) => {
-                            let l = game.ui_state.sign_line;
-                            game.ui_state.sign_lines[l].pop();
-                        }
-                        PhysicalKey::Code(KeyCode::Enter) => {
-                            if game.ui_state.sign_line < 2 {
-                                game.ui_state.sign_line += 1;
-                            } else {
-                                game.commit_sign(pos);
-                            }
-                        }
-                        PhysicalKey::Code(KeyCode::Escape) => game.commit_sign(pos),
-                        _ => {
-                            if let Some(t) = &event.text {
-                                let l = game.ui_state.sign_line;
-                                for ch in t.chars() {
-                                    let ok = ch.is_ascii_alphanumeric() || " :_-'".contains(ch);
-                                    if ok && game.ui_state.sign_lines[l].len() < 14 {
-                                        game.ui_state.sign_lines[l].push(ch);
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    return;
-                }
-                if game.ui_state.screen == Screen::Inventory
-                    && game.ui_state.inventory_discovery_open
-                    && game.ui_state.discovery_label_focus
-                    && event.state.is_pressed()
-                {
-                    match event.physical_key {
-                        PhysicalKey::Code(KeyCode::Backspace) => {
-                            game.ui_state.discovery_label.pop();
-                        }
-                        PhysicalKey::Code(KeyCode::Escape) | PhysicalKey::Code(KeyCode::Enter) => {
-                            game.ui_state.discovery_label_focus = false;
-                        }
-                        _ => {
-                            if let Some(text) = &event.text {
-                                for ch in text.chars() {
-                                    let allowed = !ch.is_control()
-                                        && (ch.is_alphanumeric() || " _-':,.()/#".contains(ch));
-                                    if allowed && game.ui_state.discovery_label.chars().count() < 48
-                                    {
-                                        game.ui_state.discovery_label.push(ch);
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    return;
-                }
-                let searchable = matches!(
-                    game.ui_state.screen,
-                    Screen::Inventory
-                        | Screen::Furnace(_)
-                        | Screen::Chest(_)
-                        | Screen::Offering(_)
-                        | Screen::Bloomery(_)
-                );
-                if game.ui_state.search_focus && searchable && event.state.is_pressed() {
-                    match event.physical_key {
-                        PhysicalKey::Code(KeyCode::Backspace) => {
-                            game.ui_state.search.pop();
-                            game.ui_state.browse_page = 0;
-                        }
-                        PhysicalKey::Code(KeyCode::Escape) | PhysicalKey::Code(KeyCode::Enter) => {
-                            game.ui_state.search_focus = false;
-                        }
-                        _ => {
-                            if let Some(t) = &event.text {
-                                for ch in t.chars() {
-                                    if (ch.is_ascii_alphanumeric()
-                                        || ch == ' '
-                                        || ch == ':'
-                                        || ch == '_')
-                                        && game.ui_state.search.len() < 24
-                                    {
-                                        game.ui_state.search.push(ch);
-                                        game.ui_state.browse_page = 0;
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    return;
-                }
-                if let PhysicalKey::Code(code) = event.physical_key {
-                    // The OS repeats a held key, and every edge-triggered
-                    // action below reads a repeat as a fresh press. Holding
-                    // space to climb in creative therefore double-tapped
-                    // itself back out of flight the moment the repeat delay
-                    // elapsed — which is why it only ever "caught" once you
-                    // were already a little way up. Holding Escape flapped
-                    // the pause menu, and holding the drop key emptied the
-                    // stack, for the same reason. Held-key state is set from
-                    // the first press and cleared on release, so dropping
-                    // repeats costs movement nothing.
-                    //
-                    // Text entry needs repeats and is handled above, before
-                    // this point.
-                    if event.repeat && event.state.is_pressed() {
-                        return;
-                    }
-                    game.key(code, event.state.is_pressed(), event_loop);
-                }
+                game.keyboard_event(&event, event_loop);
             }
             WindowEvent::MouseInput { state, button, .. } => {
                 let pressed = state == ElementState::Pressed;
@@ -368,9 +129,9 @@ impl ApplicationHandler for App {
                     }
                     return;
                 }
-                if !game.input.mouse_captured {
+                if !game.input.captured() {
                     if pressed {
-                        game.capture_mouse(true);
+                        game.input.capture(&game.window, true);
                     }
                     return;
                 }
@@ -392,12 +153,12 @@ impl ApplicationHandler for App {
                     }
                     MouseButton::Middle if pressed => {
                         if let Some(h) = raycast::raycast_at(
-                            &game.server.world,
+                            &game.runtime.view(),
                             game.player.eye(),
                             game.camera.local_forward(),
                             game.reach(),
                         ) {
-                            let b = game.server.world.get_block_at(h.block);
+                            let b = game.runtime.view().get_block_at(h.block);
                             let reg = game.content.reg.clone();
                             let found = game.inventory.slots[..HOTBAR_SLOTS]
                                 .iter()
@@ -451,25 +212,24 @@ impl ApplicationHandler for App {
                     let (bx, _, bw, _) = game.slider_bar_rect(i);
                     game.set_slider(i, (position.x as f32 - bx - 2.0) / (bw - 4.0));
                 }
-                if game.input.mouse_captured
-                    && !game.input.raw_look
+                if game.input.captured()
+                    && !game.input.uses_raw_look()
                     && game.ui_state.screen == Screen::Playing
                 {
-                    game.cursor_look(position);
+                    game.input
+                        .cursor_look(&game.window, &mut game.camera, position);
                 }
             }
             // Crossing the window boundary teleports the cursor; never treat
             // that jump as look motion.
             WindowEvent::CursorEntered { .. } | WindowEvent::CursorLeft { .. } => {
-                game.input.last_cursor = None;
+                game.input.cursor_boundary();
             }
             WindowEvent::Focused(false) => {
                 if game.ui_state.screen == Screen::Playing {
-                    game.capture_mouse(false);
+                    game.input.capture(&game.window, false);
                 }
-                game.input.keys = KeysDown::default();
-                game.input.left_held = false;
-                game.input.right_held = false;
+                game.input.clear_held();
                 game.interaction.breaking = None;
             }
             WindowEvent::RedrawRequested => {
@@ -482,8 +242,8 @@ impl ApplicationHandler for App {
     fn device_event(&mut self, _el: &ActiveEventLoop, _id: DeviceId, event: DeviceEvent) {
         if let DeviceEvent::MouseMotion { delta: (dx, dy) } = event
             && let Some(game) = self.game.as_mut()
-            && game.input.mouse_captured
-            && game.input.raw_look
+            && game.input.captured()
+            && game.input.uses_raw_look()
             && game.ui_state.screen == Screen::Playing
         {
             game.camera.turn(dx as f32, dy as f32);
@@ -495,6 +255,26 @@ impl ApplicationHandler for App {
             game.window.request_redraw();
         }
     }
+}
+
+/// Start the platform event loop and windowed client.
+pub fn run_windowed() {
+    // Prefer X11/XWayland on Linux: it supports cursor confinement and
+    // warping, which pure Wayland compositors (notably WSLg) often don't.
+    #[cfg(target_os = "linux")]
+    let event_loop = {
+        use winit::platform::x11::EventLoopBuilderExtX11;
+        let mut builder = EventLoop::builder();
+        if std::env::var("DISPLAY").is_ok() {
+            builder.with_x11();
+        }
+        builder.build().expect("create event loop")
+    };
+    #[cfg(not(target_os = "linux"))]
+    let event_loop = EventLoop::new().expect("create event loop");
+    event_loop.set_control_flow(ControlFlow::Poll);
+    let mut app = App::default();
+    event_loop.run_app(&mut app).expect("run event loop");
 }
 
 #[cfg(test)]

@@ -1,0 +1,50 @@
+{
+  "adapter": "NVIDIA GeForce RTX 5070 Ti Laptop GPU [Vulkan, DiscreteGpu]",
+  "backend": "Vulkan",
+  "cold_guest_entry": {
+    "entry_latency_ms": 204.85431300000002,
+    "pending_initial_chunks_peak": 16,
+    "process_peak_rss_kib": 369148,
+    "update_ms_p50": 1.942219,
+    "update_ms_p95": 99.479776,
+    "update_ms_p99": 99.479776,
+    "updates": 8
+  },
+  "entry_mesh_uploaded": true,
+  "hardware": true,
+  "measurement_scope": "Test-profile native Game::update wall times, excluding harness sleeps. Cold means a fresh guest session with already initialized content; warm means rejoining the same host after full disconnect. Queue counts initial missing terrain/meshes; RSS is the process lifetime high-water mark. These functional timings do not establish production performance equivalence.",
+  "movement_received_by_host": true,
+  "normal_disconnect": true,
+  "screenshot": "native-guest-entry.ppm",
+  "shared_roster_and_chat": true,
+  "source_commit": "70de48ac1e455db2ff38abea674a9d0622ae2fcf",
+  "source_dirty": false,
+  "travel": {
+    "pending_initial_chunks_peak": 20,
+    "process_peak_rss_kib": 369148,
+    "update_ms_p50": 0.910239,
+    "update_ms_p95": 8.048667,
+    "update_ms_p99": 27.406996,
+    "updates": 78
+  },
+  "unsupported_guest_use_preserves_inventory": true,
+  "walked_blocks": 3.405640125274658,
+  "warm_guest_entry": {
+    "entry_latency_ms": 65.7705,
+    "pending_initial_chunks_peak": 13,
+    "process_peak_rss_kib": 369148,
+    "update_ms_p50": 1.5639560000000001,
+    "update_ms_p95": 4.782892,
+    "update_ms_p99": 4.782892,
+    "updates": 5
+  },
+  "runner": {
+    "suite_exit_code": 0,
+    "binary_sha256": "707d85b55c09f8802cff1767dc07746339301ae0a88fff9966c16a46ca64131b",
+    "artifacts": [
+      "native-guest-entry.ppm",
+      "native-guest-entry.json"
+    ]
+  },
+  "artifact_directory": "target/maintainability/client-session-native/attempt-4"
+}

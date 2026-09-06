@@ -1,0 +1,868 @@
+{
+  "initial_qualification": {
+    "failures": [
+      "screenshots/visual-polish/closeout-geode-performance.report.toml"
+    ],
+    "source_sha256": "ec379a2553b2189159113f6e03c7cac9305fc6351f63bc8a7379c59d882c9a03"
+  },
+  "initial_trial": "campaign-1",
+  "motion_frames": 56,
+  "native_capture_count": 102,
+  "original_qualification_sha256": "80be5bd5923c9a931b12624abd95afae18f58525633b4506644c0d046f61d097",
+  "repeat_protocol": {
+    "original_trial": "campaign-1",
+    "reason": "Only closeout geode simulation median exceeded the 0.100 ms limit (0.124632 ms); ordinary geode group passed (0.018419 ms).",
+    "scope": "One complete ten-capture group in original alternating opened/sealed order, same frozen executable and immutable sources.",
+    "selection": "All ten repeat samples will be retained and assessed as one group. No further timing repeats are scheduled. A reproduced failure requires investigation of its cause.",
+    "thresholds_changed": false
+  },
+  "selected_capture_count": 92,
+  "selected_captures": [
+    {
+      "artifacts": {
+        "screenshots/visual-polish-foundation-a.capture.toml": "bcec92b5c67bf755c31d6ff0de4a16c70bd14607a7af0228f6f2da193a9dbba5",
+        "screenshots/visual-polish-foundation-a.ppm": "dfffbd081a4975cab2832109feb8a37c8263bca375b3dbcffb83dc8064c29da0",
+        "screenshots/visual-polish-foundation-a.wfd": "e9a6b2b7a316b99521a882ab723c2cc61ae9297683117f8b881c8c8184d5f6ed"
+      },
+      "capture_id": "foundation-repeat-a",
+      "trial": "campaign-1"
+    },
+    {
+      "artifacts": {
+        "screenshots/visual-polish-foundation-b.capture.toml": "05eeea96b28455d7baf4516632b1228456338729c23124fb6ae3e99da067d9d0",
+        "screenshots/visual-polish-foundation-b.ppm": "4fb811879aa8aee0f38cd905d28c1204cbfa24bb1547724f84035d647ba7d940",
+        "screenshots/visual-polish-foundation-b.wfd": "e9a6b2b7a316b99521a882ab723c2cc61ae9297683117f8b881c8c8184d5f6ed"
+      },
+      "capture_id": "foundation-repeat-b",
+      "trial": "campaign-1"
+    },
+    {
+      "artifacts": {
+        "screenshots/strata-baseline-sandstone-v4-near-noon-base.capture.toml": "9fed082b7aaf48d2f7c92322b3ba1ca69d83592f97d8c2c7f28a1ef914fcdcd6",
+        "screenshots/strata-baseline-sandstone-v4-near-noon-base.ppm": "b2012a8fae746baf7b9609eb1c04e441698f8b23f48ef5039720936485bfca14",
+        "screenshots/strata-baseline-sandstone-v4-near-noon-base.wfd": "54cfd6c329f2c8d9d014e4f14444bc7cefeecf305b0e46e4093d3df74847b06e"
+      },
+      "capture_id": "strata-baseline-sandstone-v4-near-noon-base",
+      "trial": "campaign-1"
+    },
+    {
+      "artifacts": {
+        "screenshots/strata-baseline-sandstone-v12-prefog-overcast-gemini.capture.toml": "517bac243296daa5912aad9f93ee1a478c5766065d011e7f0b9ec230abbaa419",
+        "screenshots/strata-baseline-sandstone-v12-prefog-overcast-gemini.ppm": "bddd612298a50c83f25e63322407bba4d0a43897ad1657b6ba934dac10e78c06",
+        "screenshots/strata-baseline-sandstone-v12-prefog-overcast-gemini.wfd": "a901eed88d2061e18815344e4d4c977a20e15d2ad1a9485c1abaf202eab7edc1"
+      },
+      "capture_id": "strata-baseline-sandstone-v12-prefog-overcast-gemini",
+      "trial": "campaign-1"
+    },
+    {
+      "artifacts": {
+        "screenshots/strata-baseline-limestone-v4-near-dawn-gemini.capture.toml": "8fa2bb1a7dc0c2fd44f82dedf96d14889b42b7960b9e56952254a561aa08b744",
+        "screenshots/strata-baseline-limestone-v4-near-dawn-gemini.ppm": "03c07b66ff528c09075094d7e2a8f40068477f50cb05dd8499395ab54c2dc595",
+        "screenshots/strata-baseline-limestone-v4-near-dawn-gemini.wfd": "24e7a95006c0557a8e0b9aa174c4a2a6e0f82b49056dc0a4738b361078088111"
+      },
+      "capture_id": "strata-baseline-limestone-v4-near-dawn-gemini",
+      "trial": "campaign-1"
+    },
+    {
+      "artifacts": {
+        "screenshots/strata-baseline-limestone-v12-prefog-overcast-dusk.capture.toml": "0da7b1b7828e3ce79350f5a9f965cfa2db2d50db6fd6ec7625e533567f28ad64",
+        "screenshots/strata-baseline-limestone-v12-prefog-overcast-dusk.ppm": "0d5272425dbee7cf4d8280fbf7bb9026b07e5cc73c3fe1cf0070a829ba255f99",
+        "screenshots/strata-baseline-limestone-v12-prefog-overcast-dusk.wfd": "4c43e1311157e7dc7ddfa3b3fa413a3810c836efec3d14c41c37f8d167b80ac9"
+      },
+      "capture_id": "strata-baseline-limestone-v12-prefog-overcast-dusk",
+      "trial": "campaign-1"
+    },
+    {
+      "artifacts": {
+        "screenshots/strata-baseline-marble-v4-near-rain-dusk.capture.toml": "53487b1cedb7a206c859f2a0c4cca2bbca73c0fcc3375bf378775a6d5d0a5ba8",
+        "screenshots/strata-baseline-marble-v4-near-rain-dusk.ppm": "12d8bb57c407498951550eaf772c5cace24c24a19c664fccbacd067eb2a09a23",
+        "screenshots/strata-baseline-marble-v4-near-rain-dusk.wfd": "f59c25c73794f848c01c26a46d5311bbf4c6877a8da460bf0c7532da2c90656c"
+      },
+      "capture_id": "strata-baseline-marble-v4-near-rain-dusk",
+      "trial": "campaign-1"
+    },
+    {
+      "artifacts": {
+        "screenshots/strata-baseline-marble-v12-prefog-noon-base.capture.toml": "70f87ad2071c41e196b5268a28f666102819388b1a68adbac9e5450654ce49f2",
+        "screenshots/strata-baseline-marble-v12-prefog-noon-base.ppm": "076c05ddbc03e07fffcf741ca86bbd44a30994c6cdc7675981f1ca885995b20b",
+        "screenshots/strata-baseline-marble-v12-prefog-noon-base.wfd": "572d6711cd087b9b3dad00c5e14fba23e0d0fae78bab46f77fde3427f7883989"
+      },
+      "capture_id": "strata-baseline-marble-v12-prefog-noon-base",
+      "trial": "campaign-1"
+    },
+    {
+      "artifacts": {
+        "screenshots/strata-baseline-quartzite-v4-near-overcast-base.capture.toml": "d31959a36231585b6a5e7c1dd14340f623ad1063f1af9b04f40f9aaea3b12b3b",
+        "screenshots/strata-baseline-quartzite-v4-near-overcast-base.ppm": "4eed12a3298447d0d2033d9130eef56f9dd43e7b617675bc25fe0b6a31331845",
+        "screenshots/strata-baseline-quartzite-v4-near-overcast-base.wfd": "80d79999aac9d7ae0c9d348c8a2367eb71b7239d7a094515403de3ae3bd02edd"
+      },
+      "capture_id": "strata-baseline-quartzite-v4-near-overcast-base",
+      "trial": "campaign-1"
+    },
+    {
+      "artifacts": {
+        "screenshots/strata-baseline-quartzite-v12-prefog-rain-gemini.capture.toml": "004aa6f7e94a5cade6d362f3398a5c2d5201373cdacbb3a97996de08948f663b",
+        "screenshots/strata-baseline-quartzite-v12-prefog-rain-gemini.ppm": "2532b81321c38ea4279e4def2ac365c5b82b7fc1b0bea29061a90ffb3671d56d",
+        "screenshots/strata-baseline-quartzite-v12-prefog-rain-gemini.wfd": "55c92e17ba6086988d5eb3ed91cd7ba2046d8f452f0136c5c02b2bee74a44c48"
+      },
+      "capture_id": "strata-baseline-quartzite-v12-prefog-rain-gemini",
+      "trial": "campaign-1"
+    },
+    {
+      "artifacts": {
+        "screenshots/strata-baseline-basalt-v4-near-noon-gemini.capture.toml": "d8db62445decdff1e698f05e78e499c3339d72252cd58123d6b82233bc756208",
+        "screenshots/strata-baseline-basalt-v4-near-noon-gemini.ppm": "ade15a45ae7e2e63f5bb983e980894d0aa386641eed0d4e170a5e0dd1fb26edb",
+        "screenshots/strata-baseline-basalt-v4-near-noon-gemini.wfd": "83a55c48c3d3dd039980479ee9c69cf59c99f13dc327564203f55bd5efe816b4"
+      },
+      "capture_id": "strata-baseline-basalt-v4-near-noon-gemini",
+      "trial": "campaign-1"
+    },
+    {
+      "artifacts": {
+        "screenshots/strata-baseline-basalt-v12-prefog-overcast-dusk.capture.toml": "2711b6259b76198d7cfbeed833e7f7964e6496582c88e7159a7f191dad05943f",
+        "screenshots/strata-baseline-basalt-v12-prefog-overcast-dusk.ppm": "87946fbcd3624c1feb3ef4182a3fa32bfbf6eed55887c04c21da7f816833172b",
+        "screenshots/strata-baseline-basalt-v12-prefog-overcast-dusk.wfd": "ad38f32c0442d52606184584259f0d94ef87780bb56ef5a67d441e6e834f8c8e"
+      },
+      "capture_id": "strata-baseline-basalt-v12-prefog-overcast-dusk",
+      "trial": "campaign-1"
+    },
+    {
+      "artifacts": {
+        "screenshots/strata-baseline-sandstone-v4-near-noon-hewn.capture.toml": "3dd44b669f3ccaf9ef500d2c90d44c9074f14867ae51a73775f65ffc52120295",
+        "screenshots/strata-baseline-sandstone-v4-near-noon-hewn.ppm": "5ed29df0ec49b55fcf39532bd181ec311a752c5d8efc493a09ee30de64eb499a",
+        "screenshots/strata-baseline-sandstone-v4-near-noon-hewn.wfd": "5adf97c625741ffda0b3923e8e5642da3c368f42c492fdcea8a3cdd868a716a6"
+      },
+      "capture_id": "strata-baseline-sandstone-v4-near-noon-hewn",
+      "trial": "campaign-1"
+    },
+    {
+      "artifacts": {
+        "screenshots/strata-baseline-limestone-v4-near-noon-hewn.capture.toml": "101f7acb0f0e39373c89b4153461d31dd993fa31a149c28b43bdc95c2e082718",
+        "screenshots/strata-baseline-limestone-v4-near-noon-hewn.ppm": "c824942ad7cbd3824002e1a0ccb926038968e044477165fefe39adcb1dd662f7",
+        "screenshots/strata-baseline-limestone-v4-near-noon-hewn.wfd": "a2ea4b7e350428bd56217727b8e3822064e4680fed876e3b3f41e84d9afa412c"
+      },
+      "capture_id": "strata-baseline-limestone-v4-near-noon-hewn",
+      "trial": "campaign-1"
+    },
+    {
+      "artifacts": {
+        "screenshots/strata-baseline-marble-v12-prefog-dawn-gemini.capture.toml": "0ad0de4363c9b1ab5c19ceab8778a6efee12425d4daf37ded88353f0e519a56a",
+        "screenshots/strata-baseline-marble-v12-prefog-dawn-gemini.ppm": "e2b3e0db0f93bb975d2019f60d6bb1a620c0ea40ce74ba8c3d4114c109aeb684",
+        "screenshots/strata-baseline-marble-v12-prefog-dawn-gemini.wfd": "f40cef86f0adcdfbf69ce4a8a550f8180e979580fbb97314fbcbf2baa68fefed"
+      },
+      "capture_id": "strata-baseline-marble-v12-prefog-dawn-gemini",
+      "trial": "campaign-1"
+    },
+    {
+      "artifacts": {
+        "screenshots/strata-baseline-marble-v14-prefog-dawn-overcast-gemini.capture.toml": "584c12210693e26f907285f61d3ce4d5d77f0653bd8284027bfb87aa100fddf5",
+        "screenshots/strata-baseline-marble-v14-prefog-dawn-overcast-gemini.ppm": "8b529d4d2bf1048ddc154d67b8d85a8a9e2db1ceeb7c1e91dbe4aa114794b5e4",
+        "screenshots/strata-baseline-marble-v14-prefog-dawn-overcast-gemini.wfd": "4fa3044455f03899335ef10356c9a141d7f468d40b350ad12062190eaa04fddf"
+      },
+      "capture_id": "strata-baseline-marble-v14-prefog-dawn-overcast-gemini",
+      "trial": "campaign-1"
+    },
+    {
+      "artifacts": {
+        "screenshots/strata-after-sandstone-v4-near-noon-base.capture.toml": "10f354041efe00479ea9914c50b75a812c1c4f9be15b72d603b7fb336c60962a",
+        "screenshots/strata-after-sandstone-v4-near-noon-base.ppm": "285f67213fe8c6322432d4060518bed27e648c73cafef240593d88725579e383",
+        "screenshots/strata-after-sandstone-v4-near-noon-base.wfd": "54cfd6c329f2c8d9d014e4f14444bc7cefeecf305b0e46e4093d3df74847b06e"
+      },
+      "capture_id": "strata-after-sandstone-v4-near-noon-base",
+      "trial": "campaign-1"
+    },
+    {
+      "artifacts": {
+        "screenshots/strata-after-sandstone-v12-prefog-overcast-gemini.capture.toml": "6bb7ba4f1544294e068a57a4bf56dc71d703a68d1c6bbf6085a907e1ec61afe1",
+        "screenshots/strata-after-sandstone-v12-prefog-overcast-gemini.ppm": "43046880792b68f0ed89759cda8d4b1664a8e92f5519739079b349b6d0bfce33",
+        "screenshots/strata-after-sandstone-v12-prefog-overcast-gemini.wfd": "ee8951e11c1dde842dd5dd067149a3ae5d4fc682a14449110fb23dee5a2f2479"
+      },
+      "capture_id": "strata-after-sandstone-v12-prefog-overcast-gemini",
+      "trial": "campaign-1"
+    },
+    {
+      "artifacts": {
+        "screenshots/strata-after-limestone-v4-near-dawn-gemini.capture.toml": "c8de306d5bc790c498d58fca777a98c6c22415100592acd05358ff4f49089d09",
+        "screenshots/strata-after-limestone-v4-near-dawn-gemini.ppm": "0f43af2b715295d8a7f0e9e0a90dcd25a0af801cdef327ffc752a94737d7112d",
+        "screenshots/strata-after-limestone-v4-near-dawn-gemini.wfd": "e0b529f64290a3de635387fd67c5a529d6d93fbf351dcfeee23be51a2ad6f4a5"
+      },
+      "capture_id": "strata-after-limestone-v4-near-dawn-gemini",
+      "trial": "campaign-1"
+    },
+    {
+      "artifacts": {
+        "screenshots/strata-after-limestone-v12-prefog-overcast-dusk.capture.toml": "5d6c53c5cb8537d02eec5af50a3d81607f651c408bf6f3b25919cfae3e828f6b",
+        "screenshots/strata-after-limestone-v12-prefog-overcast-dusk.ppm": "3b9fa9e633965503fab5e41d21afd10c3aabe6a2700506a93da14f6e5951c791",
+        "screenshots/strata-after-limestone-v12-prefog-overcast-dusk.wfd": "935ee89e25d53ba547744165a6590440e67906c8dbf9619dd3cd4d8bd4541434"
+      },
+      "capture_id": "strata-after-limestone-v12-prefog-overcast-dusk",
+      "trial": "campaign-1"
+    },
+    {
+      "artifacts": {
+        "screenshots/strata-after-marble-v4-near-rain-dusk.capture.toml": "c2f630169f3183bcae475f69028e2d7684422e69a5e9491bc88a02dfc2901015",
+        "screenshots/strata-after-marble-v4-near-rain-dusk.ppm": "687f9a877968ef9f395ba0f81f5fc77a9f5c66d1475ecaac4d35d546c7ce95bd",
+        "screenshots/strata-after-marble-v4-near-rain-dusk.wfd": "5e334f0f1750a2e9fc36bc0a8ac27ad0247344df02780fc842604b30c63357b8"
+      },
+      "capture_id": "strata-after-marble-v4-near-rain-dusk",
+      "trial": "campaign-1"
+    },
+    {
+      "artifacts": {
+        "screenshots/strata-after-marble-v12-prefog-noon-base.capture.toml": "7e5c2b665861fca6b1028f5779bba379bca1c6e44b3623b590d50e81080ed7d5",
+        "screenshots/strata-after-marble-v12-prefog-noon-base.ppm": "ea028beda4d33067762a299393cad2d204b390df50bdace3ca5aadd7d31f167b",
+        "screenshots/strata-after-marble-v12-prefog-noon-base.wfd": "8ea60eca9e0d97722f331c51a35723323d662b28e045493b603c96a2e1676efe"
+      },
+      "capture_id": "strata-after-marble-v12-prefog-noon-base",
+      "trial": "campaign-1"
+    },
+    {
+      "artifacts": {
+        "screenshots/strata-after-quartzite-v4-near-overcast-base.capture.toml": "d0c0ede9b32b126411975f70a9d58273a76ac6d77d0863ebea946897ddee337b",
+        "screenshots/strata-after-quartzite-v4-near-overcast-base.ppm": "57b956ebf1573abaa10c682a279e3d666b93b623833e6c24362a2c63aaf43622",
+        "screenshots/strata-after-quartzite-v4-near-overcast-base.wfd": "80d79999aac9d7ae0c9d348c8a2367eb71b7239d7a094515403de3ae3bd02edd"
+      },
+      "capture_id": "strata-after-quartzite-v4-near-overcast-base",
+      "trial": "campaign-1"
+    },
+    {
+      "artifacts": {
+        "screenshots/strata-after-quartzite-v12-prefog-rain-gemini.capture.toml": "41a6f2ee57a0b0b02117bedf0466f50bc52f25cfba0a64c275e477e5705cddb7",
+        "screenshots/strata-after-quartzite-v12-prefog-rain-gemini.ppm": "e52804d8af0c79e095761a062d7d23274eaa9dd0079394a3bc2492b6d68a1154",
+        "screenshots/strata-after-quartzite-v12-prefog-rain-gemini.wfd": "ba41eb4777aa5458b5540dbc5146edd18cd7476e7b76aeef41a14d86fb211b88"
+      },
+      "capture_id": "strata-after-quartzite-v12-prefog-rain-gemini",
+      "trial": "campaign-1"
+    },
+    {
+      "artifacts": {
+        "screenshots/strata-after-basalt-v4-near-noon-gemini.capture.toml": "7b341514d263c0fe5ba4a56797956ea38e92f1e3dbce330217c693ee5515f979",
+        "screenshots/strata-after-basalt-v4-near-noon-gemini.ppm": "3c3b66aedeb6361ceb16786e9e4964e454c6fec51e521443c6aa6f7b426bbec9",
+        "screenshots/strata-after-basalt-v4-near-noon-gemini.wfd": "83a55c48c3d3dd039980479ee9c69cf59c99f13dc327564203f55bd5efe816b4"
+      },
+      "capture_id": "strata-after-basalt-v4-near-noon-gemini",
+      "trial": "campaign-1"
+    },
+    {
+      "artifacts": {
+        "screenshots/strata-after-basalt-v12-prefog-overcast-dusk.capture.toml": "5fd6670413c07feabb726d344c95c0b696be7045b09bea81c74bd6c392a224a1",
+        "screenshots/strata-after-basalt-v12-prefog-overcast-dusk.ppm": "81dbd1436f194f9171d54253c3cb0cdb5b3e4046c13ac63879a0df7a0d9d14c6",
+        "screenshots/strata-after-basalt-v12-prefog-overcast-dusk.wfd": "5b883011bd47aa3f48ed47a834e23c3f8486f42702db97d82dcd5ef328d0fcc4"
+      },
+      "capture_id": "strata-after-basalt-v12-prefog-overcast-dusk",
+      "trial": "campaign-1"
+    },
+    {
+      "artifacts": {
+        "screenshots/strata-after-sandstone-v4-near-noon-hewn.capture.toml": "05f8d57cf65205346db2e5325c88b6bd2c057d62b3412dd2c98e5a0a449ef4b1",
+        "screenshots/strata-after-sandstone-v4-near-noon-hewn.ppm": "ec871b6219faa6b45e16dd2650d1ee7d4297748810a7a98974d6d4c7662d0d65",
+        "screenshots/strata-after-sandstone-v4-near-noon-hewn.wfd": "5adf97c625741ffda0b3923e8e5642da3c368f42c492fdcea8a3cdd868a716a6"
+      },
+      "capture_id": "strata-after-sandstone-v4-near-noon-hewn",
+      "trial": "campaign-1"
+    },
+    {
+      "artifacts": {
+        "screenshots/strata-after-limestone-v4-near-noon-hewn.capture.toml": "8e44c142d4ebc99718426d478ea8341d5b4b5cf7820b84357f75d8903e4ed858",
+        "screenshots/strata-after-limestone-v4-near-noon-hewn.ppm": "6b19f87a5513adf074ec0d0fa944bfdfa4931c3fa0c93c46f91934c9ea5d03b6",
+        "screenshots/strata-after-limestone-v4-near-noon-hewn.wfd": "a2ea4b7e350428bd56217727b8e3822064e4680fed876e3b3f41e84d9afa412c"
+      },
+      "capture_id": "strata-after-limestone-v4-near-noon-hewn",
+      "trial": "campaign-1"
+    },
+    {
+      "artifacts": {
+        "screenshots/strata-after-marble-v12-prefog-dawn-gemini.capture.toml": "e73551ffa7eafa15f656362b16cb204a6335a19ec38a259b165cf698e0b9a70c",
+        "screenshots/strata-after-marble-v12-prefog-dawn-gemini.ppm": "4d0ff2727c3ce3951241ab308dce5a052b352a89d680e9743cafbd84b9f41bdd",
+        "screenshots/strata-after-marble-v12-prefog-dawn-gemini.wfd": "3ce7e276165125f3807c393f3b19cb3e89830c8b4bd925c916730f007f5704d4"
+      },
+      "capture_id": "strata-after-marble-v12-prefog-dawn-gemini",
+      "trial": "campaign-1"
+    },
+    {
+      "artifacts": {
+        "screenshots/strata-after-marble-v14-prefog-dawn-overcast-gemini.capture.toml": "8635d43576dde72a16b3530af96b18c24cc95d4203ed6a5dfc44bacc8b5833d1",
+        "screenshots/strata-after-marble-v14-prefog-dawn-overcast-gemini.ppm": "111fd6c32ab071a5dae6e0dc51d3426a5490790c71321008c540dd5a9b769c39",
+        "screenshots/strata-after-marble-v14-prefog-dawn-overcast-gemini.wfd": "92e0253b6828ddb798a2a34670a91f9f6025049c12a31fa3b184c2379bdd1920"
+      },
+      "capture_id": "strata-after-marble-v14-prefog-dawn-overcast-gemini",
+      "trial": "campaign-1"
+    },
+    {
+      "artifacts": {
+        "screenshots/geode-sealed-context.capture.toml": "b7887c1420cfe861114822c1128e3f124527bf8f5961393acdd7c8d0ac4058f6",
+        "screenshots/geode-sealed-context.ppm": "f7f147ea791176315e47b64fa9f6cd1e7570e1c4be76ac14c5fa7446a2cc1abf",
+        "screenshots/geode-sealed-context.wfd": "d5e2be43ed73457e09c7026c03ca74f319b7971d2b35c0b349bde4a93cd6e155"
+      },
+      "capture_id": "geode-sealed-context",
+      "trial": "campaign-1"
+    },
+    {
+      "artifacts": {
+        "screenshots/geode-aperture-proof.capture.toml": "6dca9681b2a4dfd4f67f4b9317063e4714610270bb3f61b6f2e04fafc940b9dd",
+        "screenshots/geode-aperture-proof.ppm": "fa349550ac6355890ab894be7b75469c3bd5d43fc1a34432e89506bdde930d92",
+        "screenshots/geode-aperture-proof.wfd": "f5983696103c3a07e99d5aecbeb4503a32a5b1bb69dfa17e2f3a9ae1e6915caa"
+      },
+      "capture_id": "geode-aperture-proof",
+      "trial": "campaign-1"
+    },
+    {
+      "artifacts": {
+        "screenshots/geode-cracked-hero.capture.toml": "2f752c978de5a9c7f66538ef78ccbfc3a33d7fc3a2c3820e5094d46a0730968e",
+        "screenshots/geode-cracked-hero.ppm": "fba1581796b3501f604cf8a14cfbc3a462133150c5abae7bdd48fdbf431d6daa",
+        "screenshots/geode-cracked-hero.wfd": "61f2e4a86765d2b8b411a3b1beffb42572640129d174afe16e7c40a22e377f73"
+      },
+      "capture_id": "geode-cracked-hero",
+      "trial": "campaign-1"
+    },
+    {
+      "artifacts": {
+        "screenshots/geode-reload-proof.capture.toml": "031d68a41bb0a40e2f2f57ce63f2adcce8f41d9441d63bb444585c59668db10c",
+        "screenshots/geode-reload-proof.ppm": "0eaa3e2579791b7b8abd1ade448c3a5f8ca8fbf1e8a8d33e01b0d4aebf175e18",
+        "screenshots/geode-reload-proof.wfd": "7bc53307832bc7d3d26f00706b931e0bd9051ee389d86d37fa114a9449582641"
+      },
+      "capture_id": "geode-reload-proof",
+      "trial": "campaign-1"
+    },
+    {
+      "artifacts": {
+        "screenshots/strata-closeout-sandstone-v4-near-noon-base.capture.toml": "ea008d7ba84c07f46b120c0efdd95cdec72697862ef17311302e74cedd459178",
+        "screenshots/strata-closeout-sandstone-v4-near-noon-base.ppm": "3bf4d04cf78d4a8ce2ad5fe6f36727c8d22c8e6199bdef4dbdf2047cd6a95d15",
+        "screenshots/strata-closeout-sandstone-v4-near-noon-base.wfd": "54cfd6c329f2c8d9d014e4f14444bc7cefeecf305b0e46e4093d3df74847b06e"
+      },
+      "capture_id": "strata-closeout-sandstone-v4-near-noon-base",
+      "trial": "campaign-1"
+    },
+    {
+      "artifacts": {
+        "screenshots/strata-closeout-sandstone-v12-prefog-overcast-gemini.capture.toml": "b95c5c728f9160bfc9c4578ce6502e8cdb3c6bc055ea706861320fd533eb4cb2",
+        "screenshots/strata-closeout-sandstone-v12-prefog-overcast-gemini.ppm": "9471cd8a907042b573880e81ade5e663f1fc23017747b7a6b769b61eb2228fbd",
+        "screenshots/strata-closeout-sandstone-v12-prefog-overcast-gemini.wfd": "3d51b50dd0933f08dabdaee45f304db7d097001bb4bb27aa09a110545e490d9f"
+      },
+      "capture_id": "strata-closeout-sandstone-v12-prefog-overcast-gemini",
+      "trial": "campaign-1"
+    },
+    {
+      "artifacts": {
+        "screenshots/strata-closeout-limestone-v4-near-dawn-gemini.capture.toml": "2fca41ab45a3effe0909af32165f8f29aafd6b83b217e437074638c66404511d",
+        "screenshots/strata-closeout-limestone-v4-near-dawn-gemini.ppm": "4538d83723c73f9f9b8f3aaa5d97efb2ee2e885de6d6c70ec25b7c2fc4ce58d0",
+        "screenshots/strata-closeout-limestone-v4-near-dawn-gemini.wfd": "24e7a95006c0557a8e0b9aa174c4a2a6e0f82b49056dc0a4738b361078088111"
+      },
+      "capture_id": "strata-closeout-limestone-v4-near-dawn-gemini",
+      "trial": "campaign-1"
+    },
+    {
+      "artifacts": {
+        "screenshots/strata-closeout-limestone-v12-prefog-overcast-dusk.capture.toml": "ac0e3b720a20f34146696518e5c15a441da2a2e84563c5dff5826ba5c4c2eb0e",
+        "screenshots/strata-closeout-limestone-v12-prefog-overcast-dusk.ppm": "dd29faead290aa6b15df08dacf87a46e4976f075ee235fcef6c15321ab2f3876",
+        "screenshots/strata-closeout-limestone-v12-prefog-overcast-dusk.wfd": "7a57acd9e233471e773fe7587c914436ab0ba9fe011fd1bdeabf6412b4b527ad"
+      },
+      "capture_id": "strata-closeout-limestone-v12-prefog-overcast-dusk",
+      "trial": "campaign-1"
+    },
+    {
+      "artifacts": {
+        "screenshots/strata-closeout-marble-v4-near-rain-dusk.capture.toml": "3a60ced4fc1fca9567455864c6202f5a86bf6bcab7f48fb08a58459927a8b88a",
+        "screenshots/strata-closeout-marble-v4-near-rain-dusk.ppm": "34946d93b58037f0c9952c6d62decf437af659b85e61ec5a65d4e1c810150c90",
+        "screenshots/strata-closeout-marble-v4-near-rain-dusk.wfd": "4cf3d9f5c9b598f3f50f3916d2c025a8a96ed5ae54e8e8cb52b673657b4ed857"
+      },
+      "capture_id": "strata-closeout-marble-v4-near-rain-dusk",
+      "trial": "campaign-1"
+    },
+    {
+      "artifacts": {
+        "screenshots/strata-closeout-marble-v12-prefog-noon-base.capture.toml": "f4c22fabb9fe7570c9e717aed49227401c244e61c1acd8d2537170c5bc778ce8",
+        "screenshots/strata-closeout-marble-v12-prefog-noon-base.ppm": "d751dfeeacc1409c4a4352c0f471ac93dbf907f6ac0b0f72d940e24efd999fd6",
+        "screenshots/strata-closeout-marble-v12-prefog-noon-base.wfd": "3405fa1ffd19d54705aa125356212662e26105546eedce20ec43374d19f47de2"
+      },
+      "capture_id": "strata-closeout-marble-v12-prefog-noon-base",
+      "trial": "campaign-1"
+    },
+    {
+      "artifacts": {
+        "screenshots/strata-closeout-quartzite-v4-near-overcast-base.capture.toml": "2e5fe7cfa3f9e30f3e44b1246b96a1fa75a0e4695f79d5879fb2f93f47f98625",
+        "screenshots/strata-closeout-quartzite-v4-near-overcast-base.ppm": "be78ce79534d6016010e2885163389f1b4db93c52f94b67288791cf919222890",
+        "screenshots/strata-closeout-quartzite-v4-near-overcast-base.wfd": "80d79999aac9d7ae0c9d348c8a2367eb71b7239d7a094515403de3ae3bd02edd"
+      },
+      "capture_id": "strata-closeout-quartzite-v4-near-overcast-base",
+      "trial": "campaign-1"
+    },
+    {
+      "artifacts": {
+        "screenshots/strata-closeout-quartzite-v12-prefog-rain-gemini.capture.toml": "0ab3b03edb48c845c45ab5cf17bd2cea4a9252e9e8de841c3a37440f25a70beb",
+        "screenshots/strata-closeout-quartzite-v12-prefog-rain-gemini.ppm": "71a3d714444cff8e34687ff96fcd9789aa11faa8cae6c9a1e8b33a3561d1b6cd",
+        "screenshots/strata-closeout-quartzite-v12-prefog-rain-gemini.wfd": "db40f56820af30531abbd54611d948ad1973a4866b47ec5ff6aea80badb8a7c2"
+      },
+      "capture_id": "strata-closeout-quartzite-v12-prefog-rain-gemini",
+      "trial": "campaign-1"
+    },
+    {
+      "artifacts": {
+        "screenshots/strata-closeout-basalt-v4-near-noon-gemini.capture.toml": "faccd2c510917f5c7c7d6013608bfd15d596caa0ea918863a57a2ca8e39cc959",
+        "screenshots/strata-closeout-basalt-v4-near-noon-gemini.ppm": "ce2250223ff80f5688f14bea7aa5931d649adb106be1b96136565708e57be879",
+        "screenshots/strata-closeout-basalt-v4-near-noon-gemini.wfd": "83a55c48c3d3dd039980479ee9c69cf59c99f13dc327564203f55bd5efe816b4"
+      },
+      "capture_id": "strata-closeout-basalt-v4-near-noon-gemini",
+      "trial": "campaign-1"
+    },
+    {
+      "artifacts": {
+        "screenshots/strata-closeout-basalt-v12-prefog-overcast-dusk.capture.toml": "7f872ce19d51ecabf004bec18f4fa77d6c330f0bf10864bdea633487398409b7",
+        "screenshots/strata-closeout-basalt-v12-prefog-overcast-dusk.ppm": "44940beaf5e25af9485a7b927e83b709b9d328ef2328f6388d0b75fd22fb3cf5",
+        "screenshots/strata-closeout-basalt-v12-prefog-overcast-dusk.wfd": "3b322f44b3d8610d1d56b154d708ada65f02e577f89a6cbafd66d16372b17eee"
+      },
+      "capture_id": "strata-closeout-basalt-v12-prefog-overcast-dusk",
+      "trial": "campaign-1"
+    },
+    {
+      "artifacts": {
+        "screenshots/strata-closeout-sandstone-v4-near-noon-hewn.capture.toml": "fa102f8a666358c8464d6c78c69353775f3e5db5b4d0368a112f76009c548b50",
+        "screenshots/strata-closeout-sandstone-v4-near-noon-hewn.ppm": "c4868b8510ae189a9b3277e9829124e76dd5b02ec7fbc206f3e5785bc662f624",
+        "screenshots/strata-closeout-sandstone-v4-near-noon-hewn.wfd": "5adf97c625741ffda0b3923e8e5642da3c368f42c492fdcea8a3cdd868a716a6"
+      },
+      "capture_id": "strata-closeout-sandstone-v4-near-noon-hewn",
+      "trial": "campaign-1"
+    },
+    {
+      "artifacts": {
+        "screenshots/strata-closeout-limestone-v4-near-noon-hewn.capture.toml": "a181536df587713ab16104c5f3f9e4c9605679ba755a4a4d0a7fe3afc88f4586",
+        "screenshots/strata-closeout-limestone-v4-near-noon-hewn.ppm": "56e80114d0bbd160119a924580d13ff9c0384503b3658c8b3354b27169fc9aa4",
+        "screenshots/strata-closeout-limestone-v4-near-noon-hewn.wfd": "a2ea4b7e350428bd56217727b8e3822064e4680fed876e3b3f41e84d9afa412c"
+      },
+      "capture_id": "strata-closeout-limestone-v4-near-noon-hewn",
+      "trial": "campaign-1"
+    },
+    {
+      "artifacts": {
+        "screenshots/strata-closeout-marble-v12-prefog-dawn-gemini.capture.toml": "051b7bbb5774a0f5bc05913522af2d22401d86702ff6357a6e5305b5d303196b",
+        "screenshots/strata-closeout-marble-v12-prefog-dawn-gemini.ppm": "8cc5732d3e8ad5eaadcaba592923aced177e7ed09e3c0ff09bb7a14b2ac5435d",
+        "screenshots/strata-closeout-marble-v12-prefog-dawn-gemini.wfd": "dc159b33b5c83c5ca33dd408033bf24746853af6f456076ccef08896fca9ea5e"
+      },
+      "capture_id": "strata-closeout-marble-v12-prefog-dawn-gemini",
+      "trial": "campaign-1"
+    },
+    {
+      "artifacts": {
+        "screenshots/strata-closeout-marble-v14-prefog-dawn-overcast-gemini.capture.toml": "c78ec77d6fadb359c800df085cf9c69ce15cdaa65372f172c3e7ed43fb39db39",
+        "screenshots/strata-closeout-marble-v14-prefog-dawn-overcast-gemini.ppm": "463cda16df8783e5b7dafa379c60818bd95ca744d72fb7353730fa226fd1357c",
+        "screenshots/strata-closeout-marble-v14-prefog-dawn-overcast-gemini.wfd": "b80507634aa83d95261f7001156a7ab320fc8e164363ef24a9dea8a7cbf88373"
+      },
+      "capture_id": "strata-closeout-marble-v14-prefog-dawn-overcast-gemini",
+      "trial": "campaign-1"
+    },
+    {
+      "artifacts": {
+        "screenshots/closeout-geode-sealed-context.capture.toml": "76cf86febd9c9ad2953d90b494e037c4fa10e155b925d03fd16dccd0911cbd5d",
+        "screenshots/closeout-geode-sealed-context.ppm": "f7f147ea791176315e47b64fa9f6cd1e7570e1c4be76ac14c5fa7446a2cc1abf",
+        "screenshots/closeout-geode-sealed-context.wfd": "d5e2be43ed73457e09c7026c03ca74f319b7971d2b35c0b349bde4a93cd6e155"
+      },
+      "capture_id": "closeout-geode-sealed-context",
+      "trial": "campaign-1"
+    },
+    {
+      "artifacts": {
+        "screenshots/closeout-geode-aperture-proof.capture.toml": "adf0cd51f5918e5cf6e7e6b9785badc8782ab9924e9e3b6874f92aa93f984414",
+        "screenshots/closeout-geode-aperture-proof.ppm": "fa349550ac6355890ab894be7b75469c3bd5d43fc1a34432e89506bdde930d92",
+        "screenshots/closeout-geode-aperture-proof.wfd": "f5983696103c3a07e99d5aecbeb4503a32a5b1bb69dfa17e2f3a9ae1e6915caa"
+      },
+      "capture_id": "closeout-geode-aperture-proof",
+      "trial": "campaign-1"
+    },
+    {
+      "artifacts": {
+        "screenshots/closeout-geode-cracked-hero.capture.toml": "9bb4d0a44715c3a6a39c960127c34c280adf17b81270eaa7da6d5220b4072519",
+        "screenshots/closeout-geode-cracked-hero.ppm": "fba1581796b3501f604cf8a14cfbc3a462133150c5abae7bdd48fdbf431d6daa",
+        "screenshots/closeout-geode-cracked-hero.wfd": "61f2e4a86765d2b8b411a3b1beffb42572640129d174afe16e7c40a22e377f73"
+      },
+      "capture_id": "closeout-geode-cracked-hero",
+      "trial": "campaign-1"
+    },
+    {
+      "artifacts": {
+        "screenshots/closeout-geode-reload-proof.capture.toml": "4e61332766b3d9bb704285523ee6d855c1bf19e0c070aa35693d74542c66b451",
+        "screenshots/closeout-geode-reload-proof.ppm": "0eaa3e2579791b7b8abd1ade448c3a5f8ca8fbf1e8a8d33e01b0d4aebf175e18",
+        "screenshots/closeout-geode-reload-proof.wfd": "7bc53307832bc7d3d26f00706b931e0bd9051ee389d86d37fa114a9449582641"
+      },
+      "capture_id": "closeout-geode-reload-proof",
+      "trial": "campaign-1"
+    },
+    {
+      "artifacts": {
+        "screenshots/closeout-geode-performance-opened-a.capture.toml": "8e60f1108389cf780b86c2136c755235275e856704d77e13bfec77138b4b0ce2",
+        "screenshots/closeout-geode-performance-opened-a.ppm": "b83186e14d054b790f7a71e4f7c45cd959485b35e371a387cd10268a3a903775",
+        "screenshots/closeout-geode-performance-opened-a.wfd": "9882eb050df2924efa1006cdd82c4d557c607c669c0dcbda0df472b19616007a"
+      },
+      "capture_id": "closeout-geode-performance-opened-a",
+      "trial": "closeout-repeat-1"
+    },
+    {
+      "artifacts": {
+        "screenshots/closeout-geode-performance-sealed-a.capture.toml": "857ccacb5ea14c43a4af3b80cbfc3bc1f834c3a21488dcd82165d7a0d2334ed2",
+        "screenshots/closeout-geode-performance-sealed-a.ppm": "b6e33c6fe1d81df46dbe8c68e70a08129f1455011a36d8a6d90136dfdbcd7343",
+        "screenshots/closeout-geode-performance-sealed-a.wfd": "a951ef40ec40227e92dc39ea8c7c1265a9b2c31a07bb72fc7cfab412c37623c3"
+      },
+      "capture_id": "closeout-geode-performance-sealed-a",
+      "trial": "closeout-repeat-1"
+    },
+    {
+      "artifacts": {
+        "screenshots/geode-performance-opened-a.capture.toml": "53ec53c4974b739f714126d94476191a91adecb63ed1bcd394b31a5c2d4ea9ea",
+        "screenshots/geode-performance-opened-a.ppm": "b83186e14d054b790f7a71e4f7c45cd959485b35e371a387cd10268a3a903775",
+        "screenshots/geode-performance-opened-a.wfd": "9882eb050df2924efa1006cdd82c4d557c607c669c0dcbda0df472b19616007a"
+      },
+      "capture_id": "geode-performance-opened-a",
+      "trial": "campaign-1"
+    },
+    {
+      "artifacts": {
+        "screenshots/geode-performance-sealed-a.capture.toml": "e96696f5f5a27043bec9e37d91762e1cbe83887d32f509d01a5d4d445757e560",
+        "screenshots/geode-performance-sealed-a.ppm": "b6e33c6fe1d81df46dbe8c68e70a08129f1455011a36d8a6d90136dfdbcd7343",
+        "screenshots/geode-performance-sealed-a.wfd": "a951ef40ec40227e92dc39ea8c7c1265a9b2c31a07bb72fc7cfab412c37623c3"
+      },
+      "capture_id": "geode-performance-sealed-a",
+      "trial": "campaign-1"
+    },
+    {
+      "artifacts": {
+        "screenshots/strata-after-performance-a.capture.toml": "0d442aa0563aabad8f0423e17e1e43e4dd2bcc708d8e8fc947d4d7c38aa1e90e",
+        "screenshots/strata-after-performance-a.ppm": "70b2a0a0067827686f4803fc0d8b9ae250a8614ad85813b67d862149395931aa",
+        "screenshots/strata-after-performance-a.wfd": "6386ffcd6cd17dfdc61bf0302e09f8da9c3381cb45bdf0c9c55a5fdc31cb1c1d"
+      },
+      "capture_id": "strata-after-performance-a",
+      "trial": "campaign-1"
+    },
+    {
+      "artifacts": {
+        "screenshots/strata-baseline-performance-a.capture.toml": "6e9cb536087fb243bef1ab3071aecae93229ea5b6c17658db12fa38c55d2b1b4",
+        "screenshots/strata-baseline-performance-a.ppm": "9c1e2083828ea47c601844d0b8307237a422f51e27a43037de8e05f546905ad8",
+        "screenshots/strata-baseline-performance-a.wfd": "264458bbaaa78ab02702ff3c2b1510e0ba81448852248714838dd800f7b546f9"
+      },
+      "capture_id": "strata-baseline-performance-a",
+      "trial": "campaign-1"
+    },
+    {
+      "artifacts": {
+        "screenshots/strata-closeout-performance-baseline-a.capture.toml": "937bc540a6a8ab0ceff6503e6b036e0c9dfb6b81977dd0a52b9e74ef982239fc",
+        "screenshots/strata-closeout-performance-baseline-a.ppm": "1eee35077119536c4a2a7b9254bf43dc43f259e3c70b0e49529ab30d05f4a559",
+        "screenshots/strata-closeout-performance-baseline-a.wfd": "b9ac1d851878d4bd26e76cae037010135e20f654ef22bd08f871b6745bd8fc33"
+      },
+      "capture_id": "strata-closeout-performance-baseline-a",
+      "trial": "campaign-1"
+    },
+    {
+      "artifacts": {
+        "screenshots/strata-closeout-performance-closeout-a.capture.toml": "3ffd67aecc189d42030af4063c0c607b2ea7bd98f985345b6ce024012fd1d514",
+        "screenshots/strata-closeout-performance-closeout-a.ppm": "0d0ca56b2ffb84c9a4d3bbd9b141f8355dd1f3ee5c689951f2552e08abc99086",
+        "screenshots/strata-closeout-performance-closeout-a.wfd": "a1508317c94c2e6c9019702ad5e4dfd85187d51043f3d1bc805253a2dda76e5a"
+      },
+      "capture_id": "strata-closeout-performance-closeout-a",
+      "trial": "campaign-1"
+    },
+    {
+      "artifacts": {
+        "screenshots/closeout-geode-performance-opened-b.capture.toml": "64c37fdb861cc419b3f1577234bb093f9cffda734a6fb011c0266ae6458ad4ed",
+        "screenshots/closeout-geode-performance-opened-b.ppm": "b83186e14d054b790f7a71e4f7c45cd959485b35e371a387cd10268a3a903775",
+        "screenshots/closeout-geode-performance-opened-b.wfd": "9882eb050df2924efa1006cdd82c4d557c607c669c0dcbda0df472b19616007a"
+      },
+      "capture_id": "closeout-geode-performance-opened-b",
+      "trial": "closeout-repeat-1"
+    },
+    {
+      "artifacts": {
+        "screenshots/closeout-geode-performance-sealed-b.capture.toml": "ad77f05c013d907856c7214d028709d1222fd0c17e0140d720928fabdaa272a5",
+        "screenshots/closeout-geode-performance-sealed-b.ppm": "b6e33c6fe1d81df46dbe8c68e70a08129f1455011a36d8a6d90136dfdbcd7343",
+        "screenshots/closeout-geode-performance-sealed-b.wfd": "a951ef40ec40227e92dc39ea8c7c1265a9b2c31a07bb72fc7cfab412c37623c3"
+      },
+      "capture_id": "closeout-geode-performance-sealed-b",
+      "trial": "closeout-repeat-1"
+    },
+    {
+      "artifacts": {
+        "screenshots/geode-performance-opened-b.capture.toml": "0a626edecb5649cfe4f70305796c6ef53f5629f76603e8eaafd9ea1e02ce78ef",
+        "screenshots/geode-performance-opened-b.ppm": "b83186e14d054b790f7a71e4f7c45cd959485b35e371a387cd10268a3a903775",
+        "screenshots/geode-performance-opened-b.wfd": "9882eb050df2924efa1006cdd82c4d557c607c669c0dcbda0df472b19616007a"
+      },
+      "capture_id": "geode-performance-opened-b",
+      "trial": "campaign-1"
+    },
+    {
+      "artifacts": {
+        "screenshots/geode-performance-sealed-b.capture.toml": "2751b37a227cdd5bf6dfe61aa1ea1330194780abff64d5a9090716bba91f0c3c",
+        "screenshots/geode-performance-sealed-b.ppm": "b6e33c6fe1d81df46dbe8c68e70a08129f1455011a36d8a6d90136dfdbcd7343",
+        "screenshots/geode-performance-sealed-b.wfd": "a951ef40ec40227e92dc39ea8c7c1265a9b2c31a07bb72fc7cfab412c37623c3"
+      },
+      "capture_id": "geode-performance-sealed-b",
+      "trial": "campaign-1"
+    },
+    {
+      "artifacts": {
+        "screenshots/strata-after-performance-b.capture.toml": "ca76f6e216a34553dc3036f8d9e8ded6a7df94f1f28478b31c05bbde97acc0b8",
+        "screenshots/strata-after-performance-b.ppm": "f9a0f9cab67073e551dea2172d67fd8b4e35b135279f0dfe80a8d34f1df49612",
+        "screenshots/strata-after-performance-b.wfd": "5074f53e6442fb57cdc70936be2e245384dff8f09523a6851ec8169235106db4"
+      },
+      "capture_id": "strata-after-performance-b",
+      "trial": "campaign-1"
+    },
+    {
+      "artifacts": {
+        "screenshots/strata-baseline-performance-b.capture.toml": "e162e54f55b9778c4a398f15df30f431c49c8c6102a9a629de3307b004c0fedd",
+        "screenshots/strata-baseline-performance-b.ppm": "f6e3e4ad1310476ebfce6fb1d4362874ac6317c76c9a597073db1cdd191db3be",
+        "screenshots/strata-baseline-performance-b.wfd": "ca296d014c860f2b5a680ec3bf88e17e17aa0f49411e81572688283185c6d8a0"
+      },
+      "capture_id": "strata-baseline-performance-b",
+      "trial": "campaign-1"
+    },
+    {
+      "artifacts": {
+        "screenshots/strata-closeout-performance-baseline-b.capture.toml": "881593e6613d254cda0029f18ad60cd05a8c7a400196bfe5d55301bfa62e346d",
+        "screenshots/strata-closeout-performance-baseline-b.ppm": "2e1ab67dc65ace1e10bf15b87c449d01fda8b62766b854eacb1cc57d5ee647a9",
+        "screenshots/strata-closeout-performance-baseline-b.wfd": "b61159f3848d2c24ff00551f23ec3ffd1185a026e98bb4a357b64065928036d9"
+      },
+      "capture_id": "strata-closeout-performance-baseline-b",
+      "trial": "campaign-1"
+    },
+    {
+      "artifacts": {
+        "screenshots/strata-closeout-performance-closeout-b.capture.toml": "5132e6747665225f203bc89bf7a668b14d0932f8e9e5840f84a9512df146af90",
+        "screenshots/strata-closeout-performance-closeout-b.ppm": "dfbdf7e7ee2c7139eac18eb417c774b48e33bd6970514f54497917c28f5c3ecc",
+        "screenshots/strata-closeout-performance-closeout-b.wfd": "c616b1fd10fe4db4436c4c2725bf01381586ebdc83a1d1f3b92d2e36843e805e"
+      },
+      "capture_id": "strata-closeout-performance-closeout-b",
+      "trial": "campaign-1"
+    },
+    {
+      "artifacts": {
+        "screenshots/closeout-geode-performance-opened-c.capture.toml": "1daeec08a01eb24160964dbc69ccc52713b26bc9fcba1f222d2b7701933f4ede",
+        "screenshots/closeout-geode-performance-opened-c.ppm": "b83186e14d054b790f7a71e4f7c45cd959485b35e371a387cd10268a3a903775",
+        "screenshots/closeout-geode-performance-opened-c.wfd": "9882eb050df2924efa1006cdd82c4d557c607c669c0dcbda0df472b19616007a"
+      },
+      "capture_id": "closeout-geode-performance-opened-c",
+      "trial": "closeout-repeat-1"
+    },
+    {
+      "artifacts": {
+        "screenshots/closeout-geode-performance-sealed-c.capture.toml": "3ae635f46b400117d19c9c1efe8ffc39c1acf88caf32cd4ca81205037e2111a5",
+        "screenshots/closeout-geode-performance-sealed-c.ppm": "b6e33c6fe1d81df46dbe8c68e70a08129f1455011a36d8a6d90136dfdbcd7343",
+        "screenshots/closeout-geode-performance-sealed-c.wfd": "a951ef40ec40227e92dc39ea8c7c1265a9b2c31a07bb72fc7cfab412c37623c3"
+      },
+      "capture_id": "closeout-geode-performance-sealed-c",
+      "trial": "closeout-repeat-1"
+    },
+    {
+      "artifacts": {
+        "screenshots/geode-performance-opened-c.capture.toml": "7a57f42bff495ad07659d279566730537603a0ddc72ed8cd211d7eca3e271eeb",
+        "screenshots/geode-performance-opened-c.ppm": "b83186e14d054b790f7a71e4f7c45cd959485b35e371a387cd10268a3a903775",
+        "screenshots/geode-performance-opened-c.wfd": "9882eb050df2924efa1006cdd82c4d557c607c669c0dcbda0df472b19616007a"
+      },
+      "capture_id": "geode-performance-opened-c",
+      "trial": "campaign-1"
+    },
+    {
+      "artifacts": {
+        "screenshots/geode-performance-sealed-c.capture.toml": "4ae0ebc0083254fbe7cc7391fec44a8a7337a76688db5635d370e9b754d52cbf",
+        "screenshots/geode-performance-sealed-c.ppm": "b6e33c6fe1d81df46dbe8c68e70a08129f1455011a36d8a6d90136dfdbcd7343",
+        "screenshots/geode-performance-sealed-c.wfd": "a951ef40ec40227e92dc39ea8c7c1265a9b2c31a07bb72fc7cfab412c37623c3"
+      },
+      "capture_id": "geode-performance-sealed-c",
+      "trial": "campaign-1"
+    },
+    {
+      "artifacts": {
+        "screenshots/strata-after-performance-c.capture.toml": "903d3f44504989357f3fa31a9a49de21ddaa562c009eb47a892789ce45ea4615",
+        "screenshots/strata-after-performance-c.ppm": "3dad78d194b454b5f91c169e5c2841b3179debad9e36827b758170743251495e",
+        "screenshots/strata-after-performance-c.wfd": "2e037b5de29a4f818240732304ff3f6ccba34179eac7f5a836648ff4d6a42336"
+      },
+      "capture_id": "strata-after-performance-c",
+      "trial": "campaign-1"
+    },
+    {
+      "artifacts": {
+        "screenshots/strata-baseline-performance-c.capture.toml": "12fa4ccf76020b2fe67efcdad467de54b788ada93143e696fecbb8c7d9c71f3e",
+        "screenshots/strata-baseline-performance-c.ppm": "2dff3bd90d36784eba7f5068861c4953038258230dfd961dcfad5a0a0f4f5a51",
+        "screenshots/strata-baseline-performance-c.wfd": "c257a1a533dc1998bb8daeb00182ad66e32b76a6c0a7f2fb7cb27e298a98fc39"
+      },
+      "capture_id": "strata-baseline-performance-c",
+      "trial": "campaign-1"
+    },
+    {
+      "artifacts": {
+        "screenshots/strata-closeout-performance-baseline-c.capture.toml": "56864abf2a55bf31c3311442d055bd2f1a478d06e7959c776e056df2385779cc",
+        "screenshots/strata-closeout-performance-baseline-c.ppm": "35a1995a472735cc72384ae4c2e26ea878c132b691019f422ae2b0ca91791a74",
+        "screenshots/strata-closeout-performance-baseline-c.wfd": "8ba73632cb84d030ae65eeca0462fbada25a5d7ce81ec31aadc3bdff7e8d7f78"
+      },
+      "capture_id": "strata-closeout-performance-baseline-c",
+      "trial": "campaign-1"
+    },
+    {
+      "artifacts": {
+        "screenshots/strata-closeout-performance-closeout-c.capture.toml": "52bdc9b8f000314f1b734382fa0372805c73476f004dd319a787ae2d68c73105",
+        "screenshots/strata-closeout-performance-closeout-c.ppm": "e529dae5455c7f85074269c7a9a98c3bd245b948fe6dbb81a10793bd74a21d78",
+        "screenshots/strata-closeout-performance-closeout-c.wfd": "621305931b989a8d880f75b7ce150836e6e66f828a6a1e20d25d4b9d16dbda66"
+      },
+      "capture_id": "strata-closeout-performance-closeout-c",
+      "trial": "campaign-1"
+    },
+    {
+      "artifacts": {
+        "screenshots/closeout-geode-performance-opened-d.capture.toml": "7da3a73aa10b682fe11ff5db75bb41bcdb0d57215de6e82b203834c84aecb37b",
+        "screenshots/closeout-geode-performance-opened-d.ppm": "b83186e14d054b790f7a71e4f7c45cd959485b35e371a387cd10268a3a903775",
+        "screenshots/closeout-geode-performance-opened-d.wfd": "9882eb050df2924efa1006cdd82c4d557c607c669c0dcbda0df472b19616007a"
+      },
+      "capture_id": "closeout-geode-performance-opened-d",
+      "trial": "closeout-repeat-1"
+    },
+    {
+      "artifacts": {
+        "screenshots/closeout-geode-performance-sealed-d.capture.toml": "6de08907fd62dc6f860dbca47088b42046e8c234bc9f5b3349c75eb935c2c04e",
+        "screenshots/closeout-geode-performance-sealed-d.ppm": "b6e33c6fe1d81df46dbe8c68e70a08129f1455011a36d8a6d90136dfdbcd7343",
+        "screenshots/closeout-geode-performance-sealed-d.wfd": "a951ef40ec40227e92dc39ea8c7c1265a9b2c31a07bb72fc7cfab412c37623c3"
+      },
+      "capture_id": "closeout-geode-performance-sealed-d",
+      "trial": "closeout-repeat-1"
+    },
+    {
+      "artifacts": {
+        "screenshots/geode-performance-opened-d.capture.toml": "0eff4eb8344a797091fd055fc561252b5bd919cdbdc0815b30f04f8becaba0f2",
+        "screenshots/geode-performance-opened-d.ppm": "b83186e14d054b790f7a71e4f7c45cd959485b35e371a387cd10268a3a903775",
+        "screenshots/geode-performance-opened-d.wfd": "9882eb050df2924efa1006cdd82c4d557c607c669c0dcbda0df472b19616007a"
+      },
+      "capture_id": "geode-performance-opened-d",
+      "trial": "campaign-1"
+    },
+    {
+      "artifacts": {
+        "screenshots/geode-performance-sealed-d.capture.toml": "09a0b994db6ecc8cca155bc2f988b76cbcfb1391fcd72425c375d5cb8744464b",
+        "screenshots/geode-performance-sealed-d.ppm": "b6e33c6fe1d81df46dbe8c68e70a08129f1455011a36d8a6d90136dfdbcd7343",
+        "screenshots/geode-performance-sealed-d.wfd": "a951ef40ec40227e92dc39ea8c7c1265a9b2c31a07bb72fc7cfab412c37623c3"
+      },
+      "capture_id": "geode-performance-sealed-d",
+      "trial": "campaign-1"
+    },
+    {
+      "artifacts": {
+        "screenshots/strata-after-performance-d.capture.toml": "aa40c297daae7281c2d0e6162e697c111f4f971a775d322b988f4738c788710e",
+        "screenshots/strata-after-performance-d.ppm": "c2ebc26d1b90bd612581f1247ea953237faec2922628c6f8a8cfec48e223189a",
+        "screenshots/strata-after-performance-d.wfd": "76e0949a674242b0f9cf2d0ac2a62471d65a09961d9b517ff627bf20ddea6fb3"
+      },
+      "capture_id": "strata-after-performance-d",
+      "trial": "campaign-1"
+    },
+    {
+      "artifacts": {
+        "screenshots/strata-baseline-performance-d.capture.toml": "91af333a3dae12aa82cea94026f4ed6ee38156108c064ff06e458ebe16ffb638",
+        "screenshots/strata-baseline-performance-d.ppm": "219b6014c0d83f7ecd3831ea9d42f0ae3d8e48b8b74313e2b790dc25aa8ea532",
+        "screenshots/strata-baseline-performance-d.wfd": "c95af81aeec84b64038d3ee90b6570a360c48397c808a8db28a3319edbafc7ce"
+      },
+      "capture_id": "strata-baseline-performance-d",
+      "trial": "campaign-1"
+    },
+    {
+      "artifacts": {
+        "screenshots/strata-closeout-performance-baseline-d.capture.toml": "eda548ae1ea592bdecb3dc9049aedd8ebd72123410e2dad2efaa7eda34e5d312",
+        "screenshots/strata-closeout-performance-baseline-d.ppm": "61bc0ef2d593dfb1e7c698981cbca20f6f944ebdb15ea6e27c30221000eb5ff4",
+        "screenshots/strata-closeout-performance-baseline-d.wfd": "4cb7fba902056be498d120dc6b20be68f25df8bdd632917885783237bdcc1987"
+      },
+      "capture_id": "strata-closeout-performance-baseline-d",
+      "trial": "campaign-1"
+    },
+    {
+      "artifacts": {
+        "screenshots/strata-closeout-performance-closeout-d.capture.toml": "762253b83ce7402489c83bf4bbc12404b746f8936e3a828cae364d64109796f9",
+        "screenshots/strata-closeout-performance-closeout-d.ppm": "ae7438785a2c1de487eeb664e9bd85ccc44301170ca59ca23a1e420035ef36ce",
+        "screenshots/strata-closeout-performance-closeout-d.wfd": "ed5949c4dcec19e181815db4952784a2760bf3c61c5a910b54e5d1ba0c456556"
+      },
+      "capture_id": "strata-closeout-performance-closeout-d",
+      "trial": "campaign-1"
+    },
+    {
+      "artifacts": {
+        "screenshots/closeout-geode-performance-opened-e.capture.toml": "eebc7fb742e5e6f11f4bc1105d3a813d5ff06265d6f647d222ec76a541382ce8",
+        "screenshots/closeout-geode-performance-opened-e.ppm": "b83186e14d054b790f7a71e4f7c45cd959485b35e371a387cd10268a3a903775",
+        "screenshots/closeout-geode-performance-opened-e.wfd": "9882eb050df2924efa1006cdd82c4d557c607c669c0dcbda0df472b19616007a"
+      },
+      "capture_id": "closeout-geode-performance-opened-e",
+      "trial": "closeout-repeat-1"
+    },
+    {
+      "artifacts": {
+        "screenshots/closeout-geode-performance-sealed-e.capture.toml": "06f6a9976cbc4713e0814987dd3574759445c7154218e09420c98d160d1331f1",
+        "screenshots/closeout-geode-performance-sealed-e.ppm": "b6e33c6fe1d81df46dbe8c68e70a08129f1455011a36d8a6d90136dfdbcd7343",
+        "screenshots/closeout-geode-performance-sealed-e.wfd": "a951ef40ec40227e92dc39ea8c7c1265a9b2c31a07bb72fc7cfab412c37623c3"
+      },
+      "capture_id": "closeout-geode-performance-sealed-e",
+      "trial": "closeout-repeat-1"
+    },
+    {
+      "artifacts": {
+        "screenshots/geode-performance-opened-e.capture.toml": "bc3e3a2f0d165e9aa1f450b8b048cf61345961d7d96a3f4d29d489574d752d49",
+        "screenshots/geode-performance-opened-e.ppm": "b83186e14d054b790f7a71e4f7c45cd959485b35e371a387cd10268a3a903775",
+        "screenshots/geode-performance-opened-e.wfd": "9882eb050df2924efa1006cdd82c4d557c607c669c0dcbda0df472b19616007a"
+      },
+      "capture_id": "geode-performance-opened-e",
+      "trial": "campaign-1"
+    },
+    {
+      "artifacts": {
+        "screenshots/geode-performance-sealed-e.capture.toml": "9a892fca93fc5d455007b1713b9a5c7e88d8b3ab035338914491903a5dd6e2d6",
+        "screenshots/geode-performance-sealed-e.ppm": "b6e33c6fe1d81df46dbe8c68e70a08129f1455011a36d8a6d90136dfdbcd7343",
+        "screenshots/geode-performance-sealed-e.wfd": "a951ef40ec40227e92dc39ea8c7c1265a9b2c31a07bb72fc7cfab412c37623c3"
+      },
+      "capture_id": "geode-performance-sealed-e",
+      "trial": "campaign-1"
+    },
+    {
+      "artifacts": {
+        "screenshots/strata-after-performance-e.capture.toml": "d23e569c06b8fa86dde6bb36e40d3807a5a071d1bc98b23d800d9a586d6ccf5b",
+        "screenshots/strata-after-performance-e.ppm": "089b339d88ad3d9f3e9f5a96790b77c70435a0159262d4b6e4574d0fe79351e3",
+        "screenshots/strata-after-performance-e.wfd": "c4c437216e497c13a3bc1486ed06d9c1f90066b223d0b6dc9abf53434e25807b"
+      },
+      "capture_id": "strata-after-performance-e",
+      "trial": "campaign-1"
+    },
+    {
+      "artifacts": {
+        "screenshots/strata-baseline-performance-e.capture.toml": "31a273edda30e817b2ae0b93a94043ed724077136cda82de0325788baff46ea1",
+        "screenshots/strata-baseline-performance-e.ppm": "ddd6d6339b50f4cd0bb4afddf9d8c3fe571d184a673af583eb52f5b75b1ff6bc",
+        "screenshots/strata-baseline-performance-e.wfd": "9dbfb24603831e480c8730a6ed30a4294150f55d199e19b99cf75595452ca6c8"
+      },
+      "capture_id": "strata-baseline-performance-e",
+      "trial": "campaign-1"
+    },
+    {
+      "artifacts": {
+        "screenshots/strata-closeout-performance-baseline-e.capture.toml": "665275381926144548b55136a7f89eac0a2fe2c4a2ad8971333fb9354183474c",
+        "screenshots/strata-closeout-performance-baseline-e.ppm": "06a2d05990de58e88cd30c478999842624effae0da64d8dc8bd4edf70fd33706",
+        "screenshots/strata-closeout-performance-baseline-e.wfd": "e7b2d30aaedd5831001e718a573fb709ad562c86570dca43263a9dbe7dda2b74"
+      },
+      "capture_id": "strata-closeout-performance-baseline-e",
+      "trial": "campaign-1"
+    },
+    {
+      "artifacts": {
+        "screenshots/strata-closeout-performance-closeout-e.capture.toml": "a19406d5242bdd5a42a3be668e3d721bb5d0a3524d2d939bcc7cbeffa8bd0ba2",
+        "screenshots/strata-closeout-performance-closeout-e.ppm": "6bfc32e3232b32c7dc70323453cdfd242ecce60ab3fe380959faf62308fcf16f",
+        "screenshots/strata-closeout-performance-closeout-e.wfd": "fd2efb7290f88aa1151d8321c9de3ab90ef1b09b79c0ad9385968a8c1cf8f23e"
+      },
+      "capture_id": "strata-closeout-performance-closeout-e",
+      "trial": "campaign-1"
+    }
+  ],
+  "source_comparison": {
+    "aseeded": {
+      "record_count": 34,
+      "record_sets_equal": true,
+      "same_header": true
+    },
+    "entity_record_sets_equal": true,
+    "ptouched": {
+      "record_count": 2,
+      "record_sets_equal": true,
+      "same_header": true
+    },
+    "stamps": {
+      "record_count": 34,
+      "record_sets_equal": true,
+      "same_header": true
+    }
+  }
+}

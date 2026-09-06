@@ -1,11 +1,20 @@
 //! Keyboard mapping and high-level key actions.
 
-use super::*;
+use super::Game;
+use super::navigation::Screen;
+use crate::audio::Sfx;
+use glam::Vec3;
+use winit::event_loop::ActiveEventLoop;
+use winit::keyboard::KeyCode;
+use winit::window::Fullscreen;
 
 impl Game {
     pub(super) fn key(&mut self, code: KeyCode, pressed: bool, _event_loop: &ActiveEventLoop) {
         if std::env::var_os("WILDFORGE_INPUT_TRACE").is_some()
-            && matches!(code, KeyCode::KeyA | KeyCode::KeyD)
+            && matches!(
+                code,
+                KeyCode::KeyW | KeyCode::KeyA | KeyCode::KeyS | KeyCode::KeyD | KeyCode::F2
+            )
         {
             eprintln!(
                 "input: {code:?} {}",
@@ -157,7 +166,12 @@ impl Game {
                     }
                     CameraMode::Orbit => self.camera.mode = CameraMode::First,
                 }
-                if let Err(error) = self.server.world.set_camera(self.camera.mode.key()) {
+                if let Err(error) = self
+                    .runtime
+                    .local_mut()
+                    .world
+                    .set_camera(self.camera.mode.key())
+                {
                     eprintln!("camera: could not persist mode: {error}");
                 }
                 self.sfx(Sfx::Click);

@@ -12,6 +12,29 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
+  maintainability:
+    name: Maintainability report
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Test maintainability analyzer
+        run: python3 -m unittest discover -s tools/tests -v
+      - name: Check directory guidance
+        run: python3 tools/check_folder_guides.py
+      - name: Advisory dependency boundary report
+        run: python3 tools/check_architecture.py
+      - name: Advisory source size and duplication report
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          if [ -n "$BASE_SHA" ]; then
+            python3 tools/check_maintainability.py --base "$BASE_SHA"
+          else
+            python3 tools/check_maintainability.py
+          fi
+
   quality:
     name: Format and Clippy
     runs-on: ubuntu-24.04
@@ -25,6 +48,8 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - run: cargo fmt --all -- --check
       - run: cargo clippy --locked --all-targets -- -D warnings
+      - name: Advisory Rust function report
+        run: python3 tools/report_rust_functions.py
 
   msrv:
     name: MSRV

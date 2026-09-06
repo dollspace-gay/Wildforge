@@ -1,6 +1,8 @@
 //! Compact, hold-to-view multiplayer roster.
 
-use super::*;
+use super::Game;
+use crate::identity;
+use crate::ui::UiBatch;
 
 impl Game {
     pub(super) fn draw_roster_overlay(&self, ui: &mut UiBatch, screen_width: f32) {
@@ -9,9 +11,11 @@ impl Game {
         }
         let mut rows = if let Some(remote) = &self.multiplayer.remote {
             remote
-                .names
+                .session
+                .roster()
                 .iter()
-                .map(|(id, label)| {
+                .map(|(id, presence)| {
+                    let label = super::remote::presence_label(presence);
                     let suffix = if *id == remote.my_id {
                         if remote.role == identity::Role::Player {
                             "  (YOU)".to_string()

@@ -22,7 +22,7 @@ use crate::planet::{self, EntityPos, Face};
 use crate::raycast;
 use crate::registry::BlockId;
 use crate::sky::{self, SkyParams};
-use crate::world::World;
+use crate::world::TerrainRead;
 
 /// One ray, cast in the eye's local chart frame.
 ///
@@ -48,7 +48,13 @@ struct LocalHit {
     id: BlockId,
 }
 
-fn cast_local(world: &World, face: Face, origin: Vec3, dir: Vec3, reach: f32) -> Option<LocalHit> {
+fn cast_local(
+    world: &(impl TerrainRead + ?Sized),
+    face: Face,
+    origin: Vec3,
+    dir: Vec3,
+    reach: f32,
+) -> Option<LocalHit> {
     let ep = EntityPos::from_local(face, origin).ok()?;
     let hit = raycast::raycast_at(world, ep, dir, reach)?;
     let id = world.get_block_at(hit.block);
@@ -178,7 +184,7 @@ impl RoomLight {
     #[allow(clippy::too_many_arguments)]
     pub fn update(
         &mut self,
-        world: &World,
+        world: &(impl TerrainRead + ?Sized),
         albedo: &[[u8; 3]],
         eye: Vec3,
         sun_dir: Vec3,
@@ -261,7 +267,7 @@ impl RoomLight {
     /// sky's radiance if it meets none.
     fn sample_dir(
         &self,
-        world: &World,
+        world: &(impl TerrainRead + ?Sized),
         eye: Vec3,
         dir: Vec3,
         sky_params: &SkyParams,
@@ -302,7 +308,7 @@ impl RoomLight {
     #[allow(clippy::too_many_arguments)]
     fn sun_lit(
         &mut self,
-        world: &World,
+        world: &(impl TerrainRead + ?Sized),
         albedo: &[[u8; 3]],
         eye: Vec3,
         sun_dir: Vec3,

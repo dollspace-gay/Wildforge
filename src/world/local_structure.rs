@@ -30,7 +30,7 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use super::multiblock::{BlockStore, MachineKind, Rotation};
+use super::multiblock::{BlockRead, BlockStore, MachineKind, Rotation};
 use super::template::Template;
 use super::*;
 use crate::inventory::ItemStack;
@@ -246,7 +246,7 @@ fn compose_rotation(a: Rotation, b: Rotation) -> Rotation {
     }
 }
 
-impl BlockStore for LocalStructure {
+impl BlockRead for LocalStructure {
     type Pos = (i32, i32, i32);
 
     fn get_block(&self, pos: Self::Pos) -> BlockId {
@@ -265,10 +265,6 @@ impl BlockStore for LocalStructure {
 
     fn block_entities(&self) -> &HashMap<Self::Pos, BlockEntity> {
         &self.block_entities
-    }
-
-    fn block_entities_mut(&mut self) -> &mut HashMap<Self::Pos, BlockEntity> {
-        &mut self.block_entities
     }
 
     fn reg(&self) -> &Arc<Registry> {
@@ -293,6 +289,12 @@ impl BlockStore for LocalStructure {
     /// exempt from the world's storm dousing.
     fn weather_at(&self, _at: BlockPos) -> LocalWeatherSample {
         LocalWeatherSample::default()
+    }
+}
+
+impl BlockStore for LocalStructure {
+    fn block_entities_mut(&mut self) -> &mut HashMap<Self::Pos, BlockEntity> {
+        &mut self.block_entities
     }
 
     fn swap_block_keep_entity(&mut self, pos: Self::Pos, block_name: &str) {
@@ -443,7 +445,8 @@ impl World {
     /// Persist the spawned local structures to `local_structures.toml`.
     pub(super) fn save_local_structures(&self) -> std::io::Result<()> {
         let structures: Vec<SavedStructure> = self
-            .local_structures
+            .construction
+            .structures()
             .iter()
             .map(|structure| {
                 let mut cells: Vec<super::template::TemplateCell> = structure
@@ -585,35 +588,28 @@ impl World {
             }
             loaded.push(structure);
         }
-        self.local_structures = loaded;
-        self.next_local_structure_id = self.next_local_structure_id.max(next);
+        self.construction.restore_structures(loaded, next);
     }
 
     #[allow(dead_code)]
     pub fn local_structures(&self) -> &[LocalStructure] {
-        &self.local_structures
+        self.construction.structures()
     }
 
     #[allow(dead_code)]
     pub fn local_structure(&self, id: LocalStructureId) -> Option<&LocalStructure> {
-        self.local_structures
-            .iter()
-            .find(|structure| structure.id == id)
+        self.construction.structure(id)
     }
 
     #[allow(dead_code)]
     pub fn local_structure_mut(&mut self, id: LocalStructureId) -> Option<&mut LocalStructure> {
-        self.local_structures
-            .iter_mut()
-            .find(|structure| structure.id == id)
+        self.construction.structure_mut(id)
     }
 
     /// Remove a spawned structure by id (and persist). Returns whether one
     /// was removed; a nonexistent id is a clean no-op.
     pub fn remove_structure(&mut self, id: LocalStructureId) -> bool {
-        let before = self.local_structures.len();
-        self.local_structures.retain(|structure| structure.id != id);
-        let removed = self.local_structures.len() < before;
+        let removed = self.construction.remove_structure(id);
         if removed {
             let _ = self.save_local_structures();
         }
@@ -625,11 +621,7 @@ impl World {
     /// player-triggered "set onto track" path; the step itself is transient.
     #[allow(dead_code)]
     pub fn set_rail(&mut self, id: LocalStructureId, rail: Option<RailState>) -> bool {
-        let Some(structure) = self.local_structures.iter_mut().find(|s| s.id == id) else {
-            return false;
-        };
-        structure.rail = rail;
-        true
+        self.construction.set_rail(id, rail)
     }
 
     /// Spawn a [`LocalStructure`] from a saved template at `anchor`,
@@ -643,16 +635,9 @@ impl World {
         anchor: BlockPos,
         rot: Rotation,
     ) -> Result<LocalStructureId, String> {
-        if template.cells.is_empty() {
-            return Err("template has no cells".into());
-        }
-        let mut structure = from_template(template, &self.reg);
-        structure.id = LocalStructureId(self.next_local_structure_id);
-        structure.transform.anchor = anchor;
-        structure.transform.rotation = rot;
-        self.next_local_structure_id += 1;
-        let id = structure.id;
-        self.local_structures.push(structure);
+        let id = self
+            .construction
+            .spawn_structure(&self.reg, template, anchor, rot)?;
         self.save_local_structures()
             .map_err(|error| format!("saved in memory but not to disk: {error}"))?;
         Ok(id)

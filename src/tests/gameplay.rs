@@ -119,7 +119,7 @@ fn dungeon_reset_preserves_overworld_den_spawning() {
         before, 1,
         "the intact overworld den spawns before the dungeon visit"
     );
-    world.mobs_mut().clear();
+    world.replace_mobs(Vec::new());
     let spawn = world
         .enter_dungeon(0, player, "proof:dungeon")
         .expect("dungeon opens");

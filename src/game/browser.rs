@@ -1,6 +1,12 @@
 //! Item browser layout, drawing, search, and navigation.
 
-use super::*;
+use super::Game;
+use super::navigation::Screen;
+use super::widgets;
+use crate::inventory::ItemStack;
+use crate::registry::ItemId;
+use crate::registry::Registry;
+use crate::ui::UiBatch;
 
 impl Game {
     pub(super) fn browser_origin(&self) -> (f32, f32) {
@@ -8,7 +14,7 @@ impl Game {
         let browser_width = Self::BCOLS as f32 * Self::BSLOT;
         let right_aligned = width - browser_width - 20.0;
         let x = if self.ui_state.screen == Screen::Inventory {
-            let (panel_x, _, panel_width, _) = self.inventory_panel_rect();
+            let (panel_x, _, panel_width, _) = self.inventory_layout().panel_rect();
             (panel_x + panel_width + 16.0).min(right_aligned)
         } else {
             right_aligned
@@ -100,7 +106,7 @@ impl Game {
         }
         for (next, lbl) in [(false, "<"), (true, ">")] {
             let r = self.browser_nav_rect(next);
-            Self::draw_button(ui, r, lbl, self.hit(r));
+            widgets::button(ui, r, lbl, self.hit(r));
         }
         let (x0, _) = self.browser_origin();
         let y = self.browser_nav_rect(false).1 + 5.0;
@@ -126,7 +132,7 @@ impl Game {
             );
             for (ti, lbl) in ["RECIPES", "USES"].iter().enumerate() {
                 let r = (px + 150.0 + ti as f32 * 90.0, py - 34.0, 84.0, 24.0);
-                Self::draw_button(ui, r, lbl, (ti == 1) == uses);
+                widgets::button(ui, r, lbl, (ti == 1) == uses);
             }
             let cycle = (self.time_abs / 0.8) as usize;
             let mut y = py + 8.0;
@@ -226,7 +232,7 @@ impl Game {
             }
             if !self.ui_state.browse_back.is_empty() {
                 let r = (px, py + 370.0, 84.0, 24.0);
-                Self::draw_button(ui, r, "BACK", self.hit(r));
+                widgets::button(ui, r, "BACK", self.hit(r));
             }
         }
     }
@@ -285,7 +291,7 @@ impl Game {
                     let reg = self.content.reg.clone();
                     let n = if right { 1 } else { reg.item(*item).max_stack };
                     let created = ItemStack::new(&reg, *item, n);
-                    if let Some(ledger) = &mut self.server.world.material_ledger {
+                    if let Some(ledger) = &mut self.runtime.local_mut().world.material_ledger {
                         if let Some(replaced) = self.ui_state.held_stack {
                             let materials = crate::materials::stack_materials(&reg, replaced);
                             if let Err(error) = ledger.record_admin_deletion(&materials) {
@@ -308,4 +314,24 @@ impl Game {
         }
         false
     }
+}
+
+/// Browser item list: public items (no internal /variants), search-filtered.
+pub(crate) fn browser_items(reg: &Registry, search: &str, creative: bool) -> Vec<ItemId> {
+    let q = search.to_lowercase();
+    (0..reg.items.len() as u16)
+        .map(ItemId)
+        .filter(|i| {
+            let d = reg.item(*i);
+            // `/` marks a generated variant — a growth stage, a fluid
+            // level, or the creative-only placer synthesised for a
+            // block nobody can hold. In creative the builder wants all
+            // of them; in survival none exist.
+            let variant = d.name.contains('/');
+            (!variant || (creative && d.creative_only))
+                && (q.is_empty()
+                    || d.label.to_lowercase().contains(&q)
+                    || d.name.to_lowercase().contains(&q))
+        })
+        .collect()
 }

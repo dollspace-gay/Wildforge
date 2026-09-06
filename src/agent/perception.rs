@@ -71,7 +71,7 @@ impl Agent {
             feet.y(),
             feet.v(),
             time_phase(self.time_of_day),
-            self.world.day,
+            self.world.day(),
             weather.kind.name(),
             self.health,
             self.hunger,
@@ -82,29 +82,16 @@ impl Agent {
                 .map_or_else(|| "bedrock".into(), |at| self.block_name_at(at)),
             self.block_name_at(feet),
         ));
-        let local_arcane = self.world.planet_atlas().and_then(|atlas| {
-            self.world
-                .arcane_survey_at(atlas.atlas_pos(feet.surface()), false)
-        });
-        if let Some(survey) = local_arcane {
-            let cue = survey.sensory_cue();
-            out.push_str(&format!(
-                "arcane signs: {}; wild ire {:.0}/100\n",
-                cue.trim_end_matches('.'),
-                self.world.ire
-            ));
-        } else {
-            let cue = crate::arcane_geography::coarse_sensory_cue(
-                self.world.remote_arcane_cue(),
-                self.world.remote_arcane_dominant(),
-            );
-            out.push_str(&format!(
-                "arcane signs: {}; wild ire {:.0}/100\n",
-                cue.trim_end_matches('.'),
-                self.world.ire
-            ));
-        }
-        if let Some(observation) = self.world.perceived_arcane_ecology_at(feet.surface(), 72.0) {
+        let cue = crate::arcane_geography::coarse_sensory_cue(
+            self.world.remote_arcane_cue(),
+            self.world.remote_arcane_dominant(),
+        );
+        out.push_str(&format!(
+            "arcane signs: {}; wild ire {:.0}/100\n",
+            cue.trim_end_matches('.'),
+            self.world.ire()
+        ));
+        if let Some(observation) = self.world.arcane_ecology() {
             out.push_str(&format!("ecology: {}\n", observation.text));
         }
         // Minimap: 2-block cells, north up. Legend in the footer.

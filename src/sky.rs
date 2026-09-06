@@ -10,7 +10,7 @@
 //! evaluates `SH(normal)` — a few dot products — for the ambient term.
 //!
 //! The radiance model below MIRRORS the low-frequency part of `sky_radiance` in
-//! `shader.wgsl` (the day/night gradient, twilight band, and overcast flatten).
+//! `shader/sky.wgsl` (the day/night gradient, twilight band, and overcast flatten).
 //! It deliberately omits the sharp sun core and horizon limn: those are tiny
 //! solid angles that contribute nothing to a hemisphere integral, and leaving
 //! them out means the visible sky can gain such details without touching this.
@@ -48,7 +48,7 @@ fn smoothstep(e0: f32, e1: f32, x: f32) -> f32 {
     t * t * (3.0 - 2.0 * t)
 }
 
-/// CPU mirror of the scalar atmosphere transfer in `shader.wgsl`.
+/// CPU mirror of the scalar atmosphere transfer in `shader/sky.wgsl`.
 ///
 /// Keeping this tiny function next to the sky model lets qualification pin the
 /// fade laws without pretending a software screenshot is GPU evidence.
@@ -71,7 +71,7 @@ pub(crate) fn planetary_fog_distance(camera: Vec3, world: Vec3) -> f32 {
     Vec3::new(surface_distance, world_radius - camera_radius, 0.0).length()
 }
 
-/// Low-frequency sky radiance along `dir` (normalized). Mirrors `shader.wgsl`.
+/// Low-frequency sky radiance along `dir` (normalized). Mirrors `shader/sky.wgsl`.
 pub(crate) fn radiance(dir: Vec3, p: &SkyParams) -> Vec3 {
     let up_axis = p.up.normalize_or_zero();
     let up = dir.dot(up_axis).clamp(0.0, 1.0);

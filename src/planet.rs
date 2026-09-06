@@ -11,6 +11,9 @@ use serde::{Deserialize, Deserializer, Serialize};
 
 use crate::chunk::{CHUNK_X, CHUNK_Y, CHUNK_Z};
 
+/// Stable save-format identity for the six-chart planetary topology.
+pub const WORLD_TOPOLOGY: &str = "cube_sphere_v1";
+
 pub const FACE_BLOCKS: u16 = 8192;
 pub const FACE_CHUNKS: u16 = FACE_BLOCKS / CHUNK_X as u16;
 pub const SURFACE_FACES: usize = 6;
@@ -1523,6 +1526,51 @@ pub struct LocalFrame {
     pub east: DVec3,
     pub up: DVec3,
     pub north: DVec3,
+}
+
+impl LocalFrame {
+    /// Convert physical unit east/north vectors to face-coordinate deltas.
+    ///
+    /// The spherified surface has a position-dependent scale and skew. Player
+    /// cameras and headless agents share this inverse surface Jacobian so the
+    /// same bearing produces the same physical movement near every face edge.
+    pub(crate) fn chart_basis(self, eye: EntityPos) -> (Vec3, Vec3) {
+        let point = eye.surface_point();
+        let sample = |u: f64, v: f64| {
+            crate::planet::block_to_render(
+                crate::planet::SurfacePoint {
+                    face: point.face,
+                    u,
+                    v,
+                },
+                f64::from(eye.y()),
+            )
+            .as_vec3()
+        };
+        const EPSILON: f64 = 0.25;
+        let side = f64::from(crate::planet::FACE_BLOCKS);
+        let (u0, u1) = ((point.u - EPSILON).max(0.0), (point.u + EPSILON).min(side));
+        let (v0, v1) = ((point.v - EPSILON).max(0.0), (point.v + EPSILON).min(side));
+        let chart_u = (sample(u1, point.v) - sample(u0, point.v)) / (u1 - u0) as f32;
+        let chart_v = (sample(point.u, v1) - sample(point.u, v0)) / (v1 - v0) as f32;
+        let solve = |wanted: Vec3| {
+            let uu = chart_u.dot(chart_u);
+            let uv = chart_u.dot(chart_v);
+            let vv = chart_v.dot(chart_v);
+            let determinant = uu * vv - uv * uv;
+            if determinant.abs() < 1.0e-8 {
+                return Vec3::ZERO;
+            }
+            let ur = chart_u.dot(wanted);
+            let vr = chart_v.dot(wanted);
+            Vec3::new(
+                (ur * vv - vr * uv) / determinant,
+                0.0,
+                (vr * uu - ur * uv) / determinant,
+            )
+        };
+        (solve(self.east.as_vec3()), solve(self.north.as_vec3()))
+    }
 }
 
 pub fn local_frame(point: SurfacePoint) -> LocalFrame {

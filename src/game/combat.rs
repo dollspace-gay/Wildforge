@@ -1,9 +1,13 @@
 //! Player combat depth: stamina, light/light/heavy combo, dodge with
 //! i-frames, block, backstab, and floating damage numbers.
 
-use super::*;
+use super::Game;
+use super::navigation::Screen;
+use crate::audio::Sfx;
 use crate::planet::EntityPos;
-use glam::Vec2;
+#[cfg(test)]
+use crate::player_ops::combat::mob_facing_away;
+use glam::Vec3;
 
 pub(crate) const STAMINA_MAX: f32 = 10.0;
 pub(crate) const STAMINA_REGEN: f32 = 3.5;
@@ -23,7 +27,6 @@ pub(crate) const HEAVY_SWING_INTERVAL: f32 = 0.45;
 pub(crate) const COMBO_WINDOW: f32 = 0.9;
 /// Third press in the combo window is the heavy finisher.
 pub(crate) const HEAVY_PRESS: u32 = 2;
-pub(crate) const HEAVY_MULT: f32 = 2.5;
 
 pub(crate) const DODGE_STAMINA: f32 = 3.5;
 pub(crate) const DODGE_CD: f32 = 0.8;
@@ -38,11 +41,6 @@ pub(crate) const BLOCK_REDUCTION: f32 = 0.65;
 pub(crate) const BLOCK_KNOCKBACK_MULT: f32 = 0.35;
 /// Seconds you cannot raise the guard after stamina runs out mid-block.
 pub(crate) const GUARD_BREAK: f32 = 1.0;
-
-pub(crate) const BACKSTAB_MULT: f32 = 2.0;
-/// A hit counts as a backstab when the mob faces away from you by more
-/// than this many degrees.
-pub(crate) const BACKSTAB_CONE_DEG: f32 = 110.0;
 
 pub(crate) const DAMAGE_NUMBER_LIFETIME: f32 = 0.8;
 
@@ -123,22 +121,6 @@ impl CombatState {
             self.guard_break = GUARD_BREAK;
         }
     }
-}
-
-/// A hit from behind the mob's facing: the player is more than
-/// `BACKSTAB_CONE_DEG` degrees off the mob's nose. Mob forward is
-/// `(sin yaw, 0, cos yaw)` in the same tangent frame `local_delta_to`
-/// expresses horizontal displacement in, so the dot product is honest.
-pub(crate) fn mob_facing_away(yaw: f32, mob_pos: EntityPos, from: EntityPos) -> bool {
-    let delta = mob_pos.local_delta_to(from);
-    let to = Vec2::new(delta.x, delta.z);
-    let len = to.length();
-    if len < 1e-4 {
-        return false;
-    }
-    let to = to / len;
-    let forward = Vec2::new(yaw.sin(), yaw.cos());
-    forward.dot(to) < BACKSTAB_CONE_DEG.to_radians().cos()
 }
 
 impl Game {

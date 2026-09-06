@@ -3,7 +3,8 @@
 //! slotting (in and out intact), repairable frame durability, and loadout
 //! presets. The data model lives in `crate::equipment` + the item graph.
 
-use super::*;
+use super::Game;
+use crate::audio::Sfx;
 use crate::equipment::{LoadoutPreset, PresetSlot};
 use crate::inventory::ItemStack;
 use crate::stats::StatBlock;
@@ -23,7 +24,7 @@ pub(super) fn equipment_enabled(game: &Game) -> bool {
     {
         return false;
     }
-    game.server.world.ruleset().equipment
+    game.runtime.view().ruleset().equipment
 }
 
 impl Game {

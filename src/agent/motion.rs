@@ -8,6 +8,14 @@ use super::*;
 /// A planned route: cells to walk, and whether it only gets partway.
 type CellPath = (Vec<crate::planet::BlockPos>, bool);
 
+pub(super) struct FollowPath {
+    goal: crate::planet::BlockPos,
+    waypoints: VecDeque<crate::planet::BlockPos>,
+}
+
+// Stay inside the clearance of a 0.6-block-wide body at a cell center.
+const WAYPOINT_RADIUS: f32 = 0.18;
+
 /// Forward/right basis for a yaw (the camera convention: yaw 0 looks
 /// +X, pi/2 looks +Z).
 pub fn basis(yaw: f32) -> (Vec3, Vec3) {
@@ -24,6 +32,12 @@ pub fn cell_of(pos: crate::planet::EntityPos) -> Option<crate::planet::BlockPos>
 
 fn center(c: crate::planet::BlockPos) -> crate::planet::EntityPos {
     c.entity_at_height(0.0)
+}
+
+fn reached(pos: crate::planet::EntityPos, waypoint: crate::planet::EntityPos) -> bool {
+    pos.face() == waypoint.face()
+        && (pos.u() - waypoint.u()).hypot(pos.v() - waypoint.v()) < WAYPOINT_RADIUS
+        && (pos.y() - waypoint.y()).abs() < 1.4
 }
 
 impl Agent {
@@ -208,9 +222,7 @@ impl Agent {
     ) -> physics::Input {
         // Pop reached waypoints.
         while let Some(&wp) = path.first() {
-            let c = center(wp);
-            let flat = self.player.pos.horizontal_distance_to(c);
-            if flat < 0.45 && (self.player.pos.y() - f32::from(wp.y())).abs() < 1.4 {
+            if reached(self.player.pos, center(wp)) {
                 path.remove(0);
             } else {
                 break;
@@ -229,7 +241,7 @@ impl Agent {
         // Stuck? Replan once per probe window; give up if pinned.
         self.stuck_probe.1 += dt;
         if self.stuck_probe.1 > 2.0 {
-            let moved = self.player.pos.distance_to(self.stuck_probe.0);
+            let moved = self.player.pos.horizontal_distance_to(self.stuck_probe.0);
             self.stuck_probe = (self.player.pos, 0.0);
             if moved < 0.4 {
                 let Some(start) = cell_of(self.player.pos) else {
@@ -250,6 +262,8 @@ impl Agent {
                 }
             }
         }
+        // Replanning may have replaced the waypoint selected above.
+        let wp = path.first().copied().unwrap_or(wp);
         let input = self.steer_toward(center(wp), i32::from(wp.y()));
         self.behavior = Behavior::GoTo { path, goal };
         input
@@ -258,67 +272,87 @@ impl Agent {
     /// Chase the leader's breadcrumb trail, hanging back `distance`.
     pub(super) fn tick_follow(&mut self, id: u32, distance: f32, dt: f32) -> physics::Input {
         let leader = self.players.get(&id).map(|(_, p, _)| *p);
-        let Some(leader_pos) = leader else {
-            // Gone from the stream: walk out the remaining trail, then
-            // report at last-seen.
-            let crumb = self.trail.get_mut(&id).and_then(|t| {
-                while t
-                    .front()
-                    .is_some_and(|c| c.distance_to(self.player.pos) < 1.2)
-                {
-                    t.pop_front();
-                }
-                t.front().copied()
-            });
-            return match crumb {
-                Some(c) => {
-                    let input = self.steer_toward(c, c.y().floor() as i32);
-                    self.behavior = Behavior::Follow { id, distance };
-                    input
-                }
-                None => {
-                    self.event("lost the trail; standing at last-seen".into());
-                    idle(self.player.in_water)
-                }
-            };
-        };
-        let gap = leader_pos.distance_to(self.player.pos);
-        // Drop crumbs we've reached; never chase crumbs inside the
-        // personal-space ring around the leader.
+        // A breadcrumb is a destination, not permission to walk a straight
+        // line through whatever now stands between us and that point.
         let target = {
             let t = self.trail.entry(id).or_default();
             while t.front().is_some_and(|c| {
-                c.distance_to(self.player.pos) < 1.2 || c.distance_to(leader_pos) < distance
+                cell_of(*c).is_some_and(|cell| reached(self.player.pos, center(cell)))
+                    || leader.is_some_and(|leader| c.distance_to(leader) < distance)
             }) {
                 t.pop_front();
             }
-            t.front().copied()
+            t.front().copied().or(leader)
+        };
+        let Some(target) = target else {
+            self.follow_path = None;
+            self.event("lost the trail; standing at last-seen".into());
+            return idle(self.player.in_water);
         };
         self.behavior = Behavior::Follow { id, distance };
-        if gap <= distance + 0.5 && target.is_none() {
+        if leader.is_some_and(|leader| leader.distance_to(self.player.pos) <= distance + 0.5) {
+            self.follow_path = None;
             self.stuck_probe = (self.player.pos, 0.0);
             return idle(self.player.in_water); // close enough: stand or tread water
         }
-        // Stuck on the trail: replan through A* straight to the leader.
-        self.stuck_probe.1 += dt;
-        if self.stuck_probe.1 > 2.5 {
-            let moved = self.player.pos.distance_to(self.stuck_probe.0);
-            self.stuck_probe = (self.player.pos, 0.0);
-            if moved < 0.4 {
-                let route = cell_of(self.player.pos)
-                    .zip(cell_of(leader_pos))
-                    .and_then(|(start, goal)| self.astar(start, goal));
-                if let Some((path, _)) = route {
-                    let t = self.trail.entry(id).or_default();
-                    t.clear();
-                    t.extend(path.into_iter().map(center));
-                } else {
-                    self.event("can't reach you from here".into());
-                }
+        self.follow_waypoints(target, dt)
+    }
+
+    fn follow_waypoints(&mut self, target: crate::planet::EntityPos, dt: f32) -> physics::Input {
+        let Some((start, goal)) = cell_of(self.player.pos).zip(cell_of(target)) else {
+            return idle(self.player.in_water);
+        };
+        let mut route = self.follow_path.take().filter(|route| route.goal == goal);
+        if let Some(route) = &mut route {
+            while route
+                .waypoints
+                .front()
+                .is_some_and(|&at| reached(self.player.pos, center(at)))
+            {
+                route.waypoints.pop_front();
             }
         }
-        let aim = target.unwrap_or(leader_pos);
-        self.steer_toward(aim, aim.y().floor() as i32)
+        // A changed block invalidates the route immediately. Jumping against
+        // an obstruction is not horizontal progress and must not hide a stall.
+        if route.as_ref().is_some_and(|route| {
+            route
+                .waypoints
+                .front()
+                .is_some_and(|&at| !self.stands_at(at))
+        }) {
+            route = None;
+        }
+        self.stuck_probe.1 += dt;
+        if self.stuck_probe.1 > 2.5 {
+            let moved = self.player.pos.horizontal_distance_to(self.stuck_probe.0);
+            self.stuck_probe = (self.player.pos, 0.0);
+            if moved < 0.4 {
+                route = None;
+            }
+        }
+        let mut route = route.unwrap_or_else(|| {
+            let waypoints = match self.astar(start, goal) {
+                Some((path, _)) => path.into(),
+                None => {
+                    self.event("can't reach you from here".into());
+                    VecDeque::new()
+                }
+            };
+            FollowPath { goal, waypoints }
+        });
+        while route
+            .waypoints
+            .front()
+            .is_some_and(|&at| reached(self.player.pos, center(at)))
+        {
+            route.waypoints.pop_front();
+        }
+        let input = match route.waypoints.front().copied() {
+            Some(at) => self.steer_toward(center(at), i32::from(at.y())),
+            None => idle(self.player.in_water),
+        };
+        self.follow_path = Some(route);
+        input
     }
 
     /// Face and walk toward a point; jump for lips and walls.

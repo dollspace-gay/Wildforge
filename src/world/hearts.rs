@@ -7,23 +7,8 @@
 //! its death is the quietest catastrophe in the game.
 
 use super::*;
-use crate::planet::{BlockPos, EntityPos, SurfacePos, geodesic_distance, great_circle_bearing};
+use crate::planet::{BlockPos, EntityPos, SurfacePos, geodesic_distance};
 use crate::worldgen::ProvinceKey;
-
-fn compass_octant(radians_clockwise_from_north: f64) -> &'static str {
-    let index =
-        ((radians_clockwise_from_north.to_degrees() + 22.5).rem_euclid(360.0) / 45.0) as usize;
-    [
-        "north",
-        "northeast",
-        "east",
-        "southeast",
-        "south",
-        "southwest",
-        "west",
-        "northwest",
-    ][index]
-}
 
 /// A country's spirit, keyed on its province.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -55,57 +40,12 @@ impl Heart {
     }
 }
 
-/// Which shape a country's heart wears. Twelve countries, twelve
-/// spirits: wooded ground grows a bole, dry ground keeps a spring that
-/// should not be there, and cold or open ground raises a stone. The
-/// forms are generated alongside the blocks and tiles from
-/// tools/heart_table.py — that table is the source, not this match.
-pub fn heart_form(biome: crate::worldgen::Biome) -> &'static str {
-    use crate::worldgen::Biome as B;
-    match biome {
-        B::Forest => "base:heart_forest",
-        B::Taiga => "base:heart_taiga",
-        B::Jungle => "base:heart_jungle",
-        B::Swamp => "base:heart_swamp",
-        B::Desert => "base:heart_desert",
-        B::Badlands => "base:heart_badlands",
-        B::Savanna => "base:heart_savanna",
-        B::Scrubland => "base:heart_scrubland",
-        B::Plains => "base:heart_plains",
-        B::Tundra => "base:heart_tundra",
-        B::Arctic => "base:heart_arctic",
-        B::Mountains => "base:heart_mountains",
-        // Not a province culture; no country is ever labelled with it.
-        B::Ocean => "base:heart_plains",
-    }
-}
-
 /// The block a form wears at a given stage.
 pub fn heart_block_name(form: &str, stage: u8) -> String {
     match stage {
         2 => form.to_string(),
         1 => format!("{form}_sick"),
         _ => format!("{form}_dead"),
-    }
-}
-
-/// How tall the site stands. A bole is a landmark you can see across a
-/// valley; a spring is a thing you nearly walk past.
-pub fn heart_height(form: &str) -> i32 {
-    match form {
-        "base:heart_forest" => 5,
-        "base:heart_taiga" => 5,
-        "base:heart_jungle" => 5,
-        "base:heart_swamp" => 5,
-        "base:heart_desert" => 1,
-        "base:heart_badlands" => 1,
-        "base:heart_savanna" => 1,
-        "base:heart_scrubland" => 1,
-        "base:heart_plains" => 3,
-        "base:heart_tundra" => 3,
-        "base:heart_arctic" => 3,
-        "base:heart_mountains" => 3,
-        _ => 1,
     }
 }
 
@@ -567,7 +507,7 @@ impl World {
             if done {
                 self.set_heart_stage(key, 2);
                 // The country wakes: its wardens answer to it again.
-                for m in &mut self.mobs {
+                for m in self.population.mobs_mut() {
                     m.masterless = false;
                 }
                 if let Some(e) = self.hearts.get_mut(&key) {
@@ -671,15 +611,7 @@ impl World {
     /// water over it reaches sea level. A dug pond on a hillside fails
     /// the first test; a one-deep tidal scrape fails the second.
     pub fn is_open_water_at(&self, pos: SurfacePos) -> bool {
-        let floor = self.surface_height_at(pos);
-        floor < crate::chunk::SEA_LEVEL - 1
-            && BlockPos::new(
-                pos.face(),
-                pos.u(),
-                (crate::chunk::SEA_LEVEL - 1) as u8,
-                pos.v(),
-            )
-            .is_ok_and(|at| self.reg.is_water(self.get_block_at(at)))
+        super::TerrainRead::is_open_water_at(self, pos)
     }
 
     /// Live water-column conditions for ecology. A dug canal changes the
@@ -733,7 +665,7 @@ impl World {
         let key = self.generator.province_at(pos).key;
         let reg = self.reg.clone();
         let g = &self.generator;
-        for m in &mut self.mobs {
+        for m in self.population.mobs_mut() {
             if reg.animals.get(m.species).is_some_and(|d| d.hostile)
                 && g.province_at(m.pos.block().map_or(pos, BlockPos::surface))
                     .key
@@ -754,76 +686,19 @@ impl World {
     /// been there — a country whose heart this world has watched die,
     /// and a badlands scar, which was dead before anyone walked it.
     pub fn seed_bearing_at(&self, from: EntityPos) -> String {
-        let from_surface = SurfacePos::new(
-            from.face(),
-            from.u().floor() as u16,
-            from.v().floor() as u16,
-        )
-        .expect("a canonical entity has a canonical surface cell");
-        let mut best: Option<(f64, SurfacePos, bool)> = None;
-        for key in self.generator.province_keys_near(from_surface, 5_000.0) {
-            let site = self.generator.province_center_at(key);
-            let ancient = self.is_ancient_scar_at(site);
-            let known_dead = self.hearts.get(&key).is_some_and(|h| h.stage == 0);
-            if !ancient && !known_dead {
-                continue;
-            }
-            let d = geodesic_distance(from_surface.center(), site.center());
-            if best.is_none_or(|(b, _, _)| d < b) {
-                best = Some((d, site, ancient));
-            }
-        }
-        let Some((d, site, ancient)) = best else {
-            return "It stirs, and finds nowhere that needs it.".into();
-        };
-        if d < 12.0 {
-            return "It strains in your hand. The ground it wants is here.".into();
-        }
-        let dir = great_circle_bearing(from_surface.center(), site.center())
-            .map(compass_octant)
-            .unwrap_or("somewhere beyond a stable bearing");
-        let far = if ancient {
-            "a country that went out long ago"
-        } else {
-            "a country you watched go out"
-        };
-        format!("It leans {dir}, about {} blocks. {far}.", d.round() as i32)
+        super::country_view::seed_bearing(self.generator.geography(), from, |key| {
+            self.hearts.get(&key).is_some_and(|heart| heart.stage == 0)
+        })
     }
 
     /// The compass reading a survey cairn gives for the country's
     /// heart: where it stands and how it fares.
     pub fn heart_report_at(&self, pos: SurfacePos) -> String {
-        let Some(h) = self.heart_at_surface(pos) else {
-            return "The heart of this country lies beyond your maps.".into();
-        };
-        let dist = geodesic_distance(pos.center(), h.pos.surface().center()).round() as i32;
-        let dir = great_circle_bearing(pos.center(), h.pos.surface().center())
-            .map(compass_octant)
-            .unwrap_or("here");
-        let state = match h.stage {
-            2 if h.strain > 4.0 => "It is uneasy.",
-            2 => "It is well.",
-            1 => "It is FAILING.",
-            // A scar is older than the reading. The badlands lost their
-            // spirit before anyone alive walked there, and a cairn that
-            // says so is the first thread of the whole story.
-            _ if self.is_ancient_scar_at(h.pos.surface()) => {
-                "It died long before these stones were cut."
-            }
-            _ => "It is dead.",
-        };
-        // Name the shape. They are no longer all alike, so a reader is
-        // looking for a particular thing rather than "a heart".
-        let form = heart_form(self.generator.heart_biome_at(h.pos.surface()));
-        let what = self
-            .reg
-            .block_id(&heart_block_name(form, h.stage))
-            .map(|b| self.reg.block(b).label.clone())
-            .unwrap_or_else(|| "heart".into());
-        if dist <= 8 {
-            format!("{what}, here. {state}")
-        } else {
-            format!("{what}, about {dist} blocks {dir}. {state}")
-        }
+        super::country_view::heart_report(
+            self.generator.geography(),
+            &self.reg,
+            pos,
+            self.heart_at_surface(pos),
+        )
     }
 }

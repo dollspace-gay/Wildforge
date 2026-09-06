@@ -303,7 +303,7 @@ impl World {
                 }
                 let mouth_block = next;
                 let above = next.offset(0, 1, 0).unwrap_or(next);
-                self.loose_items
+                self.population.loose_items()
                     .iter()
                     .filter(
                         |item| matches!(item.pos.block(), Some(pos) if pos == mouth_block || pos == above),

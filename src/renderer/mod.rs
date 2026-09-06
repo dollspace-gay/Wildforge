@@ -1,24 +1,23 @@
 //! Renderer ownership, frame inputs, and GPU resource types.
 
 use std::collections::HashMap;
-use std::sync::Arc;
 
 use bytemuck::{Pod, Zeroable};
 use glam::{Mat4, Vec3};
 use wgpu::util::DeviceExt;
-use winit::window::Window;
 
 use crate::chunk::ChunkPos;
 use crate::mesher::{ChunkMesh, Vertex};
 use crate::ui::UiVertex;
 
+mod device;
 mod frame;
+mod point_shadows;
 mod post;
 mod resources;
 mod setup;
 
-use post::*;
-use resources::{atlas_bind_group, upload_atlas};
+use post::{PostProcess, create_depth};
 
 #[repr(C)]
 #[derive(Clone, Copy, Pod, Zeroable)]
@@ -410,32 +409,9 @@ pub struct Renderer {
     // Voxel occupancy grid for DDA point-light shadows (OCC_GRID³, R8Uint).
     occ_tex: wgpu::Texture,
 
-    // Point-light distance cube maps (one cube = 6 layers per light).
-    // pt_cached remembers (key, epoch) per slot; a slot's 6 faces
-    // re-render only when that changes (the static-light cache).
-    pt_cached: [Option<(u64, u64)>; MAX_PT_LIGHTS],
-    /// Faces already rebuilt for a cube mid-amortization (0..6).
-    pt_progress: [u8; MAX_PT_LIGHTS],
-    pt_shadow_pipeline: wgpu::RenderPipeline,
-    pt_tr_pipeline: wgpu::RenderPipeline,
-    pt_face_views: Vec<wgpu::TextureView>, // 6 * MAX_PT_LIGHTS render targets
-    pt_tr_faces: Vec<wgpu::TextureView>,   // matching tint-cube targets
-    pt_shadow_depth: wgpu::TextureView,    // shared scratch depth
-    pt_face_buf: wgpu::Buffer,             // per-face {view_proj, light_pos}
-    pt_face_bg: wgpu::BindGroup,           // dynamic-offset bind of pt_face_buf
+    point_shadows: point_shadows::PointShadows,
 
-    // HDR + bloom post chain. The pipelines are size-independent; the targets
-    // and their bind groups are rebuilt on resize by `create_post_targets`.
-    post_in_bgl: wgpu::BindGroupLayout,
-    post_tex_bgl: wgpu::BindGroupLayout,
-    post_sampler: wgpu::Sampler,
-    post_params_buf: wgpu::Buffer,
-    post_params_bg: wgpu::BindGroup,
-    bright_pipeline: wgpu::RenderPipeline,
-    blur_h_pipeline: wgpu::RenderPipeline,
-    blur_v_pipeline: wgpu::RenderPipeline,
-    composite_pipeline: wgpu::RenderPipeline,
-    post: PostTargets,
+    post: PostProcess,
 
     outline_buf: wgpu::Buffer,
     crosshair_buf: wgpu::Buffer,

@@ -101,7 +101,13 @@ fn a_nest_spawns_its_species_until_it_is_cleared() {
     // manifests again (it is nest-bound, so the ire ring can't replace it).
     w.set_block_at(bp(8, h, 8), AIR);
     assert_eq!(w.nests().count(), 0, "breaking the nest cleared the record");
-    w.mobs_mut().retain(|m| m.species != wolf);
+    w.replace_mobs(
+        w.mobs()
+            .iter()
+            .filter(|m| m.species != wolf)
+            .cloned()
+            .collect(),
+    );
     for _ in 0..200 {
         w.tick_nest_spawns(player, 0.12, 5.0, &mut rng);
     }

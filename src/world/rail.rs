@@ -182,20 +182,20 @@ impl World {
         if dt <= 0.0 {
             return;
         }
-        for i in 0..self.local_structures.len() {
+        for i in 0..self.construction.structures().len() {
             // Take the structure out of the world while stepping it: the
             // step reads the world's rails (`self.get_block_at`/`self.reg`)
             // with no borrow conflicts, then the stepped structure is put
             // back in place. A `LocalStructure` is not `Clone` (its hosted
             // `BlockEntity`s are not cheap to copy), so this is move-not-
             // clone.
-            let mut structure = self.local_structures.remove(i);
+            let mut structure = self.construction.take_structure(i);
             let Some(rail) = structure.rail.clone() else {
-                self.local_structures.insert(i, structure);
+                self.construction.return_structure(i, structure);
                 continue;
             };
             if rail.speed <= 0.0 {
-                self.local_structures.insert(i, structure);
+                self.construction.return_structure(i, structure);
                 continue;
             }
             // Mass-driven power draw (spec §2.2): the rail piece the
@@ -222,7 +222,7 @@ impl World {
                 // the very next tick can roll again if power or load shifts.
                 let rail = structure.rail.as_mut().expect("checked above");
                 rail.progress = 0.0;
-                self.local_structures.insert(i, structure);
+                self.construction.return_structure(i, structure);
                 continue;
             }
             let rail = structure.rail.as_mut().expect("checked above");
@@ -260,7 +260,7 @@ impl World {
                 rail.current_cell = arrived;
                 rail.next_cell = next;
             }
-            self.local_structures.insert(i, structure);
+            self.construction.return_structure(i, structure);
         }
     }
 

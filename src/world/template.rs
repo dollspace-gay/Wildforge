@@ -192,7 +192,7 @@ impl World {
     pub(super) fn save_templates(&self) -> std::io::Result<()> {
         let text = toml::to_string_pretty(&TemplateFile {
             version: TEMPLATE_FILE_VERSION,
-            templates: self.templates.clone(),
+            templates: self.construction.templates().to_vec(),
         })
         .map_err(std::io::Error::other)?;
         crate::identity::atomic_write(
@@ -213,7 +213,7 @@ impl World {
         if file.version != TEMPLATE_FILE_VERSION {
             return;
         }
-        self.templates = file.templates;
+        self.construction.restore_templates(file.templates);
     }
 
     /// Capture `corner_a..=corner_b` as a named, world-shared template and
@@ -228,7 +228,7 @@ impl World {
         if name.is_empty() {
             return Err("name a template first".into());
         }
-        if self.templates.iter().any(|t| t.name == name) {
+        if self.construction.template(name).is_some() {
             return Err(format!("a template named {name} already exists"));
         }
         let Some(template) = capture_region(self, corner_a, corner_b, name) else {
@@ -244,26 +244,24 @@ impl World {
             return Err(format!("capture too large (>{MAX_CAPTURE_CELLS} blocks)"));
         }
         let n = template.cells.len();
-        self.templates.push(template);
+        self.construction.insert_template(template);
         self.save_templates()
             .map_err(|error| format!("saved in memory but not to disk: {error}"))?;
         Ok(n)
     }
 
     pub fn templates(&self) -> &[Template] {
-        &self.templates
+        self.construction.templates()
     }
 
     pub fn template(&self, name: &str) -> Option<&Template> {
-        self.templates.iter().find(|t| t.name == name)
+        self.construction.template(name)
     }
 
     /// Remove a template by name (and persist). Returns whether one was
     /// removed.
     pub fn remove_template(&mut self, name: &str) -> bool {
-        let before = self.templates.len();
-        self.templates.retain(|t| t.name != name);
-        let removed = self.templates.len() < before;
+        let removed = self.construction.remove_template(name);
         if removed {
             let _ = self.save_templates();
         }
@@ -399,21 +397,18 @@ impl World {
         }
         let fill = PendingFill { anchor, remaining };
         let n = fill.remaining_count();
-        self.pending_fills.retain(|fill| fill.anchor != anchor);
-        self.pending_fills.push(fill);
+        self.construction.install_ghost(fill);
         Ok(format!("ghost overlay marked {n} cells to fill"))
     }
 
     pub fn pending_fill_at(&self, anchor: BlockPos) -> Option<&PendingFill> {
-        self.pending_fills.iter().find(|fill| fill.anchor == anchor)
+        self.construction.pending_at(anchor)
     }
 
     /// Cancel the ghost overlay anchored at `pos`. Returns whether one was
     /// removed.
     pub fn cancel_fill(&mut self, anchor: BlockPos) -> bool {
-        let before = self.pending_fills.len();
-        self.pending_fills.retain(|fill| fill.anchor != anchor);
-        self.pending_fills.len() < before
+        self.construction.cancel_fill(anchor)
     }
 
     /// Hook called from the authoritative block-edit path: a pending cell is
@@ -422,16 +417,7 @@ impl World {
     /// still brute-force-fill by eye).
     pub(super) fn clear_pending_fill_at(&mut self, pos: BlockPos, block: BlockId) {
         let name = self.reg.block(block).name.clone();
-        self.pending_fills.retain_mut(|fill| {
-            if fill
-                .remaining
-                .get(&pos)
-                .is_some_and(|required| *required == name)
-            {
-                fill.remaining.remove(&pos);
-            }
-            !fill.remaining.is_empty()
-        });
+        self.construction.satisfy_cell(pos, &name);
     }
 
     /// After a stamp's blocks are all placed, register a shell entity at each

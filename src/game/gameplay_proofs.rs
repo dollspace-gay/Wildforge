@@ -1,9 +1,32 @@
 //! Hardware-backed tests of the actual client interaction path. The runner
 //! creates a temporary working directory so no personal save or identity is used.
 
-use super::*;
+use crate::camera::Camera;
+use crate::game::Game;
+use crate::inventory::{Inventory, ItemStack};
+use crate::physics::Player;
+use crate::registry::AIR;
+use crate::world::World;
+use crate::{raycast, server, world};
+use glam::Vec3;
 use std::panic::{AssertUnwindSafe, catch_unwind};
+use std::path::PathBuf;
+use std::sync::Arc;
+use winit::application::ApplicationHandler;
+use winit::dpi::PhysicalSize;
+use winit::event::WindowEvent;
+use winit::event_loop::{ActiveEventLoop, EventLoop};
 use winit::platform::x11::EventLoopBuilderExtX11;
+use winit::window::{Window, WindowId};
+
+#[path = "gameplay_proofs/guest.rs"]
+mod guest;
+
+#[path = "gameplay_proofs/metrics.rs"]
+mod metrics;
+
+#[path = "gameplay_proofs/refusal.rs"]
+mod refusal;
 
 #[derive(Default)]
 struct ProofApp {
@@ -27,6 +50,11 @@ impl ApplicationHandler for ProofApp {
                 .expect("create real game window"),
         );
         let mut game = Game::new(window);
+        assert!(
+            game.renderer.adapter_hardware,
+            "the proof requires a hardware GPU"
+        );
+        assert_eq!(game.renderer.adapter_backend, "Vulkan");
         for (name, item, held, staged, accepted) in [
             ("whole stack", "base:clay_ball", 32, 0, 32),
             ("remaining appetite", "base:clay_ball", 16, 60, 4),
@@ -41,6 +69,9 @@ impl ApplicationHandler for ProofApp {
                 self.failures.push(name.to_string());
             }
         }
+        if catch_unwind(AssertUnwindSafe(|| guest::run(&mut game))).is_err() {
+            self.failures.push("native guest entry".into());
+        }
         event_loop.exit();
     }
 
@@ -52,26 +83,28 @@ fn depot_case(game: &mut Game, name: &str, item_name: &str, held: u32, staged: u
     assert!(reg.material_errors.is_empty(), "{:?}", reg.material_errors);
     let depot = reg.block_id("proof:depot").expect("fixture depot loaded");
     let item = reg.item_id(item_name).expect("fixture goods exist");
-    game.server = server::Server::new(
+    game.runtime.set_local(server::Server::new(
         World::new(42, PathBuf::from("saves/proof"), reg.clone()),
         0.3,
         5,
-    );
+    ));
     let pos = crate::planet::BlockPos::of_world(8, 201, 10).unwrap();
-    game.server.world.ensure_chunk(pos.chunk());
+    game.runtime.local_mut().world.ensure_chunk(pos.chunk());
     for x in 6..=10 {
         for z in 6..=12 {
             for y in 200..=204 {
-                game.server
+                game.runtime
+                    .local_mut()
                     .world
                     .set_block_at(crate::planet::BlockPos::of_world(x, y, z).unwrap(), AIR);
             }
         }
     }
-    assert!(game.server.world.place_block_at(pos, depot));
+    assert!(game.runtime.local_mut().world.place_block_at(pos, depot));
     if staged > 0 {
         assert_eq!(
-            game.server
+            game.runtime
+                .local_mut()
                 .world
                 .depot_deposit(pos, &ItemStack::new(&reg, item, staged)),
             staged
@@ -85,7 +118,7 @@ fn depot_case(game: &mut Game, name: &str, item_name: &str, held: u32, staged: u
     game.camera.yaw = std::f32::consts::FRAC_PI_2;
     game.camera.pitch = 0.0;
     let hit = raycast::raycast_at(
-        &game.server.world,
+        &game.runtime.local().world,
         game.player.eye(),
         game.camera.local_forward(),
         game.reach(),
@@ -106,7 +139,7 @@ fn depot_case(game: &mut Game, name: &str, item_name: &str, held: u32, staged: u
     // the raycast, food interaction gate, and container routing.
     game.interact(1.0 / 30.0);
     let remaining = game.inventory.count_of(item);
-    let Some(world::BlockEntity::Depot(state)) = game.server.world.block_entity_at(&pos) else {
+    let Some(world::BlockEntity::Depot(state)) = game.runtime.view().block_entity_at(&pos) else {
         panic!("depot remains present");
     };
     let stock: u32 = state
@@ -135,7 +168,7 @@ fn depot_case(game: &mut Game, name: &str, item_name: &str, held: u32, staged: u
 
 #[test]
 #[ignore = "requires a real Vulkan GPU and X11 display; run tools/run_gameplay_proofs.py"]
-fn real_depot_right_clicks_conserve_goods() {
+fn real_client_interactions_and_guest_entry() {
     assert!(
         PathBuf::from("mods/proof/mod.toml").exists(),
         "use the isolated gameplay proof runner"

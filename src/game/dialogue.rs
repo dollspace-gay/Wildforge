@@ -1,6 +1,8 @@
 //! Dialogue screen logic (spec 3.2 runtime).
 
-use super::*;
+use super::Game;
+use super::navigation::Screen;
+use crate::identity;
 use crate::registry::{DialogueChoice, ScriptHook};
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -10,7 +12,7 @@ impl Game {
     /// Look up the dialogue def a mob-id NPC opens.
     fn dialogue_for(&self, mob_id: u32) -> Option<crate::registry::DialogueDef> {
         let reg = &self.content.reg;
-        let def = self.server.world.npc_by_mob(mob_id)?;
+        let def = self.runtime.view().npc_by_mob(mob_id)?;
         let npc = reg.npcs.get(def.def)?;
         let id = npc.dialogue.as_ref()?;
         reg.dialogues.iter().find(|d| &d.id == id).cloned()
@@ -22,8 +24,8 @@ impl Game {
         let Some(hook) = hook else {
             return true;
         };
-        let ret = self.content.scripts.run_fn(
-            &self.server.world,
+        let ret = self.content.scripts.run_fn_view(
+            &self.runtime.view(),
             hook,
             vec![mob_id.to_string(), node_id.to_string()],
         );
@@ -57,8 +59,8 @@ impl Game {
         };
         let text = node.text.clone();
         let hook = ScriptHook::parse("node_text");
-        let ret = self.content.scripts.run_fn(
-            &self.server.world,
+        let ret = self.content.scripts.run_fn_view(
+            &self.runtime.view(),
             &hook,
             vec![mob_id.to_string(), node_id.to_string()],
         );
@@ -74,8 +76,8 @@ impl Game {
             return;
         };
         if let Some(hook) = &choice.callback {
-            let _ = self.content.scripts.run_fn(
-                &self.server.world,
+            let _ = self.content.scripts.run_fn_view(
+                &self.runtime.view(),
                 hook,
                 vec![mob_id.to_string(), node_id.to_string()],
             );
@@ -126,7 +128,7 @@ impl Game {
 
     pub(super) fn player_namespace(&self) -> String {
         let mut id = [0u8; 16];
-        let world_dir = self.server.world.save_dir_for_saving();
+        let world_dir = self.runtime.player_sidecar_dir();
         if let Ok(p) = identity::local_player_id(&world_dir, self.identity.device_id()) {
             id = p.0;
         }
@@ -239,7 +241,7 @@ impl Game {
                             &self.content.scripts.kv,
                             &self.player_namespace(),
                             &self.content.reg,
-                            &mut self.server.world,
+                            &mut self.runtime.local_mut().world,
                             settlement,
                             *amount,
                         );

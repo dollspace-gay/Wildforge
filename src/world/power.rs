@@ -54,7 +54,7 @@ impl World {
             let Some(firebox_pos) = boiler_pos.offset(0, -1, 0) else {
                 continue;
             };
-            if let Some(BlockEntity::Steam(s)) = self.block_entities.get(&firebox_pos)
+            if let Some(BlockEntity::Steam(s)) = self.installations.get(&firebox_pos)
                 && !s.draft_closed
                 && s.fuel > 0.0
                 && s.water.water_hu > 0
@@ -192,10 +192,8 @@ impl World {
             let b = self.get_block_at(p);
             let src = if wheel.contains(&Some(b)) {
                 // Live water or banked momentum: the dress tick keeps
-                // the spin-down clock in station_work.
-                if self.wheel_live_at(p) > 0.0
-                    || self.station_work.get(&p).copied().unwrap_or(0.0) > 0.0
-                {
+                // the installation-owned spin-down clock.
+                if self.wheel_live_at(p) > 0.0 || self.installations.work_at(p) > 0.0 {
                     1.0
                 } else {
                     0.0

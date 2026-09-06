@@ -108,42 +108,7 @@ impl Camera {
         self.east = frame.east.as_vec3();
         self.up = frame.up.as_vec3();
         self.north = frame.north.as_vec3();
-        let point = eye.surface_point();
-        let sample = |u: f64, v: f64| {
-            crate::planet::block_to_render(
-                crate::planet::SurfacePoint {
-                    face: point.face,
-                    u,
-                    v,
-                },
-                f64::from(eye.y()),
-            )
-            .as_vec3()
-        };
-        const EPSILON: f64 = 0.25;
-        let side = f64::from(crate::planet::FACE_BLOCKS);
-        let (u0, u1) = ((point.u - EPSILON).max(0.0), (point.u + EPSILON).min(side));
-        let (v0, v1) = ((point.v - EPSILON).max(0.0), (point.v + EPSILON).min(side));
-        let chart_u = (sample(u1, point.v) - sample(u0, point.v)) / (u1 - u0) as f32;
-        let chart_v = (sample(point.u, v1) - sample(point.u, v0)) / (v1 - v0) as f32;
-        let solve = |wanted: Vec3| {
-            let uu = chart_u.dot(chart_u);
-            let uv = chart_u.dot(chart_v);
-            let vv = chart_v.dot(chart_v);
-            let determinant = uu * vv - uv * uv;
-            if determinant.abs() < 1.0e-8 {
-                return Vec3::ZERO;
-            }
-            let ur = chart_u.dot(wanted);
-            let vr = chart_v.dot(wanted);
-            Vec3::new(
-                (ur * vv - vr * uv) / determinant,
-                0.0,
-                (vr * uu - ur * uv) / determinant,
-            )
-        };
-        self.chart_east = solve(self.east);
-        self.chart_north = solve(self.north);
+        (self.chart_east, self.chart_north) = frame.chart_basis(eye);
     }
 
     /// Rotate a face-local simulation vector into embedded planet space.
@@ -236,7 +201,11 @@ impl Camera {
     /// terrain. The cast runs in the player's chart so the DDA crosses
     /// cube-face seams cleanly; on a hit the eye sits in the last free cell,
     /// pulled a hair toward the player to clear the near plane.
-    pub fn place_chase(&mut self, eye: crate::planet::EntityPos, world: &crate::world::World) {
+    pub fn place_chase(
+        &mut self,
+        eye: crate::planet::EntityPos,
+        world: &(impl crate::world::TerrainRead + ?Sized),
+    ) {
         let base = eye.render_pos();
         let f = self.forward();
         let r = f.cross(self.up()).normalize_or_zero();

@@ -37,6 +37,7 @@ wgpu = { version = "26", default-features = false, features = ["std", "parking_l
 # The no-title Adwaita CSD still provides Wayland borders without pulling the
 # font-rendering dependency used only for client-side title text.
 winit = { version = "0.30.13", default-features = false, features = ["rwh_06", "x11", "wayland", "wayland-dlopen", "wayland-csd-adwaita-notitle"] }
+thiserror = "2.0.19"
 
 [dev-dependencies]
 # Validate the WGSL shaders at test time (naga runs them at runtime otherwise).

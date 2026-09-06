@@ -7,18 +7,19 @@
 //! same rate limits, same shared ire. The layers above (perception,
 //! motion, work, mcp) only ever act through what a player could do.
 
-use std::collections::{HashMap, HashSet, VecDeque};
+use std::collections::{HashMap, VecDeque};
 use std::path::PathBuf;
 use std::sync::Arc;
 
 use glam::Vec3;
 
 use crate::chunk::ChunkPos;
+use crate::client_session::{ContentMap, GuestSession, PresentationRequirement};
 use crate::inventory::{HOTBAR_SLOTS, Inventory, ItemStack, TOTAL_SLOTS};
 use crate::physics::{self, Player};
-use crate::registry::{self, BlockId, ItemId, Registry};
-use crate::world::World;
-use crate::{identity, mp, net};
+use crate::registry::{self, ItemId, Registry};
+use crate::world::{ReplicaWorld, TerrainRead};
+use crate::{identity, net};
 
 /// How far an agent asks to see, in chunks. Enough to path somewhere it has
 /// not been; the host clamps it like anyone else's request.
@@ -53,9 +54,8 @@ pub enum Behavior {
 }
 
 pub struct Agent {
-    client: net::Client,
     pub reg: Arc<Registry>,
-    pub world: World,
+    pub world: ReplicaWorld,
     pub my_id: u32,
     pub player: Player,
     pub yaw: f32,
@@ -71,18 +71,13 @@ pub struct Agent {
     /// sends one click, waits for one echo, and only then trusts the
     /// inventory mirror for its next decision.
     pub echoes: u64,
-    block_map: Vec<BlockId>,
-    item_map: Vec<Option<ItemId>>,
+    session: GuestSession,
     /// id -> (label, pos, yaw) for every other player on the wire.
     pub players: HashMap<u32, (String, crate::planet::EntityPos, f32)>,
-    names: HashMap<u32, String>,
     /// Breadcrumbs per player: the trail follow() chases.
     trail: HashMap<u32, VecDeque<crate::planet::EntityPos>>,
-    /// Snapshots arrive split when they outgrow one datagram.
-    players_rx: net::SnapshotAssembler<net::PlayerSnap>,
-    mobs_rx: net::SnapshotAssembler<net::MobSnap>,
-    bolts_rx: net::SnapshotAssembler<net::BoltSnap>,
-    loose_items_rx: net::SnapshotAssembler<net::LooseItemSnap>,
+    /// Walkable waypoints are separate from observations of the leader.
+    follow_path: Option<motion::FollowPath>,
     /// Human-readable happenings, drained by the events tool.
     pub events: VecDeque<String>,
     last_discovery: Option<crate::discovery::ObservationSummary>,
@@ -96,17 +91,10 @@ pub struct Agent {
     last_working_result: Option<crate::workings::WorkingResult>,
     active_working_request: Option<(String, u64, crate::workings::WorkingTargetIntent)>,
     pub behavior: Behavior,
-    pending_chunks: VecDeque<(ChunkPos, Vec<u8>)>,
-    entry_required: HashSet<ChunkPos>,
-    entry_manifest_received: bool,
-    entry_ready_sent: bool,
-    entry_world_name: Option<String>,
-    entry_activity: std::time::Instant,
     move_timer: f32,
     /// (pos sampled, seconds since) for stuck detection.
     stuck_probe: (crate::planet::EntityPos, f32),
     mods_dir: PathBuf,
-    cache_dir: PathBuf,
 }
 
 impl Agent {
@@ -136,11 +124,11 @@ impl Agent {
         let identity = identity::LocalIdentity::load_or_create(&id_dir)
             .map_err(|e| format!("identity: {e}"))?;
         let mods_dir = PathBuf::from("mods");
-        let reg = Arc::new(registry::load(&mods_dir));
+        let reg = Arc::new(registry::load_validated(&mods_dir).map_err(|error| error.to_string())?);
         let hash = net::content_hash(&mods_dir);
         let client = net::Client::connect(addr, name.to_string(), hash, 0, &identity, None)
             .map_err(|e| format!("connect: {e}"))?;
-        let world = World::new(0, id_dir.join("world-cache"), reg.clone());
+        let world = ReplicaWorld::new(0, reg.clone(), 0.0);
         let half = f32::from(crate::planet::FACE_BLOCKS) * 0.5;
         let default_origin =
             crate::planet::EntityPos::new(crate::planet::Face::PosZ, half, 0.0, half)
@@ -149,7 +137,12 @@ impl Agent {
             crate::planet::EntityPos::new(crate::planet::Face::PosZ, half, 80.0, half)
                 .expect("agent default player position is canonical");
         let mut agent = Agent {
-            client,
+            session: GuestSession::with_client(
+                Arc::clone(&reg),
+                PresentationRequirement::TerrainOnly,
+                std::time::Instant::now(),
+                client,
+            ),
             reg,
             world,
             my_id: 0,
@@ -164,15 +157,9 @@ impl Agent {
             time_of_day: 0.3,
             in_world: false,
             echoes: 0,
-            block_map: Vec::new(),
-            item_map: Vec::new(),
             players: HashMap::new(),
-            names: HashMap::new(),
             trail: HashMap::new(),
-            players_rx: Default::default(),
-            mobs_rx: Default::default(),
-            bolts_rx: Default::default(),
-            loose_items_rx: Default::default(),
+            follow_path: None,
             events: VecDeque::new(),
             last_discovery: None,
             last_discovery_records: None,
@@ -185,16 +172,9 @@ impl Agent {
             last_working_result: None,
             active_working_request: None,
             behavior: Behavior::Idle,
-            pending_chunks: VecDeque::new(),
-            entry_required: HashSet::new(),
-            entry_manifest_received: false,
-            entry_ready_sent: false,
-            entry_world_name: None,
-            entry_activity: std::time::Instant::now(),
             move_timer: 0.0,
             stuck_probe: (default_origin, 0.0),
             mods_dir,
-            cache_dir: id_dir.join("world-cache"),
         };
         // Block for admission: the handshake is quick or refused.
         let start = std::time::Instant::now();
@@ -208,7 +188,12 @@ impl Agent {
             {
                 return Err(refusal);
             }
-            if agent.entry_activity.elapsed().as_secs() > 15 || start.elapsed().as_secs() > 120 {
+            if agent
+                .session
+                .admission()
+                .timed_out(std::time::Instant::now())
+                || start.elapsed().as_secs() > 120
+            {
                 return Err("timed out waiting for safe world entry".into());
             }
             std::thread::sleep(std::time::Duration::from_millis(10));
@@ -217,7 +202,7 @@ impl Agent {
         // fixed ring of five chunks, which is eighty blocks — it could not
         // path to anywhere it had not already been standing, because the
         // ground under the goal had never been sent to it.
-        agent.client.send(&net::C2S::SetViewDistance {
+        agent.session.send(&net::C2S::SetViewDistance {
             chunks: view_distance,
         });
         Ok(agent)
@@ -231,11 +216,7 @@ impl Agent {
     }
 
     pub fn send(&self, msg: &net::C2S) {
-        self.client.send(msg);
-    }
-
-    fn local_item(&self, wire: u16) -> Option<ItemId> {
-        *self.item_map.get(wire as usize)?
+        self.session.send(msg);
     }
 
     fn apply_player_state(&mut self, state: net::PlayerStateSnap, initial: bool) {
@@ -247,80 +228,46 @@ impl Agent {
         self.health = state.health;
         self.hunger = state.hunger;
         self.hotbar = (state.hotbar as usize).min(HOTBAR_SLOTS - 1);
-        let mut inv = Inventory::new();
-        for (i, s) in state.inventory.into_iter().enumerate() {
-            if i >= TOTAL_SLOTS {
-                break;
-            }
-            inv.slots[i] = s.and_then(|s| {
-                Some(ItemStack {
-                    item: self.local_item(s.item)?,
-                    count: s.count,
-                    durability: s.durability,
-                    arcane_id: s.arcane_id,
-                })
-            });
-        }
-        self.inventory = inv;
-        self.cursor = state.cursor.and_then(|s| {
-            Some(ItemStack {
-                item: self.local_item(s.item)?,
-                count: s.count,
-                durability: s.durability,
-                arcane_id: s.arcane_id,
-            })
-        });
+        self.inventory.slots = self.session.content().slots(&state.inventory);
+        self.cursor = state
+            .cursor
+            .as_ref()
+            .and_then(|stack| self.session.content().stack(stack));
     }
 
     /// One tick: apply the host's stream, advance the standing
     /// behavior, step physics, send our movement upstream.
     pub fn pump(&mut self, dt: f32) {
-        if !self.client.is_connected() && self.in_world {
-            self.in_world = false;
-            self.event("disconnected from host".into());
+        if !self.session.is_connected() {
+            if !self.session.admission().is_closed() {
+                self.session.close();
+                let message = if self.in_world {
+                    "disconnected from host"
+                } else {
+                    "refused: disconnected during world preparation"
+                };
+                self.in_world = false;
+                self.event(message.into());
+            }
             return;
         }
-        let messages = self.client.poll();
+        let messages = self.session.poll();
         if !messages.is_empty() {
-            self.entry_activity = std::time::Instant::now();
+            self.session.note_activity(std::time::Instant::now());
         }
-        let mut block_updates = Vec::new();
         for msg in messages {
-            match msg {
-                net::S2C::Chunk { face, u, v, rle } => {
-                    if let Some(face) = crate::planet::Face::from_u8(face)
-                        && let Ok(pos) = ChunkPos::new(face, u, v)
-                    {
-                        self.pending_chunks.push_back((pos, rle));
-                    }
-                }
-                net::S2C::BlockSet {
-                    pos,
-                    id,
-                    meta,
-                    salt_mass,
-                    soil_salinity,
-                } => {
-                    let local = self
-                        .block_map
-                        .get(id as usize)
-                        .copied()
-                        .unwrap_or(self.reg.unknown_block);
-                    block_updates.push((pos, local, meta, salt_mass, soil_salinity));
-                }
-                other => self.apply(other),
+            self.apply(msg);
+            if self.session.admission().is_closed() {
+                break;
             }
         }
         self.apply_pending_chunks();
-        if !block_updates.is_empty() {
-            self.world.apply_remote_block_states(block_updates);
-        }
         if self.in_world {
             self.tick_behavior(dt);
             self.move_timer += dt;
             if self.move_timer >= 0.05 {
                 self.move_timer = 0.0;
-                self.client.send_datagram(&net::C2S::Move {
+                self.session.send_datagram(&net::C2S::Move {
                     pos: self.player.pos,
                     yaw: self.yaw,
                     hotbar: self.hotbar as u8,
@@ -331,23 +278,9 @@ impl Agent {
     }
 
     fn apply_pending_chunks(&mut self) {
-        if !self.pending_chunks.is_empty() {
-            let chunks: Vec<_> = self
-                .pending_chunks
-                .drain(..self.pending_chunks.len().min(CHUNKS_PER_PUMP))
-                .collect();
-            self.world.insert_remote_chunks(
-                chunks.iter().map(|(pos, rle)| (*pos, rle.as_slice())),
-                &self.block_map,
-            );
-            for (pos, _) in chunks {
-                self.entry_required.remove(&pos);
-            }
-        }
-        if self.entry_manifest_received && self.entry_required.is_empty() && !self.entry_ready_sent
-        {
-            self.client.send(&net::C2S::EntryReady);
-            self.entry_ready_sent = true;
+        self.session.apply_terrain(&mut self.world, CHUNKS_PER_PUMP);
+        if self.session.take_ready() {
+            self.session.send(&net::C2S::EntryReady);
         }
     }
 
@@ -362,30 +295,38 @@ impl Agent {
     }
 
     fn apply(&mut self, msg: net::S2C) {
+        let Some(msg) =
+            self.session
+                .apply_world_message(msg, &mut self.world, &mut self.time_of_day)
+        else {
+            return;
+        };
         match msg {
+            // These replies were consumed by the shared replica dispatcher above.
+            net::S2C::TimeIre { .. }
+            | net::S2C::WeatherCells { .. }
+            | net::S2C::ArcaneCue { .. }
+            | net::S2C::ArcaneItems { .. }
+            | net::S2C::SignText { .. }
+            | net::S2C::SwitchState { .. } => {}
+
             net::S2C::Challenge { .. } => {}
             net::S2C::ModFiles(files) => {
-                // The host's content becomes ours, same as a windowed
-                // guest: cached, loaded, remapped on Welcome.
                 let cache = PathBuf::from("saves/.agents/.remote-mods");
-                let _ = std::fs::remove_dir_all(&cache);
-                for (rel, bytes) in files {
-                    if rel.contains("..") {
-                        continue;
+                match self.session.install_content(&cache, files) {
+                    Ok(registry) => self.reg = registry,
+                    Err(error) => {
+                        self.in_world = false;
+                        self.event(format!("refused: {error}"));
+                        return;
                     }
-                    let p = cache.join(rel);
-                    if let Some(parent) = p.parent() {
-                        let _ = std::fs::create_dir_all(parent);
-                    }
-                    let _ = std::fs::write(p, bytes);
                 }
-                self.reg = Arc::new(registry::load(&cache));
                 self.mods_dir = cache;
                 self.event("synced the host's mods".into());
             }
             net::S2C::Welcome {
                 seed,
-                mode,
+                mode: _,
                 time,
                 ire,
                 palette,
@@ -397,47 +338,44 @@ impl Agent {
                 world_name,
                 player_state,
             } => {
-                let mut world = World::new(seed, self.cache_dir.clone(), self.reg.clone());
-                world.set_remote(true);
-                world.mode = mode;
-                world.ire = ire;
+                let world = ReplicaWorld::new(seed, self.reg.clone(), ire);
                 self.my_id = your_id;
-                self.names = roster.into_iter().map(|p| (p.id, p.display_name)).collect();
-                self.block_map = mp::block_remap(&world, &palette);
-                self.item_map = mp::item_remap(&world, &items);
+                self.session.begin(
+                    ContentMap::new(Arc::clone(&self.reg), palette, items),
+                    world_name,
+                    player_state.pos,
+                    std::time::Instant::now(),
+                );
+                self.session.set_roster(roster);
+                self.players.clear();
+                self.trail.clear();
+                self.follow_path = None;
                 self.world = world;
                 self.time_of_day = time;
                 self.apply_player_state(player_state, true);
                 self.in_world = false;
-                self.entry_required.clear();
-                self.entry_manifest_received = false;
-                self.entry_ready_sent = false;
-                self.entry_world_name = Some(world_name);
             }
             net::S2C::EntryProgress { resident, total } => {
                 self.event(format!("preparing entry terrain: {resident}/{total}"));
             }
             net::S2C::EntryManifest { spawn, required } => {
-                if spawn != self.player.pos {
-                    self.event("refused: host entry manifest did not match Welcome spawn".into());
-                    return;
+                if let Err(error) = self.session.manifest(spawn, required, &self.world) {
+                    self.in_world = false;
+                    self.event(format!("refused: {error}"));
                 }
-                self.entry_required = required.into_iter().collect();
-                self.entry_manifest_received = true;
             }
-            net::S2C::EntryAccepted => {
-                if !self.entry_ready_sent || !self.entry_required.is_empty() {
-                    self.event("refused: host accepted entry before terrain was decoded".into());
-                    return;
+            net::S2C::EntryAccepted => match self.session.accepted() {
+                Ok(world) => {
+                    self.in_world = true;
+                    self.event(format!("joined {world}"));
                 }
-                self.in_world = true;
-                let world = self
-                    .entry_world_name
-                    .take()
-                    .unwrap_or_else(|| "world".into());
-                self.event(format!("joined {world}"));
-            }
+                Err(error) => {
+                    self.in_world = false;
+                    self.event(format!("refused: {error}"));
+                }
+            },
             net::S2C::Refused(why) => {
+                self.session.close();
                 self.event(format!("refused: {}", why.detail));
                 self.in_world = false;
             }
@@ -445,7 +383,7 @@ impl Agent {
                 if let Some(face) = crate::planet::Face::from_u8(face)
                     && let Ok(pos) = ChunkPos::new(face, u, v)
                 {
-                    self.world.insert_remote_chunk(pos, &rle, &self.block_map);
+                    self.session.queue_chunk(pos, rle);
                 }
             }
             net::S2C::BlockSet {
@@ -455,21 +393,11 @@ impl Agent {
                 salt_mass,
                 soil_salinity,
             } => {
-                let local = self
-                    .block_map
-                    .get(id as usize)
-                    .copied()
-                    .unwrap_or(self.reg.unknown_block);
-                self.world.apply_remote_block_states([(
-                    pos,
-                    local,
-                    meta,
-                    salt_mass,
-                    soil_salinity,
-                )]);
+                self.session
+                    .queue_block(pos, id, meta, salt_mass, soil_salinity);
             }
             net::S2C::Players(part) => {
-                let Some(list) = self.players_rx.accept(part) else {
+                let Some(list) = self.session.players(part) else {
                     return;
                 };
                 let present: std::collections::HashSet<u32> =
@@ -480,9 +408,10 @@ impl Agent {
                         continue;
                     }
                     let name = self
-                        .names
+                        .session
+                        .roster()
                         .get(&id)
-                        .cloned()
+                        .map(|presence| presence.display_name.clone())
                         .unwrap_or_else(|| format!("P{id}"));
                     self.players.insert(id, (name, pos, yaw));
                     // Breadcrumbs: a new crumb each ~0.75 blocks of
@@ -497,49 +426,9 @@ impl Agent {
                 }
             }
             net::S2C::Mobs(part) => {
-                let Some(snaps) = self.mobs_rx.accept(part) else {
-                    return;
-                };
-                let mobs = snaps
-                    .into_iter()
-                    .filter(|s| (s.species as usize) < self.reg.animals.len())
-                    .map(|s| {
-                        let mut m = crate::mobs::Mob::new_at(s.species as usize, s.pos, s.yaw);
-                        m.id = s.id;
-                        m.growth = s.growth;
-                        m.fed = s.fed;
-                        m
-                    })
-                    .collect();
-                self.world.replace_mobs(mobs);
-            }
-            net::S2C::TimeIre { time, ire, day } => {
-                self.time_of_day = time;
-                self.world.ire = ire;
-                self.world.day = day;
-            }
-            net::S2C::WeatherCells { side, cells } => {
-                self.world.set_remote_weather(side, cells);
-            }
-            net::S2C::ArcaneCue {
-                bands,
-                dominant,
-                ecology,
-            } => {
-                self.world.set_remote_arcane_cue(bands, dominant, ecology);
-            }
-            net::S2C::ArcaneItems {
-                reset,
-                charges,
-                implements,
-                apparatus,
-            } => {
-                if reset {
-                    self.world.clear_remote_implement_snapshot();
+                if let Some(mobs) = self.session.mobs(part) {
+                    self.world.replace_mobs(mobs);
                 }
-                self.world.extend_remote_arcane_items(charges);
-                self.world.extend_remote_implements(implements);
-                self.world.extend_remote_apparatus(apparatus);
             }
             net::S2C::DiscoveryReport(record) => {
                 self.event(format!(
@@ -617,7 +506,7 @@ impl Agent {
                 arcane_id,
                 current_units,
             } => {
-                if let Some(local) = self.local_item(item) {
+                if let Some(local) = self.session.content().item(item) {
                     let reg = self.reg.clone();
                     let mut stack = ItemStack::new(&reg, local, count.max(1));
                     if durability > 0 {
@@ -640,20 +529,14 @@ impl Agent {
                 if presence.id != self.my_id {
                     self.event(format!("{} joined", presence.display_name));
                 }
-                self.names.insert(presence.id, presence.display_name);
+                self.session.joined(presence);
             }
             net::S2C::Left { id } => {
                 self.players.remove(&id);
                 self.trail.remove(&id);
-                if let Some(n) = self.names.remove(&id) {
-                    self.event(format!("{n} left"));
+                if let Some(presence) = self.session.left(id) {
+                    self.event(format!("{} left", presence.display_name));
                 }
-            }
-            net::S2C::SignText { pos, lines } => {
-                self.world.insert_block_entity_at(
-                    pos,
-                    crate::world::BlockEntity::Sign(crate::world::SignState { lines }),
-                );
             }
             net::S2C::SettlementDelivery {
                 settlement,
@@ -664,27 +547,10 @@ impl Agent {
                 // Capability E13: standing pays locally, like quest rewards.
                 let _ = (settlement, item, units, rep_per_unit);
             }
-            net::S2C::SwitchState { pos, selected } => {
-                let selected = match selected & 3 {
-                    0 => crate::planet::Direction4::East,
-                    1 => crate::planet::Direction4::North,
-                    2 => crate::planet::Direction4::West,
-                    _ => crate::planet::Direction4::South,
-                };
-                self.world.insert_block_entity_at(
-                    pos,
-                    crate::world::BlockEntity::Switch(crate::world::SwitchState { selected }),
-                );
-            }
             net::S2C::HeldResult(held) => {
-                self.cursor = held.and_then(|s| {
-                    Some(ItemStack {
-                        item: self.local_item(s.item)?,
-                        count: s.count,
-                        durability: s.durability,
-                        arcane_id: s.arcane_id,
-                    })
-                });
+                self.cursor = held
+                    .as_ref()
+                    .and_then(|stack| self.session.content().stack(stack));
             }
             net::S2C::RoleChanged { role } => {
                 self.event(format!("role is now {role:?}"));
@@ -717,50 +583,19 @@ impl Agent {
                 ));
             }
             net::S2C::Bolts(part) => {
-                if let Some(snaps) = self.bolts_rx.accept(part) {
-                    self.world.replace_projectiles(
-                        snaps
-                            .into_iter()
-                            .map(|snap| crate::mobs::Projectile {
-                                stable_id: snap.id,
-                                pos: snap.pos,
-                                vel: snap.vel,
-                                tile: snap.tile,
-                                damage: 0.0,
-                                damage_type: None,
-                                age: snap.age,
-                                from_player: false,
-                                drop_item: None,
-                                preparation_payload: None,
-                                owner: 0,
-                            })
-                            .collect(),
-                    );
+                if let Some(projectiles) = self.session.bolts(part) {
+                    self.world.replace_projectiles(projectiles);
                 }
             }
             net::S2C::LooseItems(part) => {
-                if let Some(snaps) = self.loose_items_rx.accept(part) {
-                    let items = snaps
-                        .into_iter()
-                        .filter_map(|snap| {
-                            let item = (*self.item_map.get(snap.item as usize)?)?;
-                            let mut entity = crate::entity::ItemEntity::new(
-                                snap.pos, snap.vel, item, snap.count,
-                            );
-                            entity.stable_id = snap.id;
-                            entity.age = snap.age;
-                            entity.durability = snap.durability.min(self.reg.item(item).durability);
-                            entity.arcane_id = snap.arcane_id;
-                            Some(entity)
-                        })
-                        .collect();
+                if let Some(items) = self.session.loose_items(part) {
                     self.world.replace_loose_items(items);
                 }
             }
             // The agent takes whatever ring the host grants; it has no
             // renderer, so there is no fog to keep honest.
             net::S2C::ViewDistance { .. } => {}
-            // Containers, cargo, bolts, falling sand: not yet part of
+            // Containers, cargo, falling sand: not yet part of
             // the agent's world-model (fast follows).
             net::S2C::Container { .. }
             | net::S2C::MachineContainer { .. }
@@ -773,12 +608,20 @@ impl Agent {
 
     /// Advance the standing behavior and step player physics.
     fn tick_behavior(&mut self, dt: f32) {
+        if !matches!(self.behavior, Behavior::Follow { .. }) {
+            self.follow_path = None;
+        }
         let input = match std::mem::replace(&mut self.behavior, Behavior::Idle) {
             Behavior::Idle => motion::idle(self.player.in_water),
             Behavior::GoTo { path, goal } => self.tick_goto(path, goal, dt),
             Behavior::Follow { id, distance } => self.tick_follow(id, distance, dt),
         };
-        let (fwd, right) = motion::basis(self.yaw);
+        let frame = crate::planet::local_frame(self.player.pos.surface_point());
+        let (east, north) = frame.chart_basis(self.player.pos);
+        let (forward, right) = motion::basis(self.yaw);
+        let fwd = east * forward.x + north * forward.z;
+        let right = east * right.x + north * right.z;
         self.player.update(&self.world, &input, fwd, right, dt);
+        self.yaw = self.player.frame_rotation.rotate_yaw(self.yaw);
     }
 }

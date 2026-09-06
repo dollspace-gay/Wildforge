@@ -8,9 +8,14 @@
 //! numbers — the failure mode of a hand-written `desc` field is a lie,
 //! and a lie about a mechanic is worse than silence.
 
-use super::*;
-use crate::ItemStack;
+use super::Game;
+use super::navigation::Screen;
+use crate::crafting;
+use crate::inventory::ItemStack;
+use crate::inventory::TOTAL_SLOTS;
 use crate::registry::{ArmorSlot, NUTRIENTS, Registry, ToolKind};
+use crate::ui::UiBatch;
+use crate::world;
 
 const TITLE: [f32; 4] = [1.0, 0.98, 0.92, 1.0];
 const BODY: [f32; 4] = [0.72, 0.76, 0.80, 1.0];
@@ -302,7 +307,7 @@ impl Game {
         }
         let inv = || {
             (0..TOTAL_SLOTS)
-                .find(|&i| self.hit(self.inv_slot_rect(i)))
+                .find(|&i| self.hit(self.inventory_layout().slot_rect(i)))
                 .and_then(|i| self.inventory.slots[i])
         };
         match self.ui_state.screen {
@@ -320,11 +325,11 @@ impl Game {
                 }
                 let n = self.interaction.craft_size * self.interaction.craft_size;
                 for i in 0..n {
-                    if self.hit(self.craft_slot_rect(i)) {
+                    if self.hit(self.inventory_layout().craft_slot_rect(i)) {
                         return self.interaction.craft_grid[i];
                     }
                 }
-                if self.hit(self.result_slot_rect()) {
+                if self.hit(self.inventory_layout().result_slot_rect()) {
                     return crafting::match_repair(
                         &self.content.reg,
                         &self.interaction.craft_grid[..n],
@@ -343,21 +348,21 @@ impl Game {
             }
             Screen::Chest(pos) => (0..27)
                 .find(|&i| self.hit(self.chest_slot_rect(i)))
-                .and_then(|i| match self.server.world.block_entity_at(&pos) {
+                .and_then(|i| match self.runtime.view().block_entity_at(&pos) {
                     Some(world::BlockEntity::Chest(c)) => c.slots[i],
                     _ => None,
                 })
                 .or_else(inv),
             Screen::Furnace(pos) => (0..3)
                 .find(|&i| self.hit(self.furnace_slot_rect(i)))
-                .and_then(|i| match self.server.world.block_entity_at(&pos) {
+                .and_then(|i| match self.runtime.view().block_entity_at(&pos) {
                     Some(world::BlockEntity::Furnace(f)) => [f.input, f.fuel, f.output][i],
                     _ => None,
                 })
                 .or_else(inv),
             Screen::Offering(pos) => (0..3)
                 .find(|&i| self.hit(self.offering_slot_rect(i)))
-                .and_then(|i| match self.server.world.block_entity_at(&pos) {
+                .and_then(|i| match self.runtime.view().block_entity_at(&pos) {
                     Some(world::BlockEntity::Offering(o)) => o.slots[i],
                     _ => None,
                 })
@@ -365,8 +370,8 @@ impl Game {
             Screen::MobCargo(id) => (0..9)
                 .find(|&i| self.hit(self.mob_cargo_slot_rect(i)))
                 .and_then(|i| {
-                    self.server
-                        .world
+                    self.runtime
+                        .view()
                         .mob_by_id(id)
                         .and_then(|m| m.cargo.as_ref().and_then(|c| c[i]))
                 })
@@ -387,7 +392,10 @@ impl Game {
         let Some(stack) = self.hovered_item() else {
             return;
         };
-        let current = self.server.world.inspectable_item_current(stack.arcane_id);
+        let current = self
+            .runtime
+            .view()
+            .inspectable_item_current(stack.arcane_id);
         let mut lines = item_tooltip_lines_with_current(&self.content.reg, stack, current);
         let has_lens = self
             .inventory
@@ -404,13 +412,13 @@ impl Game {
                     .is_some_and(|definition| definition.kind == "tuning_lens")
             });
         lines.extend(
-            self.server
-                .world
+            self.runtime
+                .view()
                 .preparation_tooltip(stack, has_lens)
                 .into_iter()
                 .map(|line| (line, EFFECT)),
         );
-        let implement = self.server.world.implement_tooltip(stack, has_lens);
+        let implement = self.runtime.view().implement_tooltip(stack, has_lens);
         if !implement.is_empty() {
             // The implement resolver knows its actual component-derived
             // capacity; remove the generic content-manifest reading so the
@@ -465,166 +473,5 @@ impl Game {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn reg() -> Registry {
-        crate::registry::load(std::path::Path::new("/nonexistent-mods-dir"))
-    }
-
-    fn lines_for(reg: &Registry, name: &str) -> Vec<String> {
-        let item = reg.item_id(name).unwrap_or_else(|| panic!("no {name}"));
-        item_tooltip_lines(reg, ItemStack::new(reg, item, 1))
-            .into_iter()
-            .map(|(t, _)| t)
-            .collect()
-    }
-
-    /// The complaint that started this: a charm in the pack told you
-    /// nothing but its name, and only once you had put it in your hand.
-    #[test]
-    fn a_charm_says_what_wearing_it_does() {
-        let reg = reg();
-        for (item, want) in [
-            ("base:charm_quiet", "MINDS YOU LESS"),
-            ("base:charm_bark", "ARMOUR"),
-            ("base:charm_hunger", "HUNGER"),
-        ] {
-            let lines = lines_for(&reg, item);
-            assert!(
-                lines.iter().any(|l| l.contains(want)),
-                "{item} should explain itself, got {lines:?}"
-            );
-        }
-    }
-
-    /// Every line is derived, so the numbers can never contradict the
-    /// mechanic they describe.
-    #[test]
-    fn tools_food_and_armour_read_off_their_own_numbers() {
-        let reg = reg();
-        let pick = lines_for(&reg, "base:stone_pickaxe");
-        assert_eq!(pick[0], "STONE PICKAXE");
-        assert!(pick.iter().any(|l| l.starts_with("PICKAXE - TIER")));
-        assert!(pick.iter().any(|l| l.starts_with("DURABILITY")));
-
-        let potato = lines_for(&reg, "base:potato");
-        assert!(potato.iter().any(|l| l.contains("HUNGER")));
-        assert!(potato.iter().any(|l| l.contains("VEGETABLE")));
-        // Food's `durability` is a freshness clock, not tool wear —
-        // calling it "durability" said nothing about the only thing it
-        // governs, which is how long you have to eat the thing.
-        assert!(
-            potato.iter().any(|l| l.starts_with("FRESH:")),
-            "food shows its clock as freshness, got {potato:?}"
-        );
-        assert!(!potato.iter().any(|l| l.starts_with("DURABILITY")));
-    }
-
-    /// The font is a 5x7 uppercase bitmap with no fallback glyph: any
-    /// character it doesn't know renders as a hole in the sentence.
-    #[test]
-    fn every_shipped_item_tooltip_is_renderable_and_titled() {
-        let reg = reg();
-        for (i, def) in reg.items.iter().enumerate() {
-            let stack = ItemStack::new(&reg, crate::registry::ItemId(i as u16), 1);
-            let lines = item_tooltip_lines(&reg, stack);
-            assert_eq!(
-                lines[0].0,
-                def.label.to_uppercase(),
-                "{} leads with its name",
-                def.name
-            );
-            for (text, _) in &lines {
-                // is_ascii() is not the test: '~' is ASCII and draws
-                // as a hole. Ask the font itself.
-                if let Some(bad) = text.chars().find(|&c| !crate::ui::has_glyph(c)) {
-                    panic!(
-                        "{}: {text:?} contains {bad:?}, which the font draws as a blank",
-                        def.name
-                    );
-                }
-            }
-        }
-    }
-
-    #[test]
-    fn ecology_tooltips_are_qualitative_and_explain_sequestered_dross() {
-        let reg = reg();
-        let ashlace = reg.item_id("base:ashlace_tissue").unwrap();
-        let lines =
-            item_tooltip_lines_with_current(&reg, ItemStack::new(&reg, ashlace, 1), Some(137))
-                .into_iter()
-                .map(|(text, _)| text)
-                .collect::<Vec<_>>();
-        assert!(lines.iter().any(|line| line.contains("BINDS DROSS")));
-        assert!(lines.iter().any(|line| line.starts_with("CURRENT: ")));
-        assert!(
-            lines
-                .iter()
-                .filter(|line| line.starts_with("CURRENT: "))
-                .all(|line| !line.chars().any(|character| character.is_ascii_digit()))
-        );
-    }
-
-    #[test]
-    fn every_preparation_explains_its_target_cost_or_limit() {
-        let reg = reg();
-        for preparation in reg.preparations.values() {
-            let lines = lines_for(&reg, &preparation.output_item);
-            assert!(
-                lines.iter().any(|line| line.starts_with("USE: ")),
-                "{} has no application instruction: {lines:?}",
-                preparation.id
-            );
-            assert!(
-                lines.iter().any(|line| {
-                    line.contains("DOES NOT")
-                        || line.contains("BOUNDED")
-                        || line.contains("PAID")
-                        || line.contains("MOVES")
-                        || line.contains("NEVER")
-                        || line.contains("DRAIN")
-                        || line.contains("THROUGHPUT")
-                }),
-                "{} hides its principal cost or limit: {lines:?}",
-                preparation.id
-            );
-        }
-    }
-
-    #[test]
-    fn wand_and_frame_tooltips_publish_the_installed_working_catalogue() {
-        let reg = reg();
-        let wand = lines_for(&reg, "base:bound_wand");
-        for label in [
-            "TRACE",
-            "GLEAM",
-            "KINDLE",
-            "NUDGE",
-            "ROOTWAKE",
-            "DRAW",
-            "FIELDMEND",
-            "HOLDFAST",
-        ] {
-            assert!(
-                wand.iter().any(|line| line.contains(label)),
-                "wand tooltip omitted {label}: {wand:?}"
-            );
-        }
-        assert!(wand.iter().any(|line| line.contains("CTRL + USE")));
-
-        let frame = lines_for(&reg, "base:binding_frame");
-        for label in [
-            "SETTLING RITE",
-            "ROOTING BED",
-            "WARD BOUNDARY",
-            "TRANSFER CIRCLE",
-        ] {
-            assert!(
-                frame.iter().any(|line| line.contains(label)),
-                "binding-frame tooltip omitted {label}: {frame:?}"
-            );
-        }
-    }
-}
+#[path = "tooltip_tests.rs"]
+mod tests;

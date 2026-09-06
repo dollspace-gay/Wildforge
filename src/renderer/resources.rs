@@ -1,6 +1,8 @@
 //! Atlas replacement, resize handling, and dynamic mesh resources.
 
-use super::*;
+use super::post::create_depth;
+use super::{GpuChunk, LineVertex, Renderer, mesh_bounds, upload_mesh};
+use crate::{chunk::ChunkPos, mesher::ChunkMesh};
 
 impl Renderer {
     pub fn clear_chunks(&mut self) {
@@ -74,13 +76,7 @@ impl Renderer {
         self.config.height = h.max(1);
         self.surface.configure(&self.device, &self.config);
         self.depth = create_depth(&self.device, &self.config);
-        self.post = create_post_targets(
-            &self.device,
-            &self.config,
-            &self.post_in_bgl,
-            &self.post_tex_bgl,
-            &self.post_sampler,
-        );
+        self.post.resize(&self.device, &self.config);
         self.update_crosshair();
     }
 

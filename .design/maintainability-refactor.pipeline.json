@@ -1,0 +1,10 @@
+{
+  "schema_version": 1,
+  "design_doc": ".design/maintainability-refactor.md",
+  "doc_hash": "sha256:67dc07d00295893da165d0a2460bc0b2ae3f09bbd8213b3f6ec12a2403b9ed32",
+  "stage": "complete",
+  "plans": [],
+  "runs": [],
+  "completion_scope": "Implementation and local qualification; hosted acceptance is the latest-head PR check set.",
+  "acceptance_record": ".design/maintainability-acceptance.md"
+}

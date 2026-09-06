@@ -3,7 +3,8 @@
 //! surface. The data model lives in `crate::skills`; this file wires it to
 //! the live world (mode-gated via E1) and the player session.
 
-use super::*;
+use super::Game;
+use crate::audio::Sfx;
 use crate::stats::StatBlock;
 
 impl Game {
@@ -17,7 +18,7 @@ impl Game {
         if tree.is_empty() {
             return false;
         }
-        self.server.world.ruleset().skills
+        self.runtime.view().ruleset().skills
     }
 
     /// Grant XP from one canonical source. No-op when skills are disabled

@@ -102,11 +102,7 @@ pub fn soil_after_harvest(meta: u8, family: u8) -> u8 {
 
 impl World {
     pub fn fertility_at_pos(&self, pos: BlockPos) -> u8 {
-        if self.reg.block(self.get_block_at(pos)).fert_tiles.is_some() {
-            fert_of(self.get_meta_at(pos))
-        } else {
-            0
-        }
+        super::TerrainRead::fertility_at_pos(self, pos)
     }
 
     /// Fertility of the soil block at a position (0 for non-soil).
@@ -236,19 +232,14 @@ impl World {
             .planet_atlas
             .as_ref()
             .map(|atlas| atlas.biome_sample(pos.surface()));
-        if self.get_soil_salinity_at(pos) >= 128 {
-            Some("The soil is white with salt; fresh water and drainage must leach it.")
-        } else if sample.is_some_and(|soil| soil.drainage < 42) {
-            Some("The ground is waterlogged; this crop needs drainage.")
-        } else if sample
-            .is_some_and(|soil| soil.habitat_flags & crate::planet_atlas::HABITAT_PERMAFROST != 0)
-        {
-            Some("The ground is frozen too deeply for these roots.")
-        } else if self.managed_soil_moisture_at(pos) < 0.18 {
-            Some("The soil is dry; irrigation must bring real water.")
-        } else {
-            None
-        }
+        soil_failure(
+            self.get_soil_salinity_at(pos),
+            sample.map(|soil| soil.drainage),
+            sample.is_some_and(|soil| {
+                soil.habitat_flags & crate::planet_atlas::HABITAT_PERMAFROST != 0
+            }),
+            self.managed_soil_moisture_at(pos),
+        )
     }
 
     /// Feed one item into a compost heap; the meta byte counts the
@@ -319,5 +310,25 @@ impl World {
         let fam = if fed == FERT_MAX { 0 } else { family_of(meta) };
         self.set_block_meta_at(pos, b, soil_meta(fed, fam));
         true
+    }
+}
+
+/// Shared warning priority over observed salinity and optional atlas habitat.
+pub(super) fn soil_failure(
+    salinity: u8,
+    drainage: Option<u8>,
+    permafrost: bool,
+    moisture: f32,
+) -> Option<&'static str> {
+    if salinity >= 128 {
+        Some("The soil is white with salt; fresh water and drainage must leach it.")
+    } else if drainage.is_some_and(|value| value < 42) {
+        Some("The ground is waterlogged; this crop needs drainage.")
+    } else if permafrost {
+        Some("The ground is frozen too deeply for these roots.")
+    } else if moisture < 0.18 {
+        Some("The soil is dry; irrigation must bring real water.")
+    } else {
+        None
     }
 }

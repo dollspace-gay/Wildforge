@@ -5,6 +5,9 @@
 //! the KV store (`storage_set`/`storage_get`), which is owned by the engine,
 //! survives hot reloads, and is saved with the world.
 
+mod loading;
+pub use loading::ScriptErrors;
+
 use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
 use std::path::Path;
@@ -16,7 +19,9 @@ use crate::planet::{
     BlockPos, Direction6, EntityPos, Face, SurfacePos, geodesic_distance, great_circle_bearing,
     step6,
 };
+#[cfg(test)]
 use crate::world::World;
+use crate::world::{TerrainRead, WorldView};
 
 /// Deferred world mutations queued by scripts during an event, applied by the
 /// game loop afterwards (scripts never hold `&mut World`).
@@ -46,6 +51,21 @@ pub enum Cmd {
     },
 }
 
+impl Cmd {
+    pub(crate) fn requires_authority(&self) -> bool {
+        matches!(
+            self,
+            Self::SetBlock(..)
+                | Self::Give(..)
+                | Self::SpawnAnimal(..)
+                | Self::SpawnNpc(..)
+                | Self::QuestProgress { .. }
+                | Self::QuestAccept(..)
+                | Self::ArcaneMoveWorking { .. }
+        )
+    }
+}
+
 pub struct ScriptMod {
     pub id: String,
     pub ast: Option<AST>,
@@ -62,32 +82,39 @@ pub struct ScriptHost {
 }
 
 thread_local! {
-    static WORLD: Cell<*const World> = const { Cell::new(std::ptr::null()) };
+    static WORLD: Cell<*const WorldView<'static>> = const { Cell::new(std::ptr::null()) };
 }
 
 /// Scoped access to the world for read-only host functions during dispatch.
-struct WorldGuard;
-impl WorldGuard {
-    fn new(world: &World) -> WorldGuard {
-        WORLD.with(|w| w.set(world as *const World));
-        WorldGuard
+struct WorldGuard<'a> {
+    prior: *const WorldView<'static>,
+    _borrow: std::marker::PhantomData<&'a WorldView<'a>>,
+}
+impl<'a> WorldGuard<'a> {
+    fn new(world: &'a WorldView<'a>) -> Self {
+        let pointer = std::ptr::from_ref(world).cast::<WorldView<'static>>();
+        Self {
+            prior: WORLD.with(|slot| slot.replace(pointer)),
+            _borrow: std::marker::PhantomData,
+        }
     }
 }
-impl Drop for WorldGuard {
+impl Drop for WorldGuard<'_> {
     fn drop(&mut self) {
-        WORLD.with(|w| w.set(std::ptr::null()));
+        WORLD.with(|slot| slot.set(self.prior));
     }
 }
 
-fn with_world<R>(f: impl FnOnce(&World) -> R, default: R) -> R {
-    WORLD.with(|w| {
-        let p = w.get();
-        if p.is_null() {
+fn with_world<R>(f: impl for<'a> FnOnce(&'a WorldView<'a>) -> R, default: R) -> R {
+    WORLD.with(|slot| {
+        let pointer = slot.get();
+        if pointer.is_null() {
             default
         } else {
-            // SAFETY: the pointer is set only for the duration of a dispatch
-            // call that holds `&World`, on this thread, and cleared on drop.
-            f(unsafe { &*p })
+            // SAFETY: WorldGuard borrows the view and its owner throughout the
+            // synchronous dispatch on this thread. No reference leaves this
+            // callback. Drop restores the prior dispatch even during unwinding.
+            f(unsafe { &*pointer })
         }
     })
 }
@@ -173,7 +200,7 @@ impl ScriptHost {
                     return String::new();
                 };
                 with_world(
-                    |w| w.reg.block(w.get_block_at(pos)).name.clone(),
+                    |w| w.registry().block(w.get_block_at(pos)).name.clone(),
                     String::new(),
                 )
             },
@@ -191,10 +218,7 @@ impl ScriptHost {
             with_world(
                 |world| {
                     let mut map = Map::new();
-                    let bands = world
-                        .planet_atlas()
-                        .map(|atlas| world.arcane_cue_at(atlas.atlas_pos(surface)))
-                        .unwrap_or([0; 2]);
+                    let bands = world.script_arcane_estimate(surface);
                     map.insert("current_band".into(), i64::from(bands[0]).into());
                     map.insert("dross_band".into(), i64::from(bands[1]).into());
                     map
@@ -366,41 +390,19 @@ impl ScriptHost {
         }
     }
 
-    /// Compile `main.rhai` for each mod dir. On error, keeps the previous
-    /// AST for that mod (if any) so a typo doesn't kill a session.
-    pub fn load_mods(&mut self, mods: &[(String, std::path::PathBuf)]) {
-        let mut next: Vec<ScriptMod> = Vec::new();
-        for (id, dir) in mods {
-            let path = dir.join("main.rhai");
-            if !path.exists() {
-                continue;
-            }
-            let old = self.mods.iter_mut().find(|m| &m.id == id);
-            match std::fs::read_to_string(&path)
-                .map_err(|e| e.to_string())
-                .and_then(|src| self.engine.compile(&src).map_err(|e| e.to_string()))
-            {
-                Ok(ast) => next.push(ScriptMod {
-                    id: id.clone(),
-                    ast: Some(ast),
-                    error: None,
-                }),
-                Err(e) => {
-                    let kept = old.and_then(|m| m.ast.take());
-                    next.push(ScriptMod {
-                        id: id.clone(),
-                        ast: kept,
-                        error: Some(format!("{id}/main.rhai: {e}")),
-                    });
-                }
-            }
-        }
-        self.mods = next;
-    }
-
     /// Dispatch an event to every mod that defines it. Returns false if any
     /// handler explicitly returned `false` (cancels cancellable events).
+    #[cfg(test)]
     pub fn dispatch(&mut self, world: &World, event: &str, args: impl FuncArgs + Clone) -> bool {
+        self.dispatch_view(&world.view(), event, args)
+    }
+
+    pub(crate) fn dispatch_view(
+        &mut self,
+        world: &WorldView<'_>,
+        event: &str,
+        args: impl FuncArgs + Clone,
+    ) -> bool {
         let _guard = WorldGuard::new(world);
         let mut allow = true;
         for m in &self.mods {
@@ -434,13 +436,9 @@ impl ScriptHost {
         })
     }
 
-    /// Run one named hook function (`"mod:fn"` or bare `"fn"` = any mod that
-    /// defines it) over string args, returning its raw return value. Used by
-    /// dialogue `condition`/`callback` and node-text hooks so scripts can
-    /// gate node availability, mutate flags, and return interpolated text.
-    pub fn run_fn(
+    pub(crate) fn run_fn_view(
         &mut self,
-        world: &World,
+        world: &WorldView<'_>,
         hook: &crate::registry::ScriptHook,
         args: Vec<String>,
     ) -> Dynamic {
@@ -494,3 +492,6 @@ impl ScriptHost {
         crate::identity::atomic_write(&path, text.as_bytes(), false)
     }
 }
+
+#[cfg(test)]
+mod context_tests;
