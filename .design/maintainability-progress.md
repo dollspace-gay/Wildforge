@@ -2013,3 +2013,24 @@ are below 250 lines before formatting. Existing host test scenarios remain at
 the parent until the final test-organization pass. No tests/compiler/format or
 analyzers ran. Final joins/departures, timing, survival/status, inventories,
 ordered replication, sleep, and native host/guest lifetimes remain unverified.
+
+
+## Typed frame preparation and render submission (coding checkpoint; unverified)
+
+The large graphical frame implementation now separates feedback, session
+advancement, content refresh, player motion, and viewmodel construction. Render
+preparation returns typed lighting/selection values and geometry batches. The
+coordinator retains entity/avatar, station, precipitation, overlay, hand, UI,
+point-light, adaptation, submission, then capture/title order. Each emission
+helper extends its supplied batch, preserving vertex/index and RNG order.
+Camera transforms, sky/SH/formulas, local weather, capture eligibility, and
+surface-error handling remain unchanged. A missing explicit build-marker import
+was supplied in the relocated title adapter. The long conversational autosave
+comment was replaced with its actual lifecycle/performance contract.
+
+New modules are below 500 physical lines before formatting; the cohesive authored
+viewmodel geometry is 443 lines at this source checkpoint and needs final size
+review. Existing characterization tests remain at the parent until final test
+organization. No compiler/format/tests/analyzers or GPU runs occurred. Fresh
+framing, movement, sky/lighting/weather, native, motion, and timing proof remains
+required before accepting the extraction.

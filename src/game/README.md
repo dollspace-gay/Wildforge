@@ -91,3 +91,8 @@ that path belongs to the graphical runtime, not the replica terrain owner.
 wand/script application, and visual feedback. A single block-interaction match
 retains guard precedence; helpers receive only the targeting inputs they use.
 These are application coordinators, while shared rules remain in player_ops.
+
+`frame/` exposes the ordered update and render-preparation stages. Lighting and
+selection use typed owned results; entity, station, weather, overlay, and hand
+geometry are assembled into explicit batches before FrameInput submission.
+Capture milestones and renderer error handling remain after the same submission.
