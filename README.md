@@ -1,13 +1,13 @@
 # Wildforge
 
 A Minecraft-alpha-style voxel game written in Rust on a custom engine,
-available under the [MIT license](LICENSE).
+available under the [MIT license](/LICENSE).
 There's no game framework under it: **wgpu** draws, **winit** handles the
 window, **glam** does the maths, **noise** makes the terrain. Collision is
 hand-rolled AABB, because a voxel world doesn't need a general-purpose
 physics engine.
 
-![Wildforge at dusk: a torch-lit camp with hard point-light shadows](docs/camp-hero.png)
+![Wildforge at dusk: a torch-lit camp with hard point-light shadows](/docs/camp-hero.png)
 
 ## Run
 
@@ -109,7 +109,7 @@ platform/app -> client Game -> Server simulation -> World/content
   simulation or a survival-client endpoint.
 
 The rationale, compatibility constraints, and two-pass refactor record live
-in [the modularization plan](docs/modularization-plan.md). A separate reusable
+in [the modularization plan](/docs/modularization-plan.md). A separate reusable
 engine crate is intentionally deferred until there is a second real consumer.
 
 ### WSL2 / WSLg note
@@ -208,7 +208,7 @@ there); single-player Tab cycles the camera with a click.
 Wildforge has a built-in mod system — vanilla content itself is the `base`
 mod, registered through the same TOML pipeline external mods use
 (see `base/*.toml` for the reference). **The full guide lives in
-[`mods/README.md`](mods/README.md)** — and it's executable: the guide's
+[`mods/README.md`](/mods/README.md)** — and it's executable: the guide's
 worked example is extracted verbatim by the test suite, loaded, and
 every claim asserted, so the docs can't drift from the code.
 
@@ -293,8 +293,8 @@ Ire only when it causes actual ecological harm.
 Dedicated hosts remain authoritative. Players and agents receive local,
 qualitative signs and physical records—not exact hidden Current, global Dross
 maps, private provenance, or operator audits. The final design and evidence
-live in [the magic sequence](docs/magic-sequence.md) and
-[qualification record](docs/magic-qualification-implementation.md).
+live in [the magic sequence](/docs/magic-sequence.md) and
+[qualification record](/docs/magic-qualification-implementation.md).
 
 ### Magic operator diagnostics
 
