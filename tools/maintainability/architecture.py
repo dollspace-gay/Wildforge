@@ -23,16 +23,18 @@ def load_contract(path: Path) -> dict:
     if not isinstance(contract['boundaries'], list) or not contract['boundaries']:
         raise ValueError('architecture contract requires at least one boundary')
     for rule in contract['boundaries']:
-        if set(rule) != {'name', 'paths', 'allow', 'test_allow', 'reason'}:
+        required = {'name', 'paths', 'allow', 'test_allow', 'reason'}
+        if not required <= set(rule) or set(rule) - required - {'exclude'}:
             raise ValueError('architecture boundary has unknown or missing keys')
         if not isinstance(rule['name'], str) or not rule['name'] or rule['name'] in names:
             raise ValueError('architecture boundary names must be nonempty and unique')
         names.add(rule['name'])
         if not isinstance(rule['reason'], str) or not rule['reason']:
             raise ValueError('every boundary needs a reason')
-        for key in ('paths', 'allow', 'test_allow'):
-            if not isinstance(rule[key], list) or not all(
-                isinstance(value, str) and value for value in rule[key]
+        for key in ('paths', 'allow', 'test_allow', 'exclude'):
+            values = rule.get(key, [])
+            if not isinstance(values, list) or not all(
+                isinstance(value, str) and value for value in values
             ):
                 raise ValueError(f'{rule["name"]}: {key} must contain strings')
         if not rule['paths'] or not rule['allow']:
@@ -40,7 +42,7 @@ def load_contract(path: Path) -> dict:
         for target in rule['allow'] + rule['test_allow']:
             if not all(part.isidentifier() for part in target.split('::')):
                 raise ValueError(f'invalid allowed dependency {target!r}')
-        if any(pattern.startswith('/') or '..' in Path(pattern).parts for pattern in rule['paths']):
+        if any(pattern.startswith('/') or '..' in Path(pattern).parts for pattern in rule['paths'] + rule.get('exclude', [])):
             raise ValueError('boundary selectors must stay relative to the repository')
     return contract
 
@@ -70,7 +72,8 @@ def scan(root: Path, contract: dict) -> dict:
     counts = {rule['name']: set() for rule in contract['boundaries']}
     for unit in units:
         rules = [rule for rule in contract['boundaries']
-                 if any(fnmatchcase(unit.path, pattern) for pattern in rule['paths'])]
+                 if any(fnmatchcase(unit.path, pattern) for pattern in rule['paths'])
+                 and not any(fnmatchcase(unit.path, pattern) for pattern in rule.get('exclude', []))]
         if len(rules) > 1:
             raise ValueError(f'{unit.path}: overlapping architecture boundary selectors')
         if not rules:

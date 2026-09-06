@@ -122,3 +122,10 @@ needed. Findings exit 0 only after a successful complete compiler run. Build,
 compiler, parse, timeout, or toolchain failure exits 2. On POSIX, interruption
 terminates and reaps the compiler process group. No source or tests are executed
 by the report, although Clippy performs normal compilation/build-script work.
+
+Boundary rules may explicitly exclude source patterns only to hand those files
+to a separate, stricter rule. The authoritative-world rule delegates replica and
+incoming-observation files to the replica rule; it does not omit them from the
+report. Overlapping rules remain a configuration error. Guest protocol no longer
+has a broad World migration allowance, and renderer dependencies remain downstream
+of prepared data. These are written dependency checks, not mutation-effect proofs.

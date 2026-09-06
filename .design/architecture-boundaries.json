@@ -225,14 +225,22 @@
         "crate::planet",
         "crate::planet_atlas",
         "crate::registry",
-        "crate::world",
         "glam",
-        "thiserror"
+        "thiserror",
+        "crate::world::ReplicationTarget",
+        "crate::world::replication::ReplicationTarget",
+        "crate::world::TerrainRead",
+        "crate::world::query::TerrainRead",
+        "crate::world::BlockEntity",
+        "crate::world::SignState",
+        "crate::world::SwitchState",
+        "crate::world::FallingBlock",
+        "crate::world::block_entities"
       ],
       "test_allow": [
         "crate::tests"
       ],
-      "reason": "Guest interpretation has no graphics, audio, app, or simulation driver; World is a migration seam."
+      "reason": "Guest interpretation depends on incoming replication and shared observation/schema contracts, never authoritative World or its save/generation operations."
     },
     {
       "name": "player operations",
@@ -359,12 +367,141 @@
         "winit",
         "png",
         "serde",
-        "serde_json"
+        "serde_json",
+        "crate::planet",
+        "crate::atlas",
+        "crate::identity::atomic_write"
       ],
       "test_allow": [
         "crate::tests"
       ],
       "reason": "Render passes consume prepared data and cannot import authoritative World or player operations."
+    },
+    {
+      "name": "authoritative world",
+      "paths": [
+        "src/world/*.rs"
+      ],
+      "exclude": [
+        "src/world/replica.rs",
+        "src/world/replica/*.rs",
+        "src/world/replication.rs",
+        "src/world/observations.rs"
+      ],
+      "allow": [
+        "alloc",
+        "core",
+        "std",
+        "glam",
+        "serde",
+        "serde_json",
+        "toml",
+        "postcard",
+        "thiserror",
+        "crate::alchemy",
+        "crate::arcane",
+        "crate::arcane_ecology",
+        "crate::arcane_geography",
+        "crate::background",
+        "crate::chunk",
+        "crate::climate",
+        "crate::discovery",
+        "crate::dross",
+        "crate::edifice",
+        "crate::entity",
+        "crate::identity",
+        "crate::implements",
+        "crate::inventory",
+        "crate::machines",
+        "crate::materials",
+        "crate::mobs",
+        "crate::npc",
+        "crate::persist",
+        "crate::planet",
+        "crate::planet_atlas",
+        "crate::player_ops",
+        "crate::raycast",
+        "crate::registry",
+        "crate::ruleset",
+        "crate::workings",
+        "crate::world",
+        "crate::worldgen",
+        "crate::server::DAY_LENGTH"
+      ],
+      "test_allow": [
+        "crate::tests"
+      ],
+      "reason": "World domains and their transaction coordinators own simulation and persistence without platform, renderer, audio, app, or network session dependencies."
+    },
+    {
+      "name": "replica world",
+      "paths": [
+        "src/world/replica.rs",
+        "src/world/replica/*.rs",
+        "src/world/replication.rs",
+        "src/world/observations.rs"
+      ],
+      "allow": [
+        "alloc",
+        "core",
+        "std",
+        "glam",
+        "serde",
+        "serde_json",
+        "toml",
+        "postcard",
+        "thiserror",
+        "crate::chunk",
+        "crate::entity",
+        "crate::inventory",
+        "crate::mobs",
+        "crate::planet",
+        "crate::registry",
+        "crate::climate::seasonal_temperature",
+        "crate::arcane::BASE_RESONANCES",
+        "crate::arcane_ecology::EcologyObservation",
+        "crate::implements::ApparatusCue",
+        "crate::implements::ImplementPublicState",
+        "crate::implements::ImplementVisual",
+        "crate::planet_atlas::AtlasPos",
+        "crate::planet_atlas::grid::AtlasPos",
+        "crate::planet_atlas::LocalWeatherSample",
+        "crate::planet_atlas::climate::LocalWeatherSample",
+        "crate::planet_atlas::climate::weather_types::LocalWeatherSample",
+        "crate::server::DAY_LENGTH",
+        "crate::worldgen::Geography",
+        "crate::worldgen::geography::Geography",
+        "crate::worldgen::Biome",
+        "crate::worldgen::ProspectReading",
+        "crate::player_ops::container",
+        "crate::world::ReplicaWorld",
+        "crate::world::replica",
+        "crate::world::ReplicaObservations",
+        "crate::world::observations",
+        "crate::world::ReplicationTarget",
+        "crate::world::replication",
+        "crate::world::TerrainRead",
+        "crate::world::SceneRead",
+        "crate::world::query::TerrainRead",
+        "crate::world::query::SceneRead",
+        "crate::world::block_entities",
+        "crate::world::BlockEntity",
+        "crate::world::FallingBlock",
+        "crate::world::terrain::TerrainStore",
+        "crate::world::calendar_view",
+        "crate::world::local_structure::LocalStructure",
+        "crate::world::multiblock::BlockRead",
+        "crate::world::block_store::BlockRead",
+        "crate::world::block_store::planetary_delta",
+        "crate::world::item_presentation::implement_visual",
+        "crate::world::standing::settle",
+        "crate::world::country_view::seed_bearing",
+        "crate::world::country_view::heart_report"
+      ],
+      "test_allow": [
+        "crate::tests"
+      ],
+      "reason": "Replica ownership is limited to resident terrain, host observations, immutable geography, and bounded presentation prediction; no authoritative World, generator, save writer, or ledger owner is available."
     }
   ]
 }

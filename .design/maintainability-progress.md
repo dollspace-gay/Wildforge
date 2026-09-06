@@ -2120,3 +2120,18 @@ required before accepting the extraction.
   world integrations import their actual owners instead of World's namespace.
 - No compiler/tests/format/runtime checks ran. Final fixture/codec/conservation,
   streaming lifecycle, native/GPU and runner validation remain required.
+
+
+## Authority and replica dependency contracts checkpoint
+
+- Removed the guest protocol's temporary whole-World allowance. It may depend on
+  incoming replication/read contracts and shared block/entity schemas only.
+- Added authoritative-world coverage excluding only the files covered by a
+  separate narrower replica rule. The replica rule permits resident terrain,
+  immutable geography, host observations and bounded container prediction; it
+  grants no World/generator/save/ledger owner. Renderer coverage names atlas,
+  planetary geometry and evidence atomic-write dependencies explicitly.
+- The checker now supports explicit source exclusions for separate-rule handoff
+  while retaining overlapping-rule errors. Invalid selector/schema, exclusions,
+  alias/reexport/glob violations and positive fixtures are part of the final
+  tooling test phase. Contracts have not been scanned or claimed passing yet.
