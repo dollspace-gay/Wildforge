@@ -2135,3 +2135,20 @@ required before accepting the extraction.
   while retaining overlapping-rule errors. Invalid selector/schema, exclusions,
   alias/reexport/glob violations and positive fixtures are part of the final
   tooling test phase. Contracts have not been scanned or claimed passing yet.
+
+
+## Graphical menu, guest and persistence adapters checkpoint
+
+- Replaced menu and remote response monoliths with exhaustive root dispatchers
+  and screen/reply-family adapters. RemoteFlow retains explicit original pump
+  aborts; per-message skips and inner snapshot-loop skips remain distinct.
+- Guest terrain admission/first mesh, interpolation, movement/view requests and
+  Remote restoration remain in their original order. Shared GuestSession remains
+  the admission/content/replication owner; no guest World was reintroduced.
+- Separated local entry/configuration, player save/load, historical loose-item
+  sidecar and departure. Inventory/cargo/stall/equipment/station adapters still
+  call shared player rules; UI layout and drawing have separate responsibilities.
+  Nutrition/survival/pickup/feedback are named graphical update adapters.
+- New directories have local guides and source modules remain below 500 lines
+  before final formatting. This is an implementation checkpoint only; final Rust,
+  UI/session/parity, native and actual GPU evidence is still pending.

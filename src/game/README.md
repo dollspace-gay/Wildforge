@@ -101,3 +101,10 @@ Capture milestones and renderer error handling remain after the same submission.
 station/storage, journal/loadout, HUD, and world-label painters. Shared inventory
 rendering remains in inventory_ui and inventory_panel. The batch is published
 before the final tooltip even when a selected screen has no available data.
+
+`menus/` and `remote/` separate screen transitions and reply families behind
+exhaustive parent dispatchers. RemoteFlow preserves taken-session abort behavior;
+shared GuestSession still owns admission/replication. `session/` separates entry,
+player save/load, sidecars and departure. `containers/` owns application adapters
+and shared hit geometry; `inventory_ui/` and `status/` own their presentation and
+survival responsibilities while shared player operations retain domain rules.
