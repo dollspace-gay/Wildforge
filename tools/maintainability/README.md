@@ -129,3 +129,6 @@ incoming-observation files to the replica rule; it does not omit them from the
 report. Overlapping rules remain a configuration error. Guest protocol no longer
 has a broad World migration allowance, and renderer dependencies remain downstream
 of prepared data. These are written dependency checks, not mutation-effect proofs.
+
+An excluded source that has no replacement boundary is an incomplete scan and
+fails with an ownership error. Exclusions cannot silently remove covered files.

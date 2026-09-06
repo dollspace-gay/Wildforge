@@ -28,23 +28,23 @@ runtime comparisons. Cold/warm runtime measurements remain outstanding.
 
 ## Requirement audit
 
-| Criterion | Current evidence | Remaining work |
+| Criterion | Current implementation | Required final evidence |
 |---|---|---|
-| AC-1 compatibility | Existing repairs and planning separated into commits | Baseline gates; per-slice save/codec/genesis/API checks |
-| AC-2 authority/replica | Existing `World::remote` guard | Distinct owners and bounded read APIs |
-| AC-3 terrain jobs | Shared owned `TerrainJobs`, observable errors, saved revision checks, and owned homeland trials | Content/palette context invalidation; caller and runtime qualification |
-| AC-4 common client | Shared admission, mappings, entity reconstruction, terrain ordering, roster, content publication, and domain updates implemented; earlier source has focused/QUIC evidence | Finish request and replica ownership; final transfer/reconnect/native qualification |
-| AC-5 player operations | Shared stall, craft/repair, conservation effects, and armor exchange implemented | Remaining action domains; final rejection/conservation/adapter parity tests |
-| AC-6 world domains | Domain fields/methods inventoried | Encapsulation, explicit transaction coordination |
-| AC-7 generation stages | Explicit chunk stages, intermediate maps, independent queries, and atlas climate/weather/geology/hydrology modules implemented | Final pinned output and diagnostic artifact checks and worker-order checks |
-| AC-8 app/content/render/tools | Registry definitions, schemas, linker, graph validation, runtime publication gate, and script preparation implemented | App/UI/render/tool owners; final publication/runtime/codec checks |
-| AC-9 source size | Advisory 400/500 report and baseline | Reduce migrated debt; explain any real exceptions |
-| AC-10 clone analyzer | 18 tests passed in planning; complete JSON snapshot | Maintain analyzer coverage as tooling evolves |
-| AC-11 dependency boundaries | Written import/alias/glob allowlist report and Clippy function-report implementation added, unverified | Violating fixtures, resolution/noise review, complete compiler reports, and remaining owner restrictions |
-| AC-12 tests/performance | Baseline suite passed; extraction focused gates passed | Full slice gates and reproducible measurements for affected paths |
-| AC-13 shutdown | Terrain, mesh, encoding, creation, entry, and homeland work have joined owners and failure tests | Dedicated shutdown; graphical close/capture and save-failure runtime proof |
-| AC-14 migration record | This file and separate baseline commits | Add implementation/result entries after each slice |
-| Folder guidance | 64 directories previously verified; new player_ops, worldgen, registry/schema, registry/linking, script, planet_atlas/climate, planet_atlas/geology, and planet_atlas/hydrology, planet_atlas/codec, and planet_atlas/storage, and planet_atlas/water_cycle, and planet_atlas/biomes, and diagnostic/catalog/site directories include guides | Final coverage and content identity checks after coding |
+| AC-1 compatibility | Structural checkpoints and behavior corrections have separate commits | Fresh save/codec/genesis/API/MSRV and gameplay gates across the final diff |
+| AC-2 authority/replica | Distinct World and ReplicaWorld; bounded TerrainRead/SceneRead/WorldView | Compile-time boundary fixtures and no guest generation/save native proof |
+| AC-3 terrain jobs | Shared owned jobs, context/revision rejection, joined homeland work | Deduplication/order/cancellation/reload/edit/adoption and runtime qualification |
+| AC-4 common client | Shared GuestSession admission/content/replication/transport; explicit graphical adapters | Recorded sequences plus real agent/graphical entry, disconnect and reconnect |
+| AC-5 player operations | Shared trade, craft/repair, equipment, container, nutrition, feeding, melee and physical terrain rules | Adapter success/rejection/capacity/identity/conservation parity; preserve documented adapter policies |
+| AC-6 world domains | Private terrain/population/calendar/weather/installations/construction owners and explicit ledger coordinators | Cross-domain fan-out, rollback/replay and persistence fixtures |
+| AC-7 generation stages | Named chunk and atlas generation/codec/domain stages | Pinned chunk/atlas output across workers and request order |
+| AC-8 app/content/render/tools | Content publication, input/navigation/presentation, UI/actions, typed GPU stages and shared tooling implemented | Reload, real UI/native interactions, WGSL, capture and hardware timing proof |
+| AC-9 source size | Cohesive module splits and exact reviewed exceptions in source-size-review.md | Final formatted inventory and remaining test scenario organization |
+| AC-10 clone analyzer | Advisory deterministic scanner and historical passing fixture set | Full current tooling suite and final clone-family review |
+| AC-11 dependencies | Explicit authority/replica/guest/render allowlists and compiler-backed function report | Violating fixtures, exclusions/alias resolution and complete final reports |
+| AC-12 tests/performance | Historical evidence retained at its original source head | Fresh complete Rust/Python/native/GPU campaign and all latest-head runners |
+| AC-13 shutdown | Joined workers and session lifetimes; failure-preserving save/unload | Dedicated/graphical/world-switch/capture exit and save-failure runtime proof |
+| AC-14 migration record | Each checkpoint records implementation and its verification limits | Final commit/proof/debt mapping and accepted criterion updates |
+| Folder guidance | Every newly created implementation directory has local guides | Final complete coverage and content-identity checks |
 
 ## Compatibility observations requiring explicit treatment
 
@@ -109,7 +109,7 @@ Logs are in `target/maintainability/folder-guides/`. Full post-correction Rust
 and runtime gates remain pending; the previous five stale visual evidence
 checks have not been bypassed or relabeled as passing.
 
-## Temporary size exceptions during migration
+## Historical temporary size exceptions during migration
 
 These are explicit review points for existing owners, not linter exclusions.
 New terrain/content/tooling modules remain below 400 lines. The scan continues
@@ -2168,3 +2168,17 @@ required before accepting the extraction.
   state/ledger owners. Pure qualitative discovery helpers remain shared.
 - New directories are guided. Structural implementation remains unverified until
   the final compatibility, conservation/replay, compiler and native/GPU gates.
+
+
+## Final implementation review and verification handoff
+
+- Published a specific source-size review for retained cross-domain transactions
+  and existing algorithms receiving narrow ownership/query changes. Exceptions
+  are exact files with domain reasons and next review triggers, never linter
+  exclusions. Remaining large test families must be organized in the test phase.
+- Tightened architecture exclusions: each excluded source must have a separate
+  owning rule or the scan fails. Replica handoff cannot become silent loss of
+  boundary coverage. Final fixtures will exercise this failure path.
+- Refreshed the requirement audit to describe current implementation instead of
+  the obsolete World::remote baseline. Acceptance remains unchecked until fresh
+  final evidence, including all required runners on the latest pushed head.

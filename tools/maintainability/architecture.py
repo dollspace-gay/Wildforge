@@ -77,6 +77,13 @@ def scan(root: Path, contract: dict) -> dict:
         if len(rules) > 1:
             raise ValueError(f'{unit.path}: overlapping architecture boundary selectors')
         if not rules:
+            delegated = any(
+                any(fnmatchcase(unit.path, pattern) for pattern in rule['paths'])
+                and any(fnmatchcase(unit.path, pattern) for pattern in rule.get('exclude', []))
+                for rule in contract['boundaries']
+            )
+            if delegated:
+                raise ValueError(f'{unit.path}: excluded boundary source has no owning rule')
             continue
         rule = rules[0]
         covered.add(unit.path)
