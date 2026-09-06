@@ -2261,3 +2261,41 @@ The manual clone review found identical physical-route rules in restored working
 transactions and live World execution. Both now use the workings domain's ordered
 position query. AdvancePlant retains the same plant/soil/water order, and all
 other effect routes retain their former ordering and inventory-only empty route.
+
+
+## Clean candidate and complete debt review
+
+Clean candidate `70de48ac1e455db2ff38abea674a9d0622ae2fcf` builds in release.
+Strict Clippy, format, MSRV, doctests and 53 Python tests pass on its source
+(`final-clippy-2`, `format-2`, `msrv-2`, `doctests-2`, `python-6`). There are
+no doctest examples in this crate; the doctest command succeeds with zero tests.
+The shared working-path change passes all 36 workings scenarios. The boundary
+report covers 486 protected files with zero findings; guidance covers all 126
+maintained directories. Three script-context tests also passed Miri earlier in
+this final integration phase; the unsafe boundary has not changed since.
+
+Clean native attempt 4 passes the whole functional client proof. Its actual
+measurements and binary hash are preserved in [native-runtime-proof.json](native-runtime-proof.json).
+Fresh-session entry took 204.85 ms and full-disconnect re-entry 65.77 ms in the
+small owned fixture. Travel updates measured p50/p95/p99 of 0.91/8.05/27.41 ms,
+with 20 initial chunks/meshes pending at peak. Process lifetime peak RSS was
+369,148 KiB. The report states the test-profile/cache/sampling limitations;
+these are observations, not claims of production improvement.
+
+[maintainability-final.json](maintainability-final.json) records the complete
+formatted source inventory against main `8c1ec408`: 1,023 source files, 233,506
+physical lines, 84 above 400 lines, 46 above 500, and 61 exact-token clone groups.
+No common-fingerprint buckets were saturated. The size delta reports 72 reduced,
+one removed, 12 grown and 21 new oversized findings; exact migrated/new review
+exceptions remain in [source-size-review.md](source-size-review.md). Clone delta
+classifications include 34 moved, 13 new and 23 removed candidates; overlapping
+spans must not be summed into a duplication percentage. Every retained candidate
+has a decision in [clone-review.md](clone-review.md). Existing algorithm and
+compatibility helper debt remains visible under the requested advisory policy.
+
+The new full GPU campaign is running at
+`target/maintainability/visual-campaign-20260906/campaign-1`. It freezes clean main
+`8c1ec408` and candidate `70de48ac`, copies the preserved production input world,
+and independently prepares both cracked-geode/closeout fixtures. Its 92 still
+captures, 56 native motion frames, visual review and qualification remain pending.
+The original campaign remains unchanged until a fresh complete result qualifies.

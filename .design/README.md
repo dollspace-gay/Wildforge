@@ -17,3 +17,8 @@ verification evidence; a passing narrow test cannot establish a whole phase.
 established owners. It is source policy rather than a scan-derived exemption
 list. Keep migration seams and test allowances specific, and review changes
 alongside the owning modules.
+
+The final implementation inventory is `maintainability-final.json`, compared
+against the recorded main baseline. [clone-review.md](clone-review.md) records
+retained candidate decisions and [source-size-review.md](source-size-review.md)
+records exact oversized-source exceptions. Neither file suppresses the analyzer.
