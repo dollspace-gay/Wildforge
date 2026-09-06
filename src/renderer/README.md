@@ -32,3 +32,9 @@ software CPU adapters before handing the configured context to renderer setup.
 parameter bindings, HDR/bloom targets, resize, and encoding. Frame orchestration
 passes scalar exposure inputs and explicitly orders bloom, swapchain acquisition,
 composite, and UI; capture replay composites through the same owner.
+
+`frame.rs` is the ordered submission coordinator; `frame/` contains uniform and
+geometry upload, sun/world/hand/composite encoding, diagnostic replay, and capture
+readback. `point_shadows.rs` owns cube-cache state with its GPU resources.
+`setup/` returns typed construction results and shares raster descriptor rules
+between ordinary and capture pipelines while preserving their explicit recipes.

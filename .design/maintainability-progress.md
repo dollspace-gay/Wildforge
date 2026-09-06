@@ -2060,3 +2060,22 @@ required before accepting the extraction.
   authority operations and the same inventory/profile custody sequence.
 - This is an unverified implementation checkpoint. Final Rust gates and a fresh
   complete GPU campaign will validate the migrated fixtures and frame pipeline.
+
+
+## GPU frame and setup ownership checkpoint
+
+- Split frame encoding into preparation/upload, sun/world/hand/composite,
+  diagnostic replay, and typed screenshot readback stages. Preserved one shared
+  chunk list, per-pass culling, late swapchain acquisition, capture-before-submit,
+  presentation-before-readback, formats, and evidence publication sequence.
+- PointShadows now owns per-face GPU resources plus its private key/epoch cache
+  and rebuild progress. Face upload and distance/transmission encoding use that
+  owner; the existing face budget and DDA/cached-light behavior are unchanged.
+- Split setup into typed binding/target/pipeline results. Ordinary and diagnostic
+  raster recipes now share the descriptor factory; shader entries, depth, blend,
+  culling, and attachment formats remain explicit per recipe. Sky and shadow
+  descriptors retain their distinct contracts. Production renderer imports are
+  explicit, and all new files are below the file-size review threshold.
+- No tests/builds/GPU runs yet, per the implementation-first schedule. Final
+  validation must include strict Rust gates, descriptor/WGSL checks, fresh native
+  captures and full GPU timing qualification; historical evidence is insufficient.

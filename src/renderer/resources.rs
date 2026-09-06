@@ -1,6 +1,8 @@
 //! Atlas replacement, resize handling, and dynamic mesh resources.
 
-use super::*;
+use super::{Renderer, LineVertex, GpuChunk, upload_mesh, mesh_bounds};
+use super::post::create_depth;
+use crate::{chunk::ChunkPos, mesher::ChunkMesh};
 
 impl Renderer {
     pub fn clear_chunks(&mut self) {
