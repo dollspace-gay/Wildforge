@@ -24,6 +24,9 @@ pub(crate) use profiling::READBACK_SLOTS as GPU_PROFILE_READBACK_SLOTS;
 pub(crate) use profiling::{GpuFrameTiming, GpuProfileError, GpuProfileStats};
 pub(crate) use render_work::{RenderWorkCapabilities, RenderWorkTiming};
 
+#[cfg(test)]
+mod lighting_tests;
+
 #[repr(C)]
 #[derive(Clone, Copy, Pod, Zeroable)]
 struct Uniforms {

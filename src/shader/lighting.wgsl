@@ -74,7 +74,11 @@ fn world_light(normal: vec3<f32>, detail_n: vec3<f32>, light: vec3<f32>, sky: f3
             // edge-on to it and a distance-only cube-map compare self-occludes).
             // Remote players' torches are at their position, not yours, so they
             // still cast real shadows.
-            if (u.pt_misc[i].z > 0.5 && distance(lp, u.cam.xyz) > 0.5) {
+            // A back-facing light contributes exactly zero below. Its shadow
+            // and glass samples cannot affect lighting or the debug decision,
+            // which already requires a positive contribution. Keep suppression
+            // outside this guard and retain all samples for grazing light.
+            if (ndl2 > 0.0 && u.pt_misc[i].z > 0.5 && distance(lp, u.cam.xyz) > 0.5) {
                 if (u.pt_count.w != 0u) {
                     // Exact voxel-grid march — no cube map, no acne. Returns a
                     // per-channel transmittance, so glass panes tint the shadow.

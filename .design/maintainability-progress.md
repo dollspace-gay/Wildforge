@@ -3026,3 +3026,46 @@ The focused tooling suite passes all 60 tests after this correction. Performance
 minimums, budgets, settlement criteria and rejection paths are unchanged. The
 failed campaign and raw logs remain in `visual-render-work/`; new clean freezes
 and a complete fresh campaign are required before selecting replacement evidence.
+
+The warmup-corrected source at 8ee62ff4415f370a9012a5c62c32428f01c9c20d
+(fingerprint d75fd2204a0dbc330872541a13678f7782b7db5eb5a7f159be59776e5aa395c2)
+completes all 92 native captures and both 28-frame native motion walks. All 52
+stills and 56 sampled motion frames are reviewed, including native-resolution
+geode and start/near/end motion views. Review found no sampled terrain shimmer,
+missing chunk walls or abrupt reveals; the motion samples do not establish
+behavior between frames. The user interruption and a later execution-session
+SIGTERM leave preserved partial attempts; neither is counted as evidence.
+Resume verifies accepted artifact hashes, source identity and fixture inventories.
+
+Full qualification passes foundation equivalence, both readability/composition
+groups, strata timing and motion, but rejects closeout geode rendering at
+0.2259525 ms against the unchanged 0.20 ms combined budget. Primary geode passes
+at 0.1959455 ms. Closeout CPU/GPU medians are sealed 0.4798985/0.666992 ms and
+opened 0.532251/0.840592 ms. The complete failed campaign is preserved in
+`visual-render-work-warmup/`; it is not selected or published.
+
+This remaining finding is Category B: the point-light shader computes shadow
+and glass samples before multiplying their result by an exactly zero normal
+contribution. Planetary callers use cube shadows, whose soft path performs 16
+distance samples plus transmission sampling. An exact `ndl2 > 0.0` guard removes
+that unnecessary fragment work while keeping flood suppression, direct-light
+accumulation, all positive/grazing contributions, sampling quality and debug
+eligibility unchanged. Both terrain and water consume this owner; near-zero
+billboard normals return earlier, and diagnostic family/depth paths do not call
+it. Focused independent review confirms the finite production-input invariant;
+the timing receipts do not uniquely attribute every added GPU interval to this
+branch. Device differential tests, measured improvement, final source gates and
+fresh qualification remain pending. No budget or evidence criterion is relaxed.
+
+The production aggregate passes Naga validation. A standalone hardware harness
+using the actual Uniforms representation and authored WORLD aggregate passes
+1,188 finite guarded/legacy pairs bit-for-bit on RTX 5070 Ti Vulkan, with exact
+cube/DDA invocation counts. Cases cover opposing/perpendicular/grazing/facing/
+relief and billboard normals, varied baked light/sky/AO, hard/soft radii, one/two
+lights, colored transmission/occupancy, all five debug modes and empty/held/
+shadow-disabled controls. Replacing only lighting with literal pre-fix 8ee62ff
+bytes makes the same test fail on an opposing-light shadow invocation (one
+versus zero), demonstrating the regression control. The maintained test and
+GPU fixture now have separate owners below 400 lines. Ordinary CPU CI ignores
+this named hardware gate; its explicit invocation must actually run and pass.
+No actual-game performance improvement or replacement campaign is yet claimed.

@@ -58,3 +58,13 @@ uploads, and queue submission; legacy draw observations retain their meaning.
 The game owns the fixed completion window and capture scheduling described by
 [the versioned performance protocol](../../docs/visual-qualification-campaign.md).
 Standalone GPU profiling drains completed results even without a writer.
+
+`lighting_tests.rs` compares the production point-light function with its prior
+unguarded behavior using identical finite GPU inputs. The sibling fixture owner
+provides textures, dispatch and completed readback. The dedicated test refuses
+software adapters, verifies exact output equality and counts skipped shadow
+calls; ordinary CI explicitly ignores this hardware gate. Run it on hardware:
+
+```sh
+cargo test --locked renderer::lighting_tests::shadow_guard_hardware -- --ignored --exact --nocapture
+```
