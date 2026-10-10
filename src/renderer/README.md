@@ -66,5 +66,5 @@ software adapters, verifies exact output equality and counts skipped shadow
 calls; ordinary CI explicitly ignores this hardware gate. Run it on hardware:
 
 ```sh
-cargo test --locked renderer::lighting_tests::shadow_guard_hardware -- --ignored --exact --nocapture
+cargo test --locked tests::rendering::qualification::shadow_guard_hardware -- --ignored --exact --nocapture
 ```

@@ -3069,3 +3069,12 @@ versus zero), demonstrating the regression control. The maintained test and
 GPU fixture now have separate owners below 400 lines. Ordinary CPU CI ignores
 this named hardware gate; its explicit invocation must actually run and pass.
 No actual-game performance improvement or replacement campaign is yet claimed.
+
+The first maintained-fixture architecture check rejects its synchronous
+`pollster` dependency inside renderer. The scenario runner now owns that
+executor, while renderer GPU-device construction remains asynchronous and its
+fixture owner retains resource/dispatch/readback lifetime. No allowlist or
+production API is broadened: the narrow fixture entry exists only under
+`cfg(test)`. Prior release/format/Clippy/Linux and Windows MSRV/rustdoc/Python/
+maintainability/folder checks pass at the earlier checkpoint; final fixture
+placement, device invocation and native performance checks remain pending.

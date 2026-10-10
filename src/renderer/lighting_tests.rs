@@ -1,5 +1,5 @@
 //! Dedicated hardware regression gate for zero-contribution point-light shadows.
-//! Run: cargo test --locked renderer::lighting_tests::shadow_guard_hardware -- --ignored --exact --nocapture
+//! The rendering scenario runner owns the executor and dedicated hardware test.
 //! Native scene and performance qualification remains separate from this shader probe.
 
 use super::Uniforms;
@@ -168,11 +168,9 @@ fn compare(probe: &HardwareProbe, cases: &[Case], u: &Uniforms, active: u32) {
     }
 }
 
-#[test]
-#[ignore = "requires a real Vulkan DiscreteGpu; run the explicit hardware gate"]
-fn shadow_guard_hardware() {
+pub(crate) async fn verify_shadow_guard() {
     let cases = cases();
-    let probe = HardwareProbe::new(&cases);
+    let probe = HardwareProbe::new(&cases).await;
     for dda in [false, true] {
         for debug in 0..=4 {
             for radius in [0.0, 0.15, 0.75] {

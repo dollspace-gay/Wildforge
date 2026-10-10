@@ -156,3 +156,10 @@ fn wgsl_shaders_validate() {
         .unwrap_or_else(|e| panic!("{name}: WGSL validation failed: {e:?}"));
     }
 }
+
+/// Run the production lighting function and its regression control on hardware.
+#[test]
+#[ignore = "requires a real Vulkan DiscreteGpu; run the explicit hardware gate"]
+fn shadow_guard_hardware() {
+    pollster::block_on(crate::renderer::lighting_tests::verify_shadow_guard());
+}

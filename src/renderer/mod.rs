@@ -25,7 +25,7 @@ pub(crate) use profiling::{GpuFrameTiming, GpuProfileError, GpuProfileStats};
 pub(crate) use render_work::{RenderWorkCapabilities, RenderWorkTiming};
 
 #[cfg(test)]
-mod lighting_tests;
+pub(crate) mod lighting_tests;
 
 #[repr(C)]
 #[derive(Clone, Copy, Pod, Zeroable)]

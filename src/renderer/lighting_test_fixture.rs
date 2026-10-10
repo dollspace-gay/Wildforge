@@ -69,7 +69,7 @@ pub(super) struct HardwareProbe {
 }
 
 impl HardwareProbe {
-    pub(super) fn new(cases: &[Case]) -> Self {
+    pub(super) async fn new(cases: &[Case]) -> Self {
         let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor {
             backends: wgpu::Backends::VULKAN,
             ..Default::default()
@@ -84,14 +84,16 @@ impl HardwareProbe {
             })
             .expect("hardware gate requires a Vulkan DiscreteGpu; CPU fallback is forbidden");
         eprintln!("shadow guard hardware: {:?}", adapter.get_info());
-        let (device, queue) = pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor {
-            label: Some("shadow-guard-hardware"),
-            required_features: wgpu::Features::empty(),
-            required_limits: wgpu::Limits::downlevel_defaults(),
-            memory_hints: Default::default(),
-            trace: wgpu::Trace::Off,
-        }))
-        .expect("create hardware device");
+        let (device, queue) = adapter
+            .request_device(&wgpu::DeviceDescriptor {
+                label: Some("shadow-guard-hardware"),
+                required_features: wgpu::Features::empty(),
+                required_limits: wgpu::Limits::downlevel_defaults(),
+                memory_hints: Default::default(),
+                trace: wgpu::Trace::Off,
+            })
+            .await
+            .expect("create hardware device");
         let layout = |entries: &[wgpu::BindGroupLayoutEntry]| {
             device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
                 label: None,
