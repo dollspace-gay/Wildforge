@@ -3006,3 +3006,23 @@ frame, and the 120-frame window requires at least 129 settled frames plus its
 asynchronous tail. Positive fixtures and negative counter tests cover these
 producer invariants. All production source is now being frozen for the native
 release/campaign; acceptance and publication remain pending.
+
+The frozen render-work source passes format, strict Clippy, Linux and Windows
+MSRV, rustdoc, all 60 Python tests, architecture and folder-guide checks,
+maintainability, advisories, doctests (zero examples), release build, nine focused
+render-work tests, the budget rejection test, two GPU-owner tests and all 20
+serial agent tests. Five native option/receipt/flush controls pass on the actual
+RTX 5070 Ti Vulkan adapter. The initial baseline freeze helper copied the wrong
+executable name; that copy is explicitly excluded and preserved. Cargo metadata
+now selects the actual baseline executable, verified before any native capture.
+
+The fresh campaign stops after 14 accepted captures at baseline marble view12
+dawn. At the fixed 3000 eligible-frame bound it still has 32 dirty chunks and
+zero settled frames; native evidence correctly rejects the capture. The older
+successful original-baseline view12 dawn capture used a 6000-frame minimum,
+which the initial warmup configuration missed. Both documented view12/view14
+dawn scenes now use that same declared minimum in all three phases (six stills).
+The focused tooling suite passes all 60 tests after this correction. Performance
+minimums, budgets, settlement criteria and rejection paths are unchanged. The
+failed campaign and raw logs remain in `visual-render-work/`; new clean freezes
+and a complete fresh campaign are required before selecting replacement evidence.

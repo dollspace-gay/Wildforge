@@ -58,7 +58,8 @@ def environment(row: dict, output: str | None) -> dict[str, str]:
                        "WILDFORGE_CAPTURE_ID": row["id"], "WILDFORGE_CAPTURE_SCENE": row["scene"]})
     if "geode-performance" in row["id"]:
         result.update(WILDFORGE_RENDER_WORK="1", WILDFORGE_GPU_PROFILE="1")
-    if "marble-v14-prefog-dawn-overcast-gemini" in row["id"]:
+    if any(scene in row["id"] for scene in (
+            "marble-v12-prefog-dawn-gemini", "marble-v14-prefog-dawn-overcast-gemini")):
         # These documented scenes need longer startup than the ordinary bound.
         # Declare the same still-only warmup for all three builds/phases.
         result["WILDFORGE_SHOT_MIN_FRAME"] = "6000"

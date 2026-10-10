@@ -49,8 +49,9 @@ class CampaignTests(unittest.TestCase):
 
     def test_declared_warmup_preserves_performance_minimum_and_paired_stills(self):
         _, rows = plan(self.root, "2026-10-09")
-        longer = [row for row in rows if "marble-v14-prefog-dawn-overcast-gemini" in row["id"]]
-        self.assertEqual(len(longer), 3)
+        longer = [row for row in rows if any(scene in row["id"] for scene in (
+            "marble-v12-prefog-dawn-gemini", "marble-v14-prefog-dawn-overcast-gemini"))]
+        self.assertEqual(len(longer), 6)
         for row in longer:
             self.assertEqual(environment(row, "capture.ppm")["WILDFORGE_SHOT_MIN_FRAME"], "6000")
         for row in rows:

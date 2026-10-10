@@ -46,11 +46,14 @@ game's recorded draw and simulation observations. Geode performance uses the
 versioned rendering-work protocol below; legacy draw observations remain in
 those reports as presentation-pacing diagnostics.
 
-The three marble view-distance-14 dawn stills use a declared 6000-frame warmup.
-The preceding campaign's 180-frame attempts failed the native startup-settlement
-bound; its preserved 6000-frame attempts settled successfully. Apply this same
-still-only warmup before the replacement run, without changing settlement
-criteria or any performance sample's 1200-frame minimum.
+The six marble view-distance-12/14 dawn stills use a declared 6000-frame warmup.
+The preceding campaign's extended baseline view12 capture and view14 captures
+settled successfully at that minimum. The first replacement run omitted the
+view12 exception and failed at 3000 eligible frames with 32 dirty chunks and zero
+settled frames. Its complete failed attempt remains preserved. Apply the same
+still-only warmup to baseline, candidate and closeout before the fresh replacement
+run, without changing settlement criteria or any performance sample's
+1200-frame minimum.
 
 ## Geode rendering-work protocol v1
 
