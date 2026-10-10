@@ -328,6 +328,11 @@ fn cast_at(
     let mut current = point.block()?;
     let mut previous = current;
     let mut travelled = 0.0f32;
+    // Resident voxel reads share TerrainRead's chunk/local-cell rule. Keep
+    // the immutable resident reference (including a missing chunk) until the
+    // ray enters another canonical chunk, instead of hashing every voxel.
+    let mut chunk_pos = current.chunk();
+    let mut chunk = world.chunk(chunk_pos);
 
     let boundary_time = |coordinate: f32, velocity: f32| {
         if velocity > 0.0 {
@@ -342,10 +347,11 @@ fn cast_at(
     };
 
     loop {
-        let block = world.get_block_at(current);
+        let (x, y, z) = current.local();
+        let block = chunk.map_or(AIR, |chunk| chunk.get(x, y, z));
         // hidden settlement cell: behaves as air for aiming
-        if !world.is_hidden(current)
-            && block != crate::registry::AIR
+        if block != AIR
+            && !world.is_hidden(current)
             && (hit_water || !world.registry().is_fluid(block))
         {
             return Some(PlanetHit {
@@ -391,5 +397,10 @@ fn cast_at(
         point = crossed.pos;
         dir = crossed.rotation.rotate_vec3(dir);
         current = point.block()?;
+        let next_chunk = current.chunk();
+        if next_chunk != chunk_pos {
+            chunk_pos = next_chunk;
+            chunk = world.chunk(chunk_pos);
+        }
     }
 }

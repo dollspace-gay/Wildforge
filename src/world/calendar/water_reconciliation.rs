@@ -5,6 +5,10 @@ use crate::chunk::CHUNK_Y;
 use crate::chunk::CHUNK_Z;
 use crate::world::World;
 
+#[cfg(test)]
+#[path = "water_reconciliation_tests.rs"]
+mod tests;
+
 impl World {
     pub(super) fn reconcile_loaded_springs(&mut self) {
         let (Some(atlas), Some(weather)) = (&self.planet_atlas, self.weather_state.live()) else {
@@ -79,7 +83,11 @@ impl World {
             .copied()
             .collect::<Vec<_>>();
         let mut operations = Vec::<(crate::planet::BlockPos, u64, bool)>::new();
+        let mut basin_query = atlas.hydrology_basin_query();
         for chunk_pos in chunks {
+            let Some(chunk) = self.chunks.get(&chunk_pos) else {
+                continue;
+            };
             for lx in 0..CHUNK_X {
                 for lz in 0..CHUNK_Z {
                     let surface = crate::planet::SurfacePos::new(
@@ -88,16 +96,16 @@ impl World {
                         chunk_pos.v() * CHUNK_Z as u16 + lz as u16,
                     )
                     .expect("loaded chunk column is canonical");
-                    let hydro = atlas.hydrology_sample(surface.center());
-                    let reservoir = if hydro.ocean_basin_id != 0 {
+                    let hydro = basin_query.at(surface);
+                    let reservoir = if hydro.ocean_basin_id() != 0 {
                         Some(crate::planet_atlas::surface_reservoir_id(
                             crate::planet_atlas::SurfaceReservoirKind::Ocean,
-                            u32::from(hydro.ocean_basin_id),
+                            u32::from(hydro.ocean_basin_id()),
                         ))
-                    } else if hydro.lake_basin_id != 0 {
+                    } else if hydro.lake_basin_id() != 0 {
                         Some(crate::planet_atlas::surface_reservoir_id(
                             crate::planet_atlas::SurfaceReservoirKind::Lake,
-                            hydro.lake_basin_id,
+                            hydro.lake_basin_id(),
                         ))
                     } else {
                         None
@@ -109,14 +117,7 @@ impl World {
                     let desired = level.div_euclid(1000).clamp(1, CHUNK_Y as i32 - 2);
                     let mut highest = None;
                     for y in (1..CHUNK_Y).rev() {
-                        let at = crate::planet::BlockPos::new(
-                            surface.face(),
-                            surface.u(),
-                            y as u8,
-                            surface.v(),
-                        )
-                        .expect("shore height is inside shell");
-                        if self.reg.is_water(self.get_block_at(at)) {
+                        if self.reg.is_water(chunk.get(lx, y, lz)) {
                             highest = Some(y as i32);
                             break;
                         }
@@ -125,27 +126,27 @@ impl World {
                         highest.unwrap_or_else(|| self.surface_height_at(surface).min(desired));
                     if current > desired {
                         for y in (desired + 1)..=current.min(desired + 2) {
-                            let at = crate::planet::BlockPos::new(
-                                surface.face(),
-                                surface.u(),
-                                y as u8,
-                                surface.v(),
-                            )
-                            .expect("shore height");
-                            if self.reg.is_water(self.get_block_at(at)) {
+                            if self.reg.is_water(chunk.get(lx, y as usize, lz)) {
+                                let at = crate::planet::BlockPos::new(
+                                    surface.face(),
+                                    surface.u(),
+                                    y as u8,
+                                    surface.v(),
+                                )
+                                .expect("shore height");
                                 operations.push((at, reservoir, false));
                             }
                         }
                     } else if current < desired {
                         for y in (current + 1)..=desired.min(current + 2) {
-                            let at = crate::planet::BlockPos::new(
-                                surface.face(),
-                                surface.u(),
-                                y as u8,
-                                surface.v(),
-                            )
-                            .expect("shore height");
-                            if self.get_block_at(at) == crate::registry::AIR {
+                            if chunk.get(lx, y as usize, lz) == crate::registry::AIR {
+                                let at = crate::planet::BlockPos::new(
+                                    surface.face(),
+                                    surface.u(),
+                                    y as u8,
+                                    surface.v(),
+                                )
+                                .expect("shore height");
                                 operations.push((at, reservoir, true));
                             }
                         }
@@ -153,6 +154,8 @@ impl World {
                 }
             }
         }
+        // End the immutable atlas/cache lifetime before authoritative writes.
+        drop(basin_query);
         for (at, reservoir, wet) in operations {
             if wet {
                 let parcel = self.weather_state.live_mut().map_or(

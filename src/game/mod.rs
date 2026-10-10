@@ -30,6 +30,7 @@ mod menus;
 mod mesh_jobs;
 mod navigation;
 mod presentation;
+mod profiling;
 mod remote;
 mod roster_ui;
 mod runtime;
@@ -409,6 +410,7 @@ struct Game {
     fps: u32,
     /// Smoothed frame-section times in ms: (authority, render).
     frame_ms: (f32, f32),
+    frame_profile: profiling::FrameProfiler,
     ui: UiBatch,
 }
 

@@ -176,6 +176,7 @@ impl Game {
             overcast: Vec3::from_array(self.renderer.sky_color),
             moon_fill,
         };
+        let room_light_start = self.frame_profile.enabled().then(std::time::Instant::now);
         self.room_light.update(
             &self.runtime.view(),
             &self.block_albedo,
@@ -190,6 +191,8 @@ impl Game {
             dt,
             eye.face(),
         );
+        self.frame_profile
+            .record_elapsed("room_light", room_light_start);
         if std::env::var("WILDFORGE_DEBUG").is_ok() && self.total_frames.is_multiple_of(60) {
             let sh = self.room_light.sh();
             eprintln!(

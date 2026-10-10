@@ -38,19 +38,14 @@ impl WaterCycleState {
         if available.water_hu < mass.water_hu || available.salt_mass < mass.salt_mass {
             return false;
         }
-        let mut order = Vec::with_capacity(self.reservoirs.len());
-        if let Some(id) = preferred
-            && let Ok(index) = self
-                .reservoirs
+        let preferred_index = preferred.and_then(|id| {
+            self.reservoirs
                 .binary_search_by_key(&id, |reservoir| reservoir.id)
-        {
-            order.push(index);
-        }
-        for index in 0..self.reservoirs.len() {
-            if !order.contains(&index) {
-                order.push(index);
-            }
-        }
+                .ok()
+        });
+        let order = preferred_index
+            .into_iter()
+            .chain((0..self.reservoirs.len()).filter(|&index| Some(index) != preferred_index));
         let mut water_left = mass.water_hu;
         let mut salt_left = mass.salt_mass;
         for index in order {
@@ -62,21 +57,23 @@ impl WaterCycleState {
             reservoir.committed.salt_mass -= salt;
             salt_left -= salt;
 
-            let mut commitment_water = water;
-            let mut commitment_salt = salt;
-            for commitment in self
-                .commitments
-                .iter_mut()
-                .filter(|commitment| commitment.reservoir == reservoir.id)
-            {
-                let taken_water = commitment_water.min(commitment.mass.water_hu);
-                commitment.mass.water_hu -= taken_water;
-                commitment_water -= taken_water;
-                let taken_salt = commitment_salt.min(commitment.mass.salt_mass);
-                commitment.mass.salt_mass -= taken_salt;
-                commitment_salt -= taken_salt;
-                if commitment_water == 0 && commitment_salt == 0 {
-                    break;
+            if water != 0 || salt != 0 {
+                let mut commitment_water = water;
+                let mut commitment_salt = salt;
+                for commitment in self
+                    .commitments
+                    .iter_mut()
+                    .filter(|commitment| commitment.reservoir == reservoir.id)
+                {
+                    let taken_water = commitment_water.min(commitment.mass.water_hu);
+                    commitment.mass.water_hu -= taken_water;
+                    commitment_water -= taken_water;
+                    let taken_salt = commitment_salt.min(commitment.mass.salt_mass);
+                    commitment.mass.salt_mass -= taken_salt;
+                    commitment_salt -= taken_salt;
+                    if commitment_water == 0 && commitment_salt == 0 {
+                        break;
+                    }
                 }
             }
             if water_left == 0 && salt_left == 0 {
@@ -132,3 +129,7 @@ impl WaterCycleState {
         self.credit_detailed_to(None, mass)
     }
 }
+
+#[cfg(test)]
+#[path = "custody_tests.rs"]
+mod tests;

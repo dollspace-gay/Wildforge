@@ -61,12 +61,12 @@ impl Game {
                 let wish = (self.camera.local_flat_forward() * input.forward
                     + self.camera.local_right() * input.strafe)
                     / intent_length;
-                let mut v = wish * 9.0;
+                let mut v = wish * physics::FLY_SPEED;
                 if self.input.keys.space {
-                    v.y += 8.0;
+                    v.y += physics::FLY_VERTICAL_SPEED;
                 }
                 if self.input.keys.sprint {
-                    v.y -= 8.0;
+                    v.y -= physics::FLY_VERTICAL_SPEED;
                 }
                 self.player.fly(&self.runtime.view(), v, dt);
             }

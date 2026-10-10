@@ -19,7 +19,11 @@ const JUMP_SPEED: f32 = 8.6;
 const WALK_SPEED: f32 = 4.4;
 const SPRINT_MULT: f32 = 1.6;
 const SWIM_SPEED: f32 = 3.0;
-const TERMINAL: f32 = 55.0;
+/// Falling speed shared with the guest movement envelope.
+pub(crate) const TERMINAL: f32 = 55.0;
+/// Creative flight speeds shared by local controls and guest validation.
+pub(crate) const FLY_SPEED: f32 = 9.0;
+pub(crate) const FLY_VERTICAL_SPEED: f32 = 8.0;
 
 /// The longest single hop a move may take before the world is consulted again,
 /// in blocks.

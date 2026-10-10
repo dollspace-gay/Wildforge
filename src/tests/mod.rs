@@ -41,6 +41,7 @@ mod playtest;
 mod power_draw;
 mod qualification;
 mod rail;
+mod raycasts;
 #[path = "registry.rs"]
 mod registry_tests;
 mod rendering;

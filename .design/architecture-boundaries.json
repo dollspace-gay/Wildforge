@@ -388,6 +388,7 @@
         "png",
         "serde",
         "serde_json",
+        "thiserror",
         "crate::planet",
         "crate::atlas",
         "crate::identity::atomic_write",
@@ -396,7 +397,7 @@
       "test_allow": [
         "crate::tests"
       ],
-      "reason": "Render passes consume prepared data and cannot import authoritative World or player operations."
+      "reason": "Render passes consume prepared data and cannot import authoritative World or player operations. Typed renderer and optional profiling errors use thiserror."
     },
     {
       "name": "authoritative world",

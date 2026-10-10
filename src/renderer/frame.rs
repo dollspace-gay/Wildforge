@@ -23,7 +23,30 @@ pub(in crate::renderer) struct ScreenshotReadback {
 }
 
 impl Renderer {
+    /// Render-call identity for associating host frame records with delayed GPU results.
+    pub(crate) fn profile_frame_id(&self) -> u64 {
+        self.render_frame_id
+    }
+
+    /// Collect completed GPU intervals without waiting for unfinished work.
+    pub(crate) fn take_gpu_timings(
+        &mut self,
+    ) -> Result<Vec<super::GpuFrameTiming>, std::sync::Arc<super::GpuProfileError>> {
+        self.profiling.as_mut().map_or_else(
+            || Ok(Vec::new()),
+            |profiling| profiling.take_completed(&self.device),
+        )
+    }
+
+    /// Coverage records expose skipped samples if all asynchronous slots were busy.
+    pub(crate) fn gpu_profile_stats(&self) -> Option<super::GpuProfileStats> {
+        self.profiling
+            .as_ref()
+            .map(super::profiling::GpuProfiler::stats)
+    }
+
     pub fn render(&mut self, f: FrameInput<'_>) -> Result<(), wgpu::SurfaceError> {
+        self.render_frame_id = self.render_frame_id.saturating_add(1);
         let (uniforms, light_vp) = self.frame_uniforms(&f);
         self.upload_frame(&f, &uniforms, &light_vp);
         self.upload_outline(f.outline, f.outline_color);
@@ -32,6 +55,9 @@ impl Renderer {
             .create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
         // Reuse one loaded-chunk list; each pass keeps its own culling rule.
         let visible: Vec<(&ChunkPos, &GpuChunk)> = self.chunks.iter().collect();
+        let timing = self.profiling.as_mut().and_then(|profiling| {
+            profiling.begin(&self.device, &mut encoder, self.render_frame_id)
+        });
         self.encode_sun_shadows(&mut encoder, &f, &visible);
         self.point_shadows
             .encode(&mut encoder, &f, &visible, &self.atlas_bg);
@@ -40,7 +66,15 @@ impl Renderer {
         self.post
             .bloom(&self.queue, &mut encoder, f.bloom, f.daylight);
         // Acquire only after scene encoding, preserving late swapchain admission.
-        let frame = self.surface.get_current_texture()?;
+        let frame = match self.surface.get_current_texture() {
+            Ok(frame) => frame,
+            Err(error) => {
+                if let (Some(profiling), Some(ticket)) = (&mut self.profiling, timing) {
+                    profiling.cancel(ticket);
+                }
+                return Err(error);
+            }
+        };
         let view = frame
             .texture
             .create_view(&wgpu::TextureViewDescriptor::default());
@@ -49,10 +83,17 @@ impl Renderer {
             .pending_screenshot
             .take()
             .map(|path| (path, self.pending_capture_metadata.take()));
+        let capture_frame = requested_shot.is_some();
         let shot = requested_shot.map(|(path, metadata)| {
             self.encode_capture(&mut encoder, &f, &visible, path, metadata)
         });
+        if let (Some(profiling), Some(ticket)) = (&mut self.profiling, timing) {
+            profiling.end(&mut encoder, ticket);
+        }
         self.queue.submit(std::iter::once(encoder.finish()));
+        if let (Some(profiling), Some(ticket)) = (&mut self.profiling, timing) {
+            profiling.submitted(ticket, capture_frame);
+        }
         frame.present();
         if let Some(shot) = shot {
             self.write_capture(shot);

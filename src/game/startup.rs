@@ -158,6 +158,7 @@ impl Game {
             frames: 0,
             fps: 0,
             frame_ms: (0.0, 0.0),
+            frame_profile: super::profiling::FrameProfiler::from_env(),
             ui: UiBatch::new(),
         };
         g.content.mods_stamp = content_tree_stamp();

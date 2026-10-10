@@ -5,7 +5,7 @@ use crate::inventory::ItemStack;
 use crate::registry::ItemId;
 use crate::{identity, net};
 
-#[derive(Clone, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub(super) enum Screen {
     Title,
     NewWorld,

@@ -162,9 +162,11 @@ fn loopback_pair_drained_with_reg(
 }
 
 mod authorization;
+mod dross;
 mod entry;
 mod gameplay;
 mod loopback_join_stream_and_edit;
+mod movement;
 mod protocol;
 mod reconnect;
 mod snapshots;

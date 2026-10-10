@@ -38,10 +38,13 @@ enum Outbound {
     Finish(oneshot::Sender<io::Result<()>>),
 }
 
-/// Accept any certificate: friends-and-LAN trust model (the transport
-/// is still encrypted; identity is the whitelist, not a CA).
+/// Accept self-signed certificates for the friends-and-LAN trust model.
+/// Handshake signatures must still prove possession of the certificate's key;
+/// persistent host fingerprints and admission enforce application-level trust.
 #[derive(Debug)]
-struct TrustAny;
+struct TrustAny {
+    supported: rustls::crypto::WebPkiSupportedAlgorithms,
+}
 
 impl rustls::client::danger::ServerCertVerifier for TrustAny {
     fn verify_server_cert(
@@ -56,24 +59,22 @@ impl rustls::client::danger::ServerCertVerifier for TrustAny {
     }
     fn verify_tls12_signature(
         &self,
-        _: &[u8],
-        _: &rustls::pki_types::CertificateDer<'_>,
-        _: &rustls::DigitallySignedStruct,
+        message: &[u8],
+        certificate: &rustls::pki_types::CertificateDer<'_>,
+        signature: &rustls::DigitallySignedStruct,
     ) -> Result<rustls::client::danger::HandshakeSignatureValid, rustls::Error> {
-        Ok(rustls::client::danger::HandshakeSignatureValid::assertion())
+        rustls::crypto::verify_tls12_signature(message, certificate, signature, &self.supported)
     }
     fn verify_tls13_signature(
         &self,
-        _: &[u8],
-        _: &rustls::pki_types::CertificateDer<'_>,
-        _: &rustls::DigitallySignedStruct,
+        message: &[u8],
+        certificate: &rustls::pki_types::CertificateDer<'_>,
+        signature: &rustls::DigitallySignedStruct,
     ) -> Result<rustls::client::danger::HandshakeSignatureValid, rustls::Error> {
-        Ok(rustls::client::danger::HandshakeSignatureValid::assertion())
+        rustls::crypto::verify_tls13_signature(message, certificate, signature, &self.supported)
     }
     fn supported_verify_schemes(&self) -> Vec<rustls::SignatureScheme> {
-        rustls::crypto::ring::default_provider()
-            .signature_verification_algorithms
-            .supported_schemes()
+        self.supported.supported_schemes()
     }
 }
 
@@ -97,9 +98,13 @@ impl Client {
         let (rel_tx, rel_rx) = unbounded_channel();
         let connected = Arc::new(AtomicBool::new(false));
 
-        let crypto = rustls::ClientConfig::builder()
+        let builder = rustls::ClientConfig::builder();
+        let verifier = TrustAny {
+            supported: builder.crypto_provider().signature_verification_algorithms,
+        };
+        let crypto = builder
             .dangerous()
-            .with_custom_certificate_verifier(Arc::new(TrustAny))
+            .with_custom_certificate_verifier(Arc::new(verifier))
             .with_no_client_auth();
         let crypto = quinn::crypto::rustls::QuicClientConfig::try_from(crypto)
             .map_err(std::io::Error::other)?;
@@ -334,3 +339,7 @@ async fn write_loop(mut send: quinn::SendStream, mut rx: UnboundedReceiver<Outbo
         }
     }
 }
+
+#[cfg(test)]
+#[path = "client_tls_tests.rs"]
+mod tests;

@@ -2376,3 +2376,520 @@ Strict boundary checking still covers 486 files with zero findings, and all 131
 maintained directories have valid local guides. No source, thresholds or debt
 suppressions changed during evidence publication. All locally required gates are
 complete; the latest-head PR checks provide the external acceptance result.
+
+
+## 2026-10-09 defect repairs and measured lag reduction
+
+The requested follow-up fixes the two defects reproduced during the codebase
+examination and the source-confirmed dedicated-server omission. It also measures
+and improves lag while preserving gameplay, authority, generation, saves, the
+wire protocol, full lighting and ordinary render quality. All changes and
+runtime fixtures remain local; no main-repository commit or push was made.
+
+The TLS client still uses the existing certificate-pin/TOFU policy, but delegates
+TLS 1.2/1.3 handshake-signature verification to the configured rustls crypto
+provider. A copied legitimate certificate with a different private key is now
+rejected. Matching-key and compatible-host controls remain accepted. The
+rustls dependency is updated to 0.23.45, including the advisory repair verified
+in the dependency check. Host movement now accounts against simulation time,
+rather than receiving a new displacement allowance for each packet. Reliable
+and datagram callers share the same budget, with ordinary walk/sprint, falling,
+flying and chart-crossing controls. Dedicated dispatch now broadcasts regional
+Dross cues through the existing host operation. These are behavior corrections;
+no packet/schema/content identity changes were introduced.
+
+Performance work follows measured production-world costs. Optional CPU stage
+and real GPU timestamp recordings identify completed renderer frames separately
+from submission/presentation waits. The actual hardware is NVIDIA GeForce RTX
+5070 Ti Laptop GPU, Vulkan, DiscreteGpu. A copied seed-20260802 production world,
+view distance 12, Gemini pack, cube torch shadows, soft darkness, dynamic shadows
+and bloom are used on both frozen executables. Native keyboard receipts and
+paired thread CPU snapshots establish actual movement and concurrent workers.
+The owned Xvfb input surface adds presentation limitations; GPU command timing
+and the non-renderer wall span do not establish monitor FPS.
+
+Ray marching now reuses the resident chunk within a column. The light solver
+snapshots each immutable border column once and seeds only skylight sources that
+can improve a horizontal neighbor. Vertical propagation rules, RGB/water costs,
+channel and boundary ordering, cascade caps and mutation fan-out are unchanged.
+A frozen original implementation and the changed implementation match all
+181,665,792 channel bytes across 45,416,448 cells in 300 generated stages, including
+face seams, corners, variable neighbors, water, colored emitters and removal.
+An independent Python byte comparison gives identical SHA-256
+`27a3bb0b5d75b778ff14ce4a1d810c9f641b861ed99d9074e2bbd0f5e56a9087`.
+The disposable comparison module was removed before source freezing; its source,
+commands, full output streams and receipts remain in working storage.
+
+Measured quadratic detailed-water debit ordering was replaced with preferred
+reservoir followed by ascending other indices, retaining exact mass preflight,
+commitment order and zero cleanup. The first improved release reduced settled
+simulation p95 from 48.954 ms to 13.316 ms in a matched native run; whole update
+p95 was 74.180 -> 33.109 ms and the worst whole update 1414.859 -> 333.613 ms.
+The independent movement phases show improvement as well. These are finite,
+descriptive matched-world observations. A second instrumented repeat is retained;
+its perf sampling is explicitly intrusive. Remaining 192-frame stalls correlate
+with climate-hour shoreline reconciliation. The final narrow change caches each
+immutable resident chunk during selection and avoids global block lookup and
+BlockPos construction for every scanned height. Hydrology sampling, hidden-solid
+fallback, selection and mutation order, custody and lighting are unchanged.
+Final shoreline release measurements and the complete fresh GPU campaign remain
+pending at this checkpoint.
+
+Native UI play on the preceding improved release created a Creative planet with
+seed 20260802, consumed two oak planks to craft four sticks, mined ground, placed a
+lit torch and a chest, deposited 62 planks and split them into 31 in the chest and
+31 in the hotbar. Camera modes and full-quality settings were inspected. Save and
+Quit to Title followed by Play restored the torch, chest, four sticks and both
+plank stacks. An independent WFR2/WFC6-8 block-plane decoder and TOML inspection
+confirm the saved placement and exact stack counts. A seeded sequence executed
+16 bounded WASD holds, four Ctrl sprint holds, two jumps and four look adjustments
+through actual winit input, followed by a normal save and window close.
+
+Working artifacts are under `target/lag-control-20261009/`. Every frozen source and
+binary has a fingerprint and local artifact revision. Failure evidence is kept:
+the examination's initial parallel compile was killed by host OOM, not a failing
+test; serial Cargo builds avoid that condition. The light comparison's first
+helper compile used a nonexistent SurfacePos method; the corrected helper runs.
+A timing fixture initially assumed a bounded cascade had settled; warming to a
+fixed neighbor field corrected the measurement oracle. Native-driver failures
+were a partial JSONL append, F2's same-second screenshot filename reuse and mouse
+press/release events shorter than a Playing update. The driver now reads complete
+records, detects updated screenshot files and uses realistic held mouse clicks.
+None of those driver corrections change game behavior or acceptance thresholds.
+The first candidate benchmark used a different world name and is exploratory;
+subsequent runs preserve world1 and the actual initial fixture-copy hashes.
+
+The focused TLS/movement/Dross/raycast tests pass; generated light comparisons,
+water custody tests, Python tests and strict Clippy pass for their recorded states.
+Five independent expected-state shore cases now cover bounded rise/fall, exact
+water and salt custody, hidden solidity, player-touched exclusion and face edges.
+Their Cargo run, final-source MSRV, subsystem/serial-agent/doctest/release gates,
+latest native reload proof and 92-still/56-motion GPU qualification are pending.
+Existing size/clone debt remains advisory: the current scan reports 1,032 source
+files, 236,206 physical lines, 87 above 400, 46 above 500 and 61 clone groups. Every
+new maintained file is in an existing documented source directory.
+
+### Final source and release measurements
+
+The final source, including the shoreline scan cache, is frozen in the clean
+local artifact `b6336af3b8398816a72d75c87ef3055fc0a17af9`. Its qualification
+source SHA-256 is
+`c180643a3840964ead3afcbb30a2b1b4c4cb127a836ddc0b64a6c2ea9227099b`,
+verified equal to the main working source. The frozen release executable has
+SHA-256 `7de2a6202fc29f34d30ee922409ebe21dc3444ebfcfece5f44acca6c66dfd79c`.
+These local artifact identities do not represent a main-branch commit. The
+canonical main release was also rebuilt, with its dirty working state recorded.
+
+Both final native controlled runs complete normally. Every launch/config/world/
+adapter/binary control matches the retained third baseline run. Settled
+authority-and-streaming p95 is 48.954 -> 13.165 / 13.114 ms (73.1 / 73.2 percent
+lower); whole-update p95 is 74.180 -> 29.734 / 31.366 ms (59.9 / 57.7 percent
+lower). Forward-flight authority p95 is 44.947 -> 13.835 / 13.760 ms. The worst
+whole update is 1414.859 -> 266.808 / 265.393 ms. Ascent input timing differs, so
+that phase is descriptive only and does not support a matched speedup claim.
+Receipts and full distributions are in `accepted-comparison-1-corrected/` and
+`accepted-comparison-2/`. The first analysis invocation named a nonexistent
+master-manifest path and did not recognize the new source-receipt key; it is
+retained in `accepted-comparison-1/` with its failed provenance checks. The
+corrected analyzer consumes the actual immutable master and verifies launch
+hashes; measured frame recordings were not changed or repeated for that error.
+
+The final runs complete 3110 / 3105 actual device timestamp samples, with zero
+pending/skipped readbacks and zero recorded GPU errors. CPU deltas show work on
+all eight terrain workers and both chunk-mesh workers; total CPU/wall is above
+one core in each run. This verifies actual hardware and multicore work, not
+that every task occupies all available cores. Whole-update includes the owned
+Xvfb presentation wait, so these values are not physical-monitor FPS.
+
+Residual climate-completion hitches remain: the forced capture clock completes
+one climate hour every 192 frames, producing 13 authority spans above 100 ms in
+each 2500-frame playing recording. Ordinary human play on the preceding release
+has three such spans over 11871 non-capture Playing frames, and the final cold
+reload has none over 840 Playing frames (authority p95 9.955 ms, maximum 17.369
+ms). Those normal runs differ in world/input/time and are functional observations,
+not paired causal performance measurements or proof that future hitches vanish.
+
+The final release cold-loads the disposable human-play save and player identity.
+Actual inventory/torch/chest inspection, movement and jump, normal Save and Quit
+to Title, and normal window close pass. Independent saved-block/TOML checks still
+find the placed torch and chest, four sticks, 31 player planks and 31 chest planks.
+The latest-source native host/guest proof also passes actual UI-ledger transfers,
+guest movement, chat, roster, unsupported-boat inventory preservation, disconnect
+and rejoin, using 59 completed GPU frames with no errors.
+
+The five final shore tests, strict all-target/all-feature Clippy, Rust 1.95 MSRV,
+serial 20 agent scenarios, doctests, both release builds and advisory scan pass.
+The earlier full subsystem run passes 1177 tests and fails only the five expected
+old visual-fingerprint checks; it is not acceptance. The fresh 92-capture and
+56-frame motion campaign and the post-publication subsystem check remain pending
+at this checkpoint. No source changes follow the final freeze.
+
+
+### Ordinary-play clarification and remaining climate hitch
+
+The operator clarified that lag means severe pauses while humans load and play
+normally. Two identical native real-time walking/sprint/jump/turn protocols use
+normal game dt and the saved rain/night environment, with no clock, weather or
+look override. Forward-walk update p95 is 79.399 -> 23.762 ms; the original has
+36 Playing update spans over 100 ms and the intermediate candidate has zero in
+that short recording. Observed world entry remains roughly 9.54 / 9.25 seconds,
+so no meaningful loading-time reduction is claimed. Normal entry, travel and
+end images show preserved full-quality terrain, trees, rain and UI.
+
+A longer candidate run exposes a 306.280 ms ordinary-play update (289.421 ms
+in authority), then recurrent climate-completion pauses. The tool/controller
+sessions ended across user continuation; the raw partial roaming and later idle
+frames are preserved separately, and the owned orphaned window was closed through
+normal WM_DELETE_WINDOW. It is not represented as a completed predefined soak.
+The shutdown-only final cadence gaps in the first paired runs follow explicit
+close and synchronous save; they are retained but do not prove movement hitches.
+The source remains the b633 intermediate artifact. A hydrology-owned exact basin
+query scoped to one immutable shore-selection pass is now required, followed by
+fresh source gates and normal-play runtime evidence. Earlier claims of final
+source are superseded by this checkpoint; all previous binaries and results remain.
+
+The unfinished intermediate visual campaign is retained. Original baseline dawn
+v12 and v14 captures refused their initial upload-settle limits; predeclared
+still-only MIN_FRAME=6000 extensions pass with the unchanged native settle rule
+(2810 / 1764 settled frames). No timing case or numeric gate was weakened.
+The controller was paused between native captures for normal-play diagnosis,
+then terminated after the remaining hitch required revised source. Old candidate
+captures will not be presented as evidence for that revised executable.
+
+
+### Revised ordinary-play source checkpoint
+
+The narrow basin query is Category A: hydrology owns the exact operation while
+calendar shore selection owns only its one-pass immutable cache. Ocean/Lake/Playa
+home results are uniform. Other cells are cached as zero only when every possible
+river replacement also carries zero basin IDs. Any mixed river/basin candidate
+uses the unchanged full sampler at every point, preserving thresholds, nearest
+geometry, discharge ties and meanders. The caller explicitly releases the cache
+before the existing ordered voxel/reservoir mutation pass. No external API,
+unsafe contract, schema, dependency or content change follows the b633 checkpoint.
+
+The source is frozen as clean local artifact
+`d9bb4f8d2db479f592ddb78accca4567a824e30d`, qualification SHA-256
+`8524de86c0f91c96c715f1a31b2c2d3dfe3117dba693153a98852d2412ec49ae`,
+verified equal to the main source. Frozen release SHA-256 is
+`f3ed89f885623c8dba5e5d64b783dd3ccc10cd119396939762d7b59a0c3b2d1f`.
+Full owner/caller reads cover hydrology facade, query, all tests, full original
+sampler, stencil/topology, generation classifications, validators and calendar
+selection/mutation; local guides explain the ownership and lifetime.
+
+Strict all-target/all-feature Clippy, Rust1.95 all-target compilation, full
+format, 53 Python tests, strict architecture scan491files/zero findings, seven
+basin-query cases and the frozen release build pass. The query cases make9,715
+comparisons/checks, including generated cell/chunk boundaries, both traversal
+orders, all face edges/corners, point-dependent mixed winners and explicit basin
+IDs. The revised-source native host/guest interaction proof passes actual Vulkan
+rendering, UI-ledger transfers, movement, chat/roster, disconnect and rejoin.
+Its timings overlap release compilation and remain functional observations.
+
+The earlier paired normal recordings additionally show initial terrain generation
+finishing15.816 ->4.057seconds after the first Playing frame, using the first
+resident>=530/pending-generation-zero milestone and retained start-to-start
+intervals. This is terrain generation completion, not all mesh uploads or monitor
+presentation; observed world entry remains about9seconds. All six normal paired
+images were visually reviewed at1280x720. The revised release's five-minute
+ordinary input/roaming run is now active. Final ordinary metrics, fresh candidate
+GPU qualification, canonical release and post-publication full acceptance remain
+pending at this checkpoint.
+
+
+### Lighting completion follow-up
+
+The d9bb4f8 ordinary run completes its full seeded physical-input protocol and
+four-minute roaming phase, then closes normally (309.348 seconds total). The
+first climate completion remains 158.809 ms in update / 139.451 ms in authority;
+a later completion is 103.476 / 87.841 ms. Two noncapture Playing updates exceed
+100 ms. These remain visible failures of the intended ordinary-play result.
+A 45-second intrusive perf attachment diagnoses a different completion at frame
+10091; its affected interval is diagnostic rather than quiet acceptance timing.
+The original recordings and per-frame distributions are preserved in
+`target/lag-control-20261009/normal-play-roaming-comparison/`.
+
+The sampled completion points primarily to lighting-cell construction, with
+additional shoreline scan and climate bookkeeping work. Missing DWARF ancestry
+is distinguished from leaf-instruction/disassembly attribution. Generic surface
+height fallback is not implicated by this captured interval and is unchanged.
+The next narrow Category A/B lighting work builds a private, ephemeral optical
+palette once per cascade from the current immutable registry. It preserves
+per-voxel direct indexing and its invalid-ID panic, FIFO/direction order, border
+snapshot lifetime, visit cap, derived dirty flags and persistent modified flags.
+Three RGB passes are omitted only when every actual emitter is zero and every
+current border color is below 2; their original queues are then empty and their
+output is exactly black. The zero result still follows normal comparison and
+commit, clearing stale glow. This is not a persisted registry cache.
+
+Complete source/caller/definition review covers the 386-line solver and all
+212 lines of new scenarios. Independent expected fields cover stale color,
+level-one local emission, level-two border light, in-place registry emission/
+filter/water/opacity changes between calls, and bounds panic without resident
+writes. The original full-field replay is running in a separate diagnostic
+directory; compiled checks, new frozen release, quiet ordinary play, fresh GPU
+campaign and final acceptance gates remain pending. Previous source artifacts
+and claims of finality are superseded, with their evidence retained.
+
+
+### Ephemeral-lighting source measurements
+
+The original-solver replay passes all300 stages,45,416,448 cells and181,665,792
+channel values byte-for-byte; independently recomputed stream SHA-256 is
+27a3bb0b5d75b778ff14ce4a1d810c9f641b861ed99d9074e2bbd0f5e56a9087 for both.
+The temporary module is removed before clean local artifact
+731b064b784a04bdf3a26706acef18caf34e307c, qualification SHA-256
+34bfd8bf57778a1ba561fa79747d854c8c38c892509b51cac24febe577fd15ce. Frozen
+release SHA-256 is2989874c1fd8b56aef2981ea2c1b53042a23e719fb236332b7ecec4dcaaf5a84.
+The main source fingerprint equals that immutable artifact. No main commit/push.
+
+Final-production test compilation, the3 new lighting cases,6 seam scenarios,
+strict all-target/all-feature Clippy, Rust1.95 all-target checks, format,53 Python
+tests, maintainability, diff check,20 serial agent scenarios, doctests and
+advisory scan pass. The first architecture command misspells the script filename
+and fails exit2; its retained corrected invocation of check_architecture.py
+passes492 files/zero findings, retaining the existing cyclic-import coverage
+limits. The native host/guest proof passes62 actual Vulkan device frames, no
+pending readbacks/errors, and all recorded interaction/rejoin invariants.
+These functional timings overlap release compilation and are not performance.
+Cold native human-save reload, visible torch/chest and4 sticks/31 player planks,
+physical movement/jump and normal Save and Quit/close also pass; independent
+WFR2/WFC6-8 decode finds the placed torch and original chest.
+
+The complete quiet normal-input run closes both processes normally in309.788
+seconds, with15,183 noncapture Playing frames and15,777 completed GPU samples,
+no pending readbacks/skips/errors. Walking update p95 is79.399 ->23.290 ms;
+sprinting p95 is71.779 ->22.615 ms. The initial resident>=530/pending-generation0
+milestone improves15.816 ->3.128 seconds after first Playing, but observed entry
+remains9.54/9.33 seconds and that milestone is not all GPU uploads or presentation.
+Raw frames, all phases, comparisons, quiet-start inventory and shutdown/capture
+limits remain in normal-play-lighting-comparison/ and associated receipts.
+All8 terrain and both mesh workers are observed; CPU/wall exceeds one in583
+sampled intervals, with up to12 threads reporting positive CPU deltas.
+
+One first climate completion remains124.668 ms update/107.848 authority, down
+from158.809/139.451 at the preceding source; later completions are61–85 ms update.
+This is still a remaining human-visible hitch. A separate intrusive diagnostic
+is targeted at that FIRST completion. Fresh final-source GPU qualification,
+canonical root release and post-publication full subsystems remain pending;
+731b064b is still intermediate rather than a completed lag-fix claim.
+
+### First-completion lighting diagnosis and bounded local-input reuse
+
+The separate intrusive first-completion recording finishes successfully with
+20,675 samples and no reported loss. Its selected continuous main-thread weather
+completion contains 92 leaf samples, 62 in lighting; 34 are local optical input,
+initial sky-column, or initial-frontier construction. Disassembly and register
+values identify two unchanged block planes prepared again after other chunks.
+This is attribution evidence, not a quiet timing measurement; the buffered
+frame-to-perf alignment is approximate. The recording, selection, addresses,
+counts and limitations are retained in
+`target/lag-control-20261009/candidate-first-climate-profile-lighting/`.
+
+The next source separates immutable local inputs from solving and retains them
+only within one cascade. Cached vector capacities are capped at 64 MiB; an
+uncached current input, map/allocator overhead and solve buffers are outside that
+cap. Each solve still reads current neighbor light. Preparation reads existing
+block runs in physical index order and preserves direct invalid-ID panics.
+The cache is discarded before a later cascade can observe changed block
+definitions. New independent expected-field coverage checks the memory-limit
+fallback and an in-place air-opacity change; the extended original-solver
+replay also covers 200 chunks beyond the production cache budget. Replay,
+final-source runtime and acceptance checks are in progress, so this remains
+an unaccepted source iteration.
+
+The extended replay now passes all 302 stages, comparing 71,630,848 complete
+cells and 286,523,392 channel values. Independent byte-stream verification
+reports identical SHA-256
+`c8c528021fdc9ccccf5adc373a36675eeb6b4a9c30a8303a5ddf1527a9925de2`.
+The two added stages also assert every cell's expected bright or opaque-air
+field independently. All four maintained lighting tests pass. The disposable
+comparison module is removed before frozen local artifact
+`91f6315e363146f214d01faddb9144a8ccd63b4d`, qualification SHA-256
+`6fd3365e4c3d8f8d827db896f5519d72d6c8c1efa0bcf1877a44dc1c721543da`.
+Format, all 53 Python tests, folder guides (131 maintained directories),
+maintainability and diff checks pass; strict architecture scans 493 files with
+zero findings and the existing cyclic-import coverage limits. Final release
+compilation and quiet ordinary play are next; runtime acceptance remains open.
+
+The frozen bounded-input release (binary SHA-256
+`c54640fbcf397752e7597a648ceb514f96fe7664006695b962cb9831c3a29af9`) now
+completes quiet normal-input play and the seeded 240-second roaming phase in
+308.963 seconds, closing controller and game normally. It records 14,180
+noncapture Playing frames and 14,746 completed actual GPU samples, zero pending
+readbacks/skips/errors, with all analyzer control checks passing. Walking and
+sprinting update p95 are 24.792/24.675 ms against 79.399/71.779 ms original.
+The initial resident-generation milestone is 3.286 seconds after first Playing;
+it is still not all uploads/presentation. Four actual full-resolution normal
+captures were visually reviewed, including ordinary movement and rainy night.
+The /proc trace contains 615 memory samples, largest observed VmHWM/VmRSS
+1,226,916 KiB. This includes prior short-lived RSS peaks through the last sample,
+not GPU memory or final unsampled shutdown; old traces provide no memory baseline.
+
+The first climate update remains 113.664 ms / 97.844 ms authority; later observed
+completions are 56.388, 74.195, 81.846 and 83.710 ms total. This source still has
+one update over 100 ms and six over 50 ms, so final acceptance is pending.
+`normal-play-local-light-comparison/` and `ordinary-local-light-run-findings.json`
+retain the distributions, all raw observations and measurement limits. A new
+separate first-completion diagnostic is recording against this frozen executable
+while the next narrow source change bypasses the black RGB temporary allocation,
+comparison and compaction; unchanged dense storage and flags must remain intact.
+
+The bounded-input first-completion diagnostic completes perf and game normally,
+retaining 21,239 samples/170.924 MiB in
+`candidate-first-climate-profile-local-light/`. Its first spike is
+114.618 ms / 98.524 ms authority; the continuous weather sequence retains about
+55 ms of sampled lighting work. Exact substage attribution remains in progress;
+these intrusive measurements are not quiet acceptance timings.
+
+The next implementation adds one crate-private Chunk operation to compare and
+replace a known uniform RGB plane alongside the full sky field. Equal dense
+fields retain their storage and flags; changed fields commit RGB then sky,
+and TerrainStore alone sets mesh dirtiness. The exact no-emission/no-active-border
+predicate and active RGB propagation are unchanged. Three new independently
+specified complete-field scenarios cover final-cell stale blue, unchanged dense
+planes across all dirty/modified flag combinations, and nonuniform sky values.
+Root reviewed the new Chunk method, complete solver delta, tests and guides;
+original-field replay, final compilation and runtime benefit remain pending.
+
+The uniform-RGB iteration now passes all 302 original-field stages and all seven
+maintained lighting tests. Independent verification again compares 71,630,848
+cells / 286,523,392 values with both stream hashes
+`c8c528021fdc9ccccf5adc373a36675eeb6b4a9c30a8303a5ddf1527a9925de2`.
+The temporary module is removed before frozen local artifact
+`8c4d4773d6b14890ff74f0c41cbb17df6b2babf4`, source qualification SHA-256
+`c7a666eaf7143b60618590c145aca6c09d0ef1b417ab3c40e4512fd88aae85ff`.
+Format, 53 Python tests, folder guides, strict architecture, maintainability and
+diff checks pass on this source. Release and runtime acceptance are pending.
+
+The frozen uniform-RGB release SHA-256 is
+`2c057f328b171e4229a635fedccb8aa879ff8f725bd954db66a4bde15711bf5a`.
+Its quiet normal-input run and 240-second seeded roaming complete in 308.851
+seconds with both processes exiting zero. All comparison controls pass. Walking
+update p95 is 79.399 -> 23.233 ms and sprinting 71.779 -> 22.904 ms. The initial
+resident>=530/pending-generation0 milestone is 15.816 -> 2.798 seconds after
+first Playing, with only 122 uploaded chunks at the candidate milestone.
+Observed world entry remains about ten seconds (9.902 here versus 9.542 original).
+Neither measure establishes physical-monitor presentation or all uploads ready.
+The run retains 14,323 noncapture Playing frames: one update over 100 ms and
+seven over 50 ms. The first climate completion remains 109.894 ms / 93.312 ms
+authority; later completions are 57.921–78.435 ms. The remaining first-update
+hitch is explicit; this is not a zero-hitch claim. All 14,923 GPU samples complete
+without pending readbacks/skips/errors. All eight terrain and both mesh workers
+have positive CPU deltas; CPU/wall exceeds one in 491 sampled intervals (up to
+12 threads with positive deltas). Observed VmHWM is 1,235,748 KiB, with the same
+sampling and GPU-memory limits stated above.
+
+All four full-resolution normal captures and three cold native save-reload
+captures were reviewed. The independent decoder checks 295 saved chunks,
+preserved torch/chest coordinates, four player sticks, 31 player planks and
+31 chest planks after normal Save and Quit/close. Functional reload overlaps
+compiler work and is not a performance measurement. Strict Clippy and Rust 1.95
+checks pass; final-production tests/release and the complete fresh native GPU
+campaign are running. Baseline imports reuse only 14 byte-identical original
+captures after full scene/fixture/binary checks; no candidate evidence is reused.
+
+The rebuilt production test binary passes all seven lighting field tests, six
+planet-seam scenarios and all 20 serial agent tests. The ignored native gameplay
+proof also passes on the RTX 5070 Ti Laptop Vulkan adapter: actual guest terrain
+upload, 3.329 blocks of host-observed movement, roster/chat, rejected unsupported
+actions without inventory changes, disconnect and rejoin. Independent trace
+inspection checks all 61 GPU samples completed, no pending/skipped readbacks,
+and the full native guest image. These compiler-overlapping functional timings
+are not production performance evidence.
+
+The widest candidate dawn still initially refuses capture with 27 of 723
+resident chunks not uploaded and zero of ten required settled frames. Its
+failed attempt and 79.349-second result remain intact. A protocol declared
+before retry extends only this still's minimum warmup to 6,000 frames, preserving
+the ten-frame native upload gate, all rendering options, source/binary and all
+40 timing-case settings. Attempt two passes in 143.521 seconds; both dawn stills
+were reviewed against the original fixtures. The remaining stills, motion,
+fresh paired timing and final full-suite checks are pending.
+
+All final compiler/runtime gates now pass: strict Clippy (38.881 seconds), Rust
+1.95 all-target check (27.004), all-target test compilation (521.420), canonical
+root release build (301.793), 20 serial agents (33.896), doctests (zero existing
+cases) and current dependency advisories. This does not replace the pending
+full subsystem run after fresh visual evidence is selected.
+
+The separately executed closeout v14 dawn repeat also retains a refused first
+attempt: 75.180 seconds, frame 3607, 723 resident / 692 uploaded / 30 dirty,
+zero of ten settled frames. Its separately declared still-only 6,000-frame
+warmup retry preserves the native gate and all 40 timing cases. The retry
+is running; no failed attempt is counted as accepted evidence.
+
+The closeout v14 dawn second attempt passes in 139.649 seconds under the
+declared 6,000-frame still warmup and unchanged ten-settled-frame gate. Its
+original failure remains retained. The accepted still was visually reviewed;
+no timing settings or acceptance thresholds changed.
+
+All 52 native GPU stills now complete and were reviewed in order; six selected
+frames were checked at full native resolution. All 56 native walkthrough
+frames and six full-resolution selections were reviewed. Frame hashes and
+normal process exits match both motion receipts. Existing static-luminance
+and observation gates pass for both walks; sampled screenshots do not rule
+out subframe artifacts. See visual-uniform-light/review/manual-stills-review.json
+and independent-motion-qualification.json. Fresh paired timing remains pending.
+
+All 40 fresh paired timing cases complete under the unchanged maintained
+protocol after functional/build/still/motion work ended. Initial and final
+process inventories contain no competing compiler, game or profiler. All
+92 capture sidecars are present, and immutable source fixtures are rechecked
+by the maintained capture runner. Full numeric qualification is running;
+completion is not inferred from successful captures alone.
+
+All 92 per-capture reports are deterministic/current; repeatability, strata
+readability/performance, geode composition, closeout readability and motion
+gates pass. Full qualification fails both geode draw gates: opened-minus-sealed
+median draw cost is 0.496452 ms (production) and 0.571509 ms (closeout), against
+0.20 ms. Both simulation gates pass. Failed reports remain intact, the campaign
+is pending, and no new repository selection is made. Five predetermined original
+binary opened/sealed control pairs on identical fixtures/hardware are running
+to distinguish existing scene/hardware cost from this source change.
+
+All five predetermined original-binary opened/sealed controls complete on the
+same fixtures and hardware. The original also fails the unchanged 0.20 ms
+draw gate: median opened 15.208984 ms, sealed 14.952465 ms, delta 0.256519 ms.
+This establishes an existing hardware/scene gate failure; it does not by itself
+explain the candidate's larger 0.496452 / 0.571509 ms deltas. Read-only source
+comparison checks all 26 renderer implementation files, 13 WGSL files and
+render/capture/verifier paths unchanged from the instrumented original. The
+metric is a renderer wall-time EWMA including AutoVsync acquisition/presentation,
+not GPU execution time. No threshold or timing is rewritten, no pending
+campaign is selected, and the final subsystem run is underway.
+
+The final non-agent all-target run completes with 1,097 passed, 99 failed,
+24 ignored and 20 serial-agent cases filtered out. Exact failure inspection
+classifies 94 temporary-fixture failures as errno122/QuotaExceeded; the other
+five are the unchanged selected visual campaign's stale source hash. /tmp is
+a 16 GiB tmpfs with usrquota; the workspace Btrfs has 266 GiB free. No shared
+/tmp or personal files are deleted. The affected fixture cases will be replayed
+with a fresh ignored TMPDIR on the workspace filesystem.
+
+All 94 quota-affected cases pass with a fresh ignored workspace TMPDIR:
+3.817 seconds including Cargo startup, 3.50 seconds of test execution. Exact
+name matching verifies these are precisely the original QuotaExceeded failures,
+with no overlap with the original 1,097 passes. Combined final-state coverage
+is 1,191 distinct subsystem passes and 20 distinct serial-agent passes. The
+24 default ignored cases remain ignored in that suite; the actual native GPU
+host/guest proof was executed separately and passes. Five visual source-freshness
+checks remain failed because the selected older campaign is intentionally
+preserved while the new campaign fails its two draw gates. No test, threshold,
+or selected evidence is changed merely to obtain a passing result.
+
+Final source and frozen release hashes still match c7a666eaf7143b60618590c145aca6c09d0ef1b417ab3c40e4512fd88aae85ff
+and 2c057f328b171e4229a635fedccb8aa879ff8f725bd954db66a4bde15711bf5a.
+The final test binary hash remains 6f4b0da2a2f1aca4fcbcc6364538838b479f5b7e2b9047d1eaf297e7c6c734ef.
+The ordinary-play comparison shows matched walking p95 update wall time
+79.399 -> 23.233 ms and sprinting 71.779 -> 22.904 ms, with full configured
+rendering features, real Vulkan GPU execution and concurrent worker CPU use.
+The resident-generation milestone falls from 15.816 to 2.798 seconds after
+Playing begins; only 122 candidate chunks are uploaded at that milestone, so
+this is not an all-rendering-ready loading time. World entry remains about ten
+seconds, and a 109.894 ms climate-related update remains in the 240-second
+roaming run. These limits and the unresolved formal draw qualification remain
+explicit. See target/lag-control-20261009/uniform-light-final-summary.json and
+REPLAY.md for exact receipts and reproduction. Work remains local, with no
+main-repository commit, push, new selected campaign or cleanup of shared /tmp
+or personal runtime data.

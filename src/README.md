@@ -30,3 +30,7 @@ Physics, dropped-item motion, raycasts, camera collision, and mesh capture use
 `world::TerrainRead`; structure selection additionally uses `SceneRead`. These
 contracts expose observations without generation, persistence, or authoritative
 mutation. Resident storage and derived light are owned by `world/terrain`.
+
+`chunk.rs` owns uniform-or-dense plane representation and exact light-field
+replacement, including known uniform RGB without an expanded temporary array.
+These operations leave mesh/save flags to the terrain coordinator.

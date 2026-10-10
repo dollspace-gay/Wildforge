@@ -20,7 +20,12 @@ impl Renderer {
             adapter_name,
             adapter_backend,
             adapter_hardware,
+            gpu_profiling,
         } = super::device::DeviceState::new(window).await;
+        let profiling = gpu_profiling.then(|| {
+            super::profiling::GpuProfiler::new(&device, &queue)
+                .unwrap_or_else(|error| panic!("GPU profiling initialization failed: {error}"))
+        });
         let depth = create_depth(&device, &config);
 
         let uniforms::UniformBindings {
@@ -133,6 +138,8 @@ impl Renderer {
             adapter_name,
             adapter_backend,
             adapter_hardware,
+            profiling,
+            render_frame_id: 0,
             surface,
             device,
             queue,

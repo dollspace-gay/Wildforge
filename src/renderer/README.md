@@ -38,3 +38,14 @@ geometry upload, sun/world/hand/composite encoding, diagnostic replay, and captu
 readback. `point_shadows.rs` owns cube-cache state with its GPU resources.
 `setup/` returns typed construction results and shares raster descriptor rules
 between ordinary and capture pipelines while preserving their explicit recipes.
+
+Set `WILDFORGE_FRAME_PROFILE=<new-jsonl-path>` with `WILDFORGE_GPU_PROFILE=1`
+to collect completed hardware-GPU frame timestamps. Unset or `0` disables GPU
+profiling; other values fail initialization. Profiling requires
+`TIMESTAMP_QUERY` and `TIMESTAMP_QUERY_INSIDE_ENCODERS` on the selected adapter.
+`profiling.rs` uses a four-slot asynchronous readback ring and nonblocking polls;
+normal play allocates no timestamp queries or readback buffers. The frame adapter
+collects delayed intervals by renderer frame ID, and coverage statistics expose
+ring-full skips. Readback/poll failures remain errors; CPU times never replace
+GPU times. Screenshot intervals are marked separately and excluded from ordinary
+performance comparisons.

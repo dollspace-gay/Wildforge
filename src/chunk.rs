@@ -272,6 +272,26 @@ impl Chunk {
         self.light_sky = Plane::from_slice(sky);
     }
 
+    /// Compare and replace a full field with known uniform RGB, without
+    /// constructing that RGB array. Returns whether either light plane changed;
+    /// mesh/save flags stay with the caller, and equal planes stay untouched.
+    pub(crate) fn replace_uniform_block_light(&mut self, block: [u8; 3], sky: &[u8]) -> bool {
+        let block_matches = match &self.light_block {
+            Plane::Uniform(value) => *value == block,
+            Plane::Dense(values) => {
+                values.len() == CHUNK_CELLS && values.iter().all(|value| *value == block)
+            }
+        };
+        // Keep the same RGB-first short circuit and commit order as the
+        // light_matches/set_light pair for a full uniform RGB array.
+        if block_matches && self.light_sky.matches(sky) {
+            return false;
+        }
+        self.light_block = Plane::uniform(block);
+        self.light_sky = Plane::from_slice(sky);
+        true
+    }
+
     /// Derived light runs for the multiplayer chunk codec. Disk chunks omit
     /// these planes and rebuild them; a live host already owns the exact
     /// settled field, so streaming it avoids repeating an expensive cascade

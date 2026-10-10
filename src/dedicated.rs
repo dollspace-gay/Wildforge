@@ -90,15 +90,7 @@ pub(super) fn run_headless_server(world_name: &str) {
         let mut evs = Vec::new();
         sim.advance(dt, &players, &mut evs);
         for ev in evs {
-            match ev {
-                server::SimEvent::PlayerHit { who, dmg, from, .. } => {
-                    // `who` is the guest's own net id; no positional lookup.
-                    sess.hurt_guest(&mut sim, who, dmg, from);
-                }
-                server::SimEvent::Working(_, cue) => sess.broadcast_working_cue(cue),
-                server::SimEvent::Alchemy(cue) => sess.broadcast_alchemy_cue(cue),
-                _ => {}
-            }
+            dispatch_sim_event(&mut sess, &mut sim, ev);
         }
         // Chunk residency. Nothing here ever released a chunk before: the
         // eviction rule lived in the client's streaming path, so the windowed
@@ -139,6 +131,24 @@ pub(super) fn run_headless_server(world_name: &str) {
             eprintln!("{}", save_log_line(&report));
         }
         std::thread::sleep(std::time::Duration::from_millis(15));
+    }
+}
+
+/// Deliver simulation consequences through the dedicated runtime's host adapter.
+pub(crate) fn dispatch_sim_event(
+    session: &mut mp::HostSession,
+    sim: &mut server::Server,
+    event: server::SimEvent,
+) {
+    match event {
+        server::SimEvent::PlayerHit { who, dmg, from, .. } => {
+            // `who` is the guest's own net id; no positional lookup.
+            session.hurt_guest(sim, who, dmg, from);
+        }
+        server::SimEvent::Working(_, cue) => session.broadcast_working_cue(cue),
+        server::SimEvent::Alchemy(cue) => session.broadcast_alchemy_cue(cue),
+        server::SimEvent::Dross(cue) => session.broadcast_dross_cue(&sim.world, cue),
+        _ => {}
     }
 }
 

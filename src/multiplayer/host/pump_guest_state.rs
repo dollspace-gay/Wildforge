@@ -17,6 +17,7 @@ impl HostSession {
                 g.edits = 0;
             }
             g.net_age += dt;
+            g.movement_budget.advance(dt);
             g.action_cooldown = (g.action_cooldown - dt).max(0.0);
             g.since_damage += dt;
             g.chat_window += dt;

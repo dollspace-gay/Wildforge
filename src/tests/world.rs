@@ -135,6 +135,7 @@ mod growth;
 mod ire_gains_decay_tiers_and_persistence;
 mod lava;
 mod lighting;
+mod lighting_boundaries;
 mod performance;
 mod ponds;
 mod regional_accounting;

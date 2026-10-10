@@ -92,6 +92,10 @@ pub struct Guest {
     pub cursor: Option<ItemStack>,
     pub craft_grid: [Option<ItemStack>; 9],
     has_moved: bool,
+    /// Simulation-time travel credit, independent of presentation interpolation.
+    movement_budget: requests_movement::MovementBudget,
+    /// Content/gear movement ceiling; rebuilt only when those inputs change.
+    movement_limits: Option<requests_movement::MovementLimits>,
     sprinting: bool,
     action_cooldown: f32,
     /// Host-owned proof that a lens or apparatus physically settled.
@@ -172,6 +176,9 @@ impl Guest {
         self.net_age = 0.3;
         self.net_interval = 0.3;
         self.has_moved = true;
+        self.movement_budget = requests_movement::MovementBudget::default();
+        self.movement_budget.advance(0.3);
+        self.movement_limits = None;
     }
 
     /// Position/yaw to draw this guest at (the sim uses the latest).

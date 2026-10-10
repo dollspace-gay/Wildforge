@@ -17,6 +17,7 @@ impl Game {
             sh_ambient,
             local_weather,
         } = self.prepare_frame_lighting(dt);
+        self.frame_profile.mark("lighting_preparation");
         let SelectionFrame {
             playing,
             outline,
@@ -40,6 +41,7 @@ impl Game {
         let frame_vp = self.camera.view_proj();
         let frame_cam = self.camera.pos;
         self.camera.pos = saved_cam;
+        self.frame_profile.mark("scene_and_ui_preparation");
 
         // Voxel occupancy grid for DDA point-light shadows. The origin snaps to
         // OCC_STEP and keeps the camera near the cube's centre; we only rebuild
@@ -53,6 +55,8 @@ impl Game {
         let occ_grid: Option<Vec<u8>> = None;
 
         let render_t0 = std::time::Instant::now();
+        self.frame_profile
+            .mark_capture(self.renderer.pending_screenshot.is_some());
         match self.renderer.render(FrameInput {
             view_proj: frame_vp,
             cam_pos: frame_cam,
@@ -96,7 +100,9 @@ impl Game {
             }
             Err(e) => eprintln!("render error: {e:?}"),
         }
+        self.frame_profile.mark("renderer_submission_and_present");
 
         self.finish_rendered_frame(fog, now);
+        self.frame_profile.mark("capture_and_frame_bookkeeping");
     }
 }

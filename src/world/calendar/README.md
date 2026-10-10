@@ -6,6 +6,9 @@ CalendarState and WeatherState own time and live weather. The clock-access and
 observation adapters expose their existing interfaces. Weather admission/stepping
 and loaded-water spring/shore reconciliation are separate coordinators.
 
+Shore selection uses the hydrology owner's ephemeral basin query, then releases
+that immutable borrow before applying the existing ordered water/salt transfers.
+
 Seasons/Long Winter, regional and global ire, industrial pressure, reciprocity,
 offerings/depots, lightning and renewable growth keep their separate rules and
 original call order. Calendar queries do not advance simulation. Seasonal and

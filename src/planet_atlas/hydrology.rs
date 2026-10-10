@@ -7,7 +7,7 @@
 
 use super::{
     AtlasError, AtlasGrid, CancellationToken, ClimateCell, GeometryCell, HydrologyCell,
-    TectonicCell, TerrainCell,
+    PlanetAtlas, TectonicCell, TerrainCell,
 };
 use crate::chunk::SEA_LEVEL;
 use crate::planet::FACE_BLOCKS;
@@ -18,7 +18,9 @@ pub use records::{
     LakeClass, LakeRecord, OceanBasinRecord, RiverRecord, StoragePoint, WaterBodyKind,
     WatershedRecord,
 };
+mod basin_query;
 mod basin_shape;
+pub(crate) use basin_query::HydrologyBasinQuery;
 mod channels;
 mod erosion;
 mod flood;
@@ -44,6 +46,13 @@ use lakes::{LakeInput, solve_lakes};
 use oceans::{label_oceans, ocean_records};
 use runoff::local_runoff;
 use watersheds::{WatershedInput, assign_watersheds};
+
+impl PlanetAtlas {
+    /// Prepare exact basin-only queries for one immutable selection phase.
+    pub(crate) fn hydrology_basin_query(&self) -> HydrologyBasinQuery<'_> {
+        HydrologyBasinQuery::new(self)
+    }
+}
 
 pub const HYDROLOGY_SCHEMA_VERSION: u32 = 1;
 const MAX_EROSION_ITERATIONS: u8 = 5;

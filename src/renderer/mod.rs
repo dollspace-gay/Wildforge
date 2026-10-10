@@ -14,10 +14,12 @@ mod device;
 mod frame;
 mod point_shadows;
 mod post;
+mod profiling;
 mod resources;
 mod setup;
 
 use post::{PostProcess, create_depth};
+pub(crate) use profiling::{GpuFrameTiming, GpuProfileError, GpuProfileStats};
 
 #[repr(C)]
 #[derive(Clone, Copy, Pod, Zeroable)]
@@ -377,6 +379,8 @@ pub struct Renderer {
     pub adapter_name: String,
     pub adapter_backend: String,
     pub adapter_hardware: bool,
+    profiling: Option<profiling::GpuProfiler>,
+    render_frame_id: u64,
     /// First atlas slot of the interior-layer run, from the active atlas.
     pub atlas_interior_base: u16,
     /// Per-layer settings, two vec4 each: (depth, op_min, op_max, dim) then

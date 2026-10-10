@@ -97,6 +97,18 @@ selection use typed owned results; entity, station, weather, overlay, and hand
 geometry are assembled into explicit batches before FrameInput submission.
 Capture milestones and renderer error handling remain after the same submission.
 
+`profiling.rs` records optional per-frame CPU stages and completed GPU samples.
+Set `WILDFORGE_FRAME_PROFILE` to a new JSONL path and
+`WILDFORGE_GPU_PROFILE=1` together for a hardware performance run. The CPU total
+covers the actual update, including lighting, scene/UI preparation, streaming,
+submission/presentation waits and capture bookkeeping. Nested room-light time
+is included in lighting time, so do not sum both. GPU timestamps cover completed
+render commands; uploads before encoding, presentation waits and CPU work are
+separate. Capture frames and the following frame interval must be excluded from
+steady-state comparisons. Rows retain delayed GPU frame IDs, readback sampling
+coverage, queue sizes, player position, settings, adapter and room-light values.
+The historical sim/draw averages retain their existing narrower meaning.
+
 `ui.rs` owns the screen batch and ordered composition; `ui/` groups menu,
 station/storage, journal/loadout, HUD, and world-label painters. Shared inventory
 rendering remains in inventory_ui and inventory_panel. The batch is published

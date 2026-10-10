@@ -140,11 +140,14 @@ impl Game {
     }
 
     pub(super) fn update(&mut self) {
+        self.frame_profile.begin();
         let (now, dt, paused) = self.begin_frame();
 
         self.advance_feedback(dt, paused);
+        self.frame_profile.mark("feedback");
 
         self.advance_session_authority(dt, paused);
+        self.frame_profile.mark("authority_and_streaming");
 
         // Native qualification runs may warm for hundreds of authoritative
         // ticks while a view-12 horizon fills. The one-shot setup override in
@@ -165,10 +168,42 @@ impl Game {
         }
 
         self.refresh_content_and_toasts(dt);
+        self.frame_profile.mark("content_refresh");
 
         self.advance_player(dt, paused);
+        self.frame_profile.mark("player_and_actions");
 
         self.build_and_render_frame(dt, now);
+        if self.frame_profile.enabled() {
+            let gpu = match self.renderer.take_gpu_timings() {
+                Ok(samples) => serde_json::json!({"samples": samples}),
+                Err(error) => {
+                    eprintln!("frame profiling: GPU measurement failed: {error}");
+                    serde_json::json!({"error": error.to_string()})
+                }
+            };
+            self.frame_profile.finish(
+                serde_json::json!({
+                    "frame": self.total_frames,
+                    "renderer_frame_id": self.renderer.profile_frame_id(),
+                    "gpu_profile": self.renderer.gpu_profile_stats(),
+                    "in_world": self.in_world,
+                    "screen": format!("{:?}", self.ui_state.screen),
+                    "player": self.player.pos,
+                    "resident_chunks": self.runtime.view().chunk_count(),
+                    "uploaded_chunks": self.renderer.chunk_count(),
+                    "pending_generation": self.gen_pool.as_ref().map_or(0, |pool| pool.pending_count()),
+                    "pending_meshes": self.mesh_pool.as_ref().map_or(0, |pool| pool.pending_count()),
+                    "room_intensity": self.room_light.intensity,
+                    "room_sh": self.room_light.sh().map(|value| value.to_array()),
+                    "adapter": self.renderer.adapter_name,
+                    "view_distance": self.config.view_dist,
+                    "size": [self.renderer.config.width, self.renderer.config.height],
+                    "bloom": self.config.bloom,
+                }),
+                gpu,
+            );
+        }
     }
 
     // ---------- UI layout ----------

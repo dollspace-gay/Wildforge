@@ -174,6 +174,8 @@ impl HostSession {
                 cursor: runtime.cursor,
                 craft_grid: [None; 9],
                 has_moved: false,
+                movement_budget: super::requests_movement::MovementBudget::default(),
+                movement_limits: None,
                 sprinting: false,
                 action_cooldown: 0.0,
                 pending_discovery: None,

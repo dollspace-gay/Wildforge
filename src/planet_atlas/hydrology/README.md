@@ -16,6 +16,11 @@ classifications and reservoir records. `validation.rs` compares sparse records
 with dense routing and water budgets. `sampling.rs` serves read-only generation
 queries. `placers.rs` transfers finite deposit quotas along established drainage.
 
+`basin_query.rs` supplies transaction-scoped basin-only reads. It caches only
+atlas-cell classifications proven to match full hydrology sampling everywhere
+in the cell; mixed river/basin identities retain the original pointwise sampler.
+The cache borrows immutable atlas state and adds no persisted data.
+
 Read [AGENTS.md](AGENTS.md). Final validation covers pinned atlas output, seam
 routing, acyclic lake outlets, lake/ocean budgets, placer conservation, and
 save/codec compatibility, followed by the applicable full Rust/runtime gates.

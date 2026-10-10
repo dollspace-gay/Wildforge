@@ -52,3 +52,13 @@ have dedicated adapters. `discovery_context.rs`, `working_context.rs`,
 `inventory_runtime.rs`, and `observation_packet.rs` take explicit world/guest
 inputs for physical reach, signed holders, active workings, inventory views, and
 bounded inspection. Public HostSession/Guest entry points and protocol stay stable.
+
+Movement owns simulation-time horizontal, rise, and fall distance credit in
+`requests_movement.rs`, separately from the presentation interpolation clock.
+Accepted travel spends credit; packet bursts and stationary stance updates cannot
+refresh it. Creative flight and terminal falls share the actual physics limits.
+Content/gear ceilings are cached by registry lifetime, mode, and worn equipment.
+Skill and component allocations are absent from the current guest protocol, so
+their enabled content supplies a conservative ceiling; this is not exact skill
+authorization. Real QUIC movement scenarios exercise delayed actual physics,
+burst rejection, stance updates, swimming, boosts, and cache replacement.
