@@ -1,0 +1,8 @@
+{
+  "base_revision": "6383f2c67b54732f549914d5421fcb30eed1e274",
+  "base_is_published_ancestor": true,
+  "snapshot_revision": "7913ac49e15e65cc4dd2dad793c96f70dbf26916",
+  "patch_sha256": "5f79ed454350f5495da048ec8b6ceb214d5bb4c7742bd783ec86401a8671d5ac",
+  "patch_bytes": 111913,
+  "scope": "Complete baseline reconstruction from the published original source, including initial instrumentation/package isolation and subsequent render-work/warmup migration. Does not include candidate gameplay/security/performance fixes."
+}

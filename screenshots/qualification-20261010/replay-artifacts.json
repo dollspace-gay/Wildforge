@@ -1,0 +1,23 @@
+{
+  "baseline-replay.patch.gz": {
+    "byte_exact_roundtrip": true,
+    "compressed_sha256": "17b93bd61f0f340bdabf6e0e053cc42e9112c2d3979ccea52cda9fd27bd7b10f",
+    "encoding": "gzip",
+    "raw_bytes": 111913,
+    "raw_sha256": "5f79ed454350f5495da048ec8b6ceb214d5bb4c7742bd783ec86401a8671d5ac"
+  },
+  "shader-guard-hardware-cargo.log.gz": {
+    "byte_exact_roundtrip": true,
+    "compressed_sha256": "af566e606abe92713621ddb44a379cd99fdfa3b6da1fd37eabeb830b0309c17b",
+    "encoding": "gzip",
+    "raw_bytes": 895,
+    "raw_sha256": "20c0f87fcc29004b11fb56fab436d82585ae9af1f4be59925bb5a63b79aba2f2"
+  },
+  "shader-guard-legacy-negative.log.gz": {
+    "byte_exact_roundtrip": true,
+    "compressed_sha256": "ce866c77181aae1866499b91d164e45b0771989ad992adb5e1347ce89371492a",
+    "encoding": "gzip",
+    "raw_bytes": 786,
+    "raw_sha256": "e596d6ec5b8c93bcfe430f0afa39e8af9e27cddb5bd8a974d96f5ce35791c879"
+  }
+}

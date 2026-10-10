@@ -1,0 +1,313 @@
+{
+  "commit": "9c4d917dc344a47f2f6324352bedea8eb7d388f3",
+  "review_method": "Inspected all 56 fresh ordered native F2 frames in seven labeled sheets and start/near/end frames at native resolution for both walks; verified native WASD/F2 input traces. Samples are about 1.1 seconds apart and do not establish behavior between samples.",
+  "reviewed_by": "Codex",
+  "walks": [
+    {
+      "frames": [
+        {
+          "file": "motion/strata-site/1/screenshot-1791644210.ppm",
+          "phase": "static-start",
+          "sha256": "3b995b6f4f2643c1bb2266fd301e2dc401806e6fce691a6d59e23d2122f01eed"
+        },
+        {
+          "file": "motion/strata-site/1/screenshot-1791644211.ppm",
+          "phase": "static-start",
+          "sha256": "c9524ab42beecc2c5b86bda9007a257058d22c0552ace7f820d92127a3f807f5"
+        },
+        {
+          "file": "motion/strata-site/1/screenshot-1791644213.ppm",
+          "phase": "static-start",
+          "sha256": "c9524ab42beecc2c5b86bda9007a257058d22c0552ace7f820d92127a3f807f5"
+        },
+        {
+          "file": "motion/strata-site/1/screenshot-1791644214.ppm",
+          "phase": "static-start",
+          "sha256": "c9524ab42beecc2c5b86bda9007a257058d22c0552ace7f820d92127a3f807f5"
+        },
+        {
+          "file": "motion/strata-site/1/screenshot-1791644215.ppm",
+          "phase": "forward",
+          "sha256": "e196e8dde09c8f11e0a04a754c462a2da464074108ec53ca6176ad31c3d3da32"
+        },
+        {
+          "file": "motion/strata-site/1/screenshot-1791644217.ppm",
+          "phase": "forward",
+          "sha256": "ef003c7db2fa58bb8e7e96a7ec0a0ff063046e71ce4283081e8a76d2e18b0ff7"
+        },
+        {
+          "file": "motion/strata-site/1/screenshot-1791644218.ppm",
+          "phase": "forward",
+          "sha256": "ea021e43c40682aeac4aa9c55eff9a19e57bbe14e88f812aae8b9961c577f6f1"
+        },
+        {
+          "file": "motion/strata-site/1/screenshot-1791644220.ppm",
+          "phase": "forward",
+          "sha256": "8fad8b7fd488026ed67662c429c038ed9189e06c40bf791be9594cb7cd3c39c3"
+        },
+        {
+          "file": "motion/strata-site/1/screenshot-1791644221.ppm",
+          "phase": "forward",
+          "sha256": "b6930824756041b964c391b1803b72ceb67ce1c906f99d09d6f488c0605f661c"
+        },
+        {
+          "file": "motion/strata-site/1/screenshot-1791644222.ppm",
+          "phase": "forward",
+          "sha256": "a2c27aba1b0ea3e1978647f00269c71fc370e8bf9e554f6cec755df090215ce5"
+        },
+        {
+          "file": "motion/strata-site/1/screenshot-1791644224.ppm",
+          "phase": "forward",
+          "sha256": "3f663a1f44528ad82ece1453d4289be19c011bf166d6cfd611c7ce8840fddb57"
+        },
+        {
+          "file": "motion/strata-site/1/screenshot-1791644225.ppm",
+          "phase": "forward",
+          "sha256": "6f61b394d75ec2a86455df522f5bceb0189201885872b748a547a3934f5bcea3"
+        },
+        {
+          "file": "motion/strata-site/1/screenshot-1791644226.ppm",
+          "phase": "static-near",
+          "sha256": "702f10b18f604c34c7ccb755eb56e9e11b5cd66c6e781e0c4c5c1ea471dc219b"
+        },
+        {
+          "file": "motion/strata-site/1/screenshot-1791644228.ppm",
+          "phase": "static-near",
+          "sha256": "70a61ae77a8d8148e910e7ff635ea1a3c20b361f359e9ce6ede9f8095dab7d28"
+        },
+        {
+          "file": "motion/strata-site/1/screenshot-1791644229.ppm",
+          "phase": "static-near",
+          "sha256": "c0c1372ed291b01bda54a5ef47ef33003f64fe4036003fce12c9644f55202ebe"
+        },
+        {
+          "file": "motion/strata-site/1/screenshot-1791644230.ppm",
+          "phase": "static-near",
+          "sha256": "84ef7ed50b9dad44e8f2c0bfca4d384aec263fbd6eba52dcc1f98ce003535086"
+        },
+        {
+          "file": "motion/strata-site/1/screenshot-1791644232.ppm",
+          "phase": "backward",
+          "sha256": "4bfe22d39cf841e3ec205ee4a55b495a6b88ab7f683825834acd0f6e4a71d0e8"
+        },
+        {
+          "file": "motion/strata-site/1/screenshot-1791644233.ppm",
+          "phase": "backward",
+          "sha256": "4336ffc0727c207efe8235516f17712e6e93d86ad229d6be80bf54ed6db45133"
+        },
+        {
+          "file": "motion/strata-site/1/screenshot-1791644234.ppm",
+          "phase": "backward",
+          "sha256": "6d33c2755278f70a727cd01a6c15b7434108229a81a35c64094dc735f9230b05"
+        },
+        {
+          "file": "motion/strata-site/1/screenshot-1791644236.ppm",
+          "phase": "backward",
+          "sha256": "9a0549104cab653b42a48a5ebd7e0907b458e3219ebe36466d58fe827cf5678c"
+        },
+        {
+          "file": "motion/strata-site/1/screenshot-1791644237.ppm",
+          "phase": "backward",
+          "sha256": "0dc55f8407c8d8418b93a98e2e5aa5d18f868902d7f29c3b5db6a2925f3154fa"
+        },
+        {
+          "file": "motion/strata-site/1/screenshot-1791644238.ppm",
+          "phase": "backward",
+          "sha256": "49d09bde09555408e2228b7c52e6828dd68d3550552bad1a140d925684ff8b54"
+        },
+        {
+          "file": "motion/strata-site/1/screenshot-1791644240.ppm",
+          "phase": "backward",
+          "sha256": "d8165f1306f748666d75d117fbc95731d38e63c63f0e2c09b67c213afb5560e0"
+        },
+        {
+          "file": "motion/strata-site/1/screenshot-1791644241.ppm",
+          "phase": "backward",
+          "sha256": "64173180360cfd3574dbc42ab99cec904e3d209114da6744f1fcd97a623c7fe7"
+        },
+        {
+          "file": "motion/strata-site/1/screenshot-1791644243.ppm",
+          "phase": "static-end",
+          "sha256": "e318f7cbd98d2ab5e3ece1e7e7df5532159dc027a5becdaff51904741d783a4f"
+        },
+        {
+          "file": "motion/strata-site/1/screenshot-1791644244.ppm",
+          "phase": "static-end",
+          "sha256": "4051b6918975fb285c04377b4661439a7e093c745e07f4b875584f3bbd3b206e"
+        },
+        {
+          "file": "motion/strata-site/1/screenshot-1791644245.ppm",
+          "phase": "static-end",
+          "sha256": "13392d608135ead4eb74a384f6f62c45af849cc2dd0e1d119bc5eb9b93e904eb"
+        },
+        {
+          "file": "motion/strata-site/1/screenshot-1791644246.ppm",
+          "phase": "static-end",
+          "sha256": "d224aab74162d1044c1c19b30f2c62bce8ac2d9e3ad56d04c3c4e5961ffc43bc"
+        }
+      ],
+      "id": "strata-site",
+      "observations": {
+        "awkward_reveal_observed": false,
+        "chunk_wall_observed": false,
+        "notes": "Layered rock and stepped shore remain continuous during approach and retreat; static holds maintain steady exposure. Natural water animation changes, with no terrain shimmer, missing chunk wall or abrupt reveal visible in the sampled sequence.",
+        "shimmer_observed": false
+      },
+      "weather": "clear",
+      "world": "closeout-motion-strata"
+    },
+    {
+      "frames": [
+        {
+          "file": "motion/geode-approach/1/screenshot-1791644285.ppm",
+          "phase": "static-start",
+          "sha256": "9f6c22cf3f2f6727e889fd1545f84b278df52fa85106fb64f67664cfadbf12d8"
+        },
+        {
+          "file": "motion/geode-approach/1/screenshot-1791644286.ppm",
+          "phase": "static-start",
+          "sha256": "a44ca52016b4485f64f703ba52ab69276236e68e2b9bde809a415c1ea21d370e"
+        },
+        {
+          "file": "motion/geode-approach/1/screenshot-1791644288.ppm",
+          "phase": "static-start",
+          "sha256": "270148c78da4aba7ae37b5d7a2ad68d2b6c7a50508231c15efe9e761f74efd61"
+        },
+        {
+          "file": "motion/geode-approach/1/screenshot-1791644289.ppm",
+          "phase": "static-start",
+          "sha256": "cd5980c20acd0ccc53b117404be416c6c303974573fda3816375665b2152913b"
+        },
+        {
+          "file": "motion/geode-approach/1/screenshot-1791644290.ppm",
+          "phase": "forward",
+          "sha256": "620cdd192f92a8b53b1c7a595e5df252f775785bb8ae0d723623559b144d554c"
+        },
+        {
+          "file": "motion/geode-approach/1/screenshot-1791644292.ppm",
+          "phase": "forward",
+          "sha256": "063c73e5994e41c3763cb4387ae8c4349d0118a0293fa39ff30f9992da880fe4"
+        },
+        {
+          "file": "motion/geode-approach/1/screenshot-1791644293.ppm",
+          "phase": "forward",
+          "sha256": "b3221e65580320c38c1ad020aba09b1559e1d7f394e3ad3dba6e444c581dabc3"
+        },
+        {
+          "file": "motion/geode-approach/1/screenshot-1791644294.ppm",
+          "phase": "forward",
+          "sha256": "2c79ecc61869658199bad4ef2127b9829ca3c99d75beb4c4cfbd9518994e25b9"
+        },
+        {
+          "file": "motion/geode-approach/1/screenshot-1791644296.ppm",
+          "phase": "forward",
+          "sha256": "c52f53dca2210651ab6f38745cdf1fe1a79e14b99c1e02d64c28253d20d15a15"
+        },
+        {
+          "file": "motion/geode-approach/1/screenshot-1791644297.ppm",
+          "phase": "forward",
+          "sha256": "bced86fc29460c2423f31c0d69092a346c616e5fc9f2bdc30b6c9477205c013b"
+        },
+        {
+          "file": "motion/geode-approach/1/screenshot-1791644299.ppm",
+          "phase": "forward",
+          "sha256": "34d3ba6efe868f37a2d29743a929030e8b37efc0e8f95d17d62eefcaaaf03f9d"
+        },
+        {
+          "file": "motion/geode-approach/1/screenshot-1791644300.ppm",
+          "phase": "forward",
+          "sha256": "1f9f9393f8e4b58b014502a8065275ac28d8d096b004d714f771db2ccaeedccc"
+        },
+        {
+          "file": "motion/geode-approach/1/screenshot-1791644301.ppm",
+          "phase": "static-near",
+          "sha256": "380168451778da77dcb8dbbae58f565ac73137260bc229d5aebf557874563155"
+        },
+        {
+          "file": "motion/geode-approach/1/screenshot-1791644303.ppm",
+          "phase": "static-near",
+          "sha256": "4f582a772a0ba8ba3ef142941879afb5e7cdeae22fee0dcd984093898f6d4d21"
+        },
+        {
+          "file": "motion/geode-approach/1/screenshot-1791644304.ppm",
+          "phase": "static-near",
+          "sha256": "08d817a23177458d65966d1dfeaaa4fba9a7d993c9e8609bc2d242bc7796535c"
+        },
+        {
+          "file": "motion/geode-approach/1/screenshot-1791644305.ppm",
+          "phase": "static-near",
+          "sha256": "8e258a01cc16a254b0dab93a780b2335369409b69d7a39ee0e53c8ad897874ec"
+        },
+        {
+          "file": "motion/geode-approach/1/screenshot-1791644307.ppm",
+          "phase": "backward",
+          "sha256": "9a3af356d6240e4ab6072d08b095e90a6b70a1bff265738d516a3ce3d2772de2"
+        },
+        {
+          "file": "motion/geode-approach/1/screenshot-1791644308.ppm",
+          "phase": "backward",
+          "sha256": "d9123ce643b4064555c1ec0dea108e85fc432bf0b964c5930808655362235d9d"
+        },
+        {
+          "file": "motion/geode-approach/1/screenshot-1791644309.ppm",
+          "phase": "backward",
+          "sha256": "16169bf77f5762ee7e69e85f07ed415626576722feb9860da7708e9f928d9e19"
+        },
+        {
+          "file": "motion/geode-approach/1/screenshot-1791644311.ppm",
+          "phase": "backward",
+          "sha256": "c3b6a0f24101fd8534722139177ee7ed7d0710da2e49866c9623c7b1a66e06c0"
+        },
+        {
+          "file": "motion/geode-approach/1/screenshot-1791644312.ppm",
+          "phase": "backward",
+          "sha256": "076dd6239cfe4a315107ff8afcaf885ac94ef4f6123daa90b010c431beeb2939"
+        },
+        {
+          "file": "motion/geode-approach/1/screenshot-1791644313.ppm",
+          "phase": "backward",
+          "sha256": "8b0444818a7c7752fec9b30c22df0ac7ecc3c6493a549bd88dc9f9d76034b3e4"
+        },
+        {
+          "file": "motion/geode-approach/1/screenshot-1791644315.ppm",
+          "phase": "backward",
+          "sha256": "8211be8021aa520fc0909daf1c6bc7757bfd97e17fb436ce4a1504730398e81c"
+        },
+        {
+          "file": "motion/geode-approach/1/screenshot-1791644316.ppm",
+          "phase": "backward",
+          "sha256": "97b6cc235792f7a31ad79f382f6e635a06a1178fd6ab7532293c55afe7f4ada7"
+        },
+        {
+          "file": "motion/geode-approach/1/screenshot-1791644317.ppm",
+          "phase": "static-end",
+          "sha256": "5cc1442ccd69023eb997f7537885c46c96554c490c32a35359b5f5b1f32c590d"
+        },
+        {
+          "file": "motion/geode-approach/1/screenshot-1791644319.ppm",
+          "phase": "static-end",
+          "sha256": "14e2de5a939a5d2ca30a5276ac3bb7278aaf2640ca3435abc40c48b907a7e331"
+        },
+        {
+          "file": "motion/geode-approach/1/screenshot-1791644320.ppm",
+          "phase": "static-end",
+          "sha256": "a717c0aeb23f3e76162ae7c9c05ae7da025771a17e208f491dbac5054c289552"
+        },
+        {
+          "file": "motion/geode-approach/1/screenshot-1791644321.ppm",
+          "phase": "static-end",
+          "sha256": "a9bf4e977bfe961ceadb7798bfe6dbf56b72de7b5948cf197671ecfd94bff82a"
+        }
+      ],
+      "id": "geode-approach",
+      "observations": {
+        "awkward_reveal_observed": false,
+        "chunk_wall_observed": false,
+        "notes": "Approach/retreat keep continuous gray shell walls, purple lining and dark core, with preserved lighting. Static holds show no sampled shimmer, missing chunk wall or abrupt reveal. This is a short native walkthrough rather than complete cave exploration.",
+        "shimmer_observed": false
+      },
+      "weather": "clear",
+      "world": "closeout-motion-geode"
+    }
+  ]
+}

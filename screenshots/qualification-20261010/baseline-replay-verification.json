@@ -1,0 +1,9 @@
+{
+  "base_revision": "6383f2c67b54732f549914d5421fcb30eed1e274",
+  "snapshot_revision": "7913ac49e15e65cc4dd2dad793c96f70dbf26916",
+  "patch_sha256": "5f79ed454350f5495da048ec8b6ceb214d5bb4c7742bd783ec86401a8671d5ac",
+  "checked_file_count": 2793,
+  "all_tracked_files_match": true,
+  "source_sha256": "e1cf8f312e99b0b1c843c351c89d78d2de1287045353dc3d5f573f37e9322081",
+  "scope": "Byte-identical tracked source reconstruction; not a reconstruction of historical Git metadata. A rebuilt replay requires its own actual clean commit identity."
+}

@@ -1,0 +1,613 @@
+{
+  "all_final_commands_passed": true,
+  "checks": {
+    "advisory-shadow-final": {
+      "command": [
+        "cargo",
+        "deny",
+        "check",
+        "advisories"
+      ],
+      "cwd": "/home/doll/Wildforge",
+      "environment": {
+        "CARGO_BUILD_JOBS": "1",
+        "GITHUB_SHA": "9c4d917dc344a47f2f6324352bedea8eb7d388f3",
+        "TMPDIR": "/home/doll/Wildforge/target/lag-control-20261009/render-work-verification/tmp-advisory-shadow-final"
+      },
+      "exit_code": 0,
+      "log": "/home/doll/Wildforge/target/lag-control-20261009/render-work-verification/advisory-shadow-final.log",
+      "log_sha256": "799fc05e6513bf365cc7565ea51cc5cb9ca6690b1cd1fe7777339be83437131b",
+      "result_lines": [],
+      "revision": "9c4d917dc344a47f2f6324352bedea8eb7d388f3",
+      "source_sha256_after": "3346acf8077244ad774b0bc79c47da57d7e51ca97ba87dbb81efa154633e26bc",
+      "source_sha256_before": "3346acf8077244ad774b0bc79c47da57d7e51ca97ba87dbb81efa154633e26bc",
+      "source_unchanged": true,
+      "wall_seconds": 0.7977722570067272
+    },
+    "agent-tests-shadow-final": {
+      "command": [
+        "cargo",
+        "test",
+        "--locked",
+        "tests::agent::",
+        "--",
+        "--test-threads=1"
+      ],
+      "cwd": "/home/doll/Wildforge",
+      "environment": {
+        "CARGO_BUILD_JOBS": "1",
+        "GITHUB_SHA": "9c4d917dc344a47f2f6324352bedea8eb7d388f3",
+        "TMPDIR": "/home/doll/Wildforge/target/lag-control-20261009/render-work-verification/tmp-agent-tests-shadow-final"
+      },
+      "exit_code": 0,
+      "log": "/home/doll/Wildforge/target/lag-control-20261009/render-work-verification/agent-tests-shadow-final.log",
+      "log_sha256": "0dc7428c9689668fe9d424cc56cb833ae816253ee8439e8dee14782d7aa2613a",
+      "result_lines": [
+        "test result: ok. 20 passed; 0 failed; 0 ignored; 0 measured; 1246 filtered out; finished in 33.94s",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s"
+      ],
+      "revision": "9c4d917dc344a47f2f6324352bedea8eb7d388f3",
+      "source_sha256_after": "3346acf8077244ad774b0bc79c47da57d7e51ca97ba87dbb81efa154633e26bc",
+      "source_sha256_before": "3346acf8077244ad774b0bc79c47da57d7e51ca97ba87dbb81efa154633e26bc",
+      "source_unchanged": true,
+      "wall_seconds": 34.538754969020374
+    },
+    "architecture-shadow-final": {
+      "command": [
+        "python3",
+        "tools/check_architecture.py",
+        "--strict"
+      ],
+      "cwd": "/home/doll/Wildforge",
+      "environment": {
+        "CARGO_BUILD_JOBS": "1",
+        "GITHUB_SHA": "9c4d917dc344a47f2f6324352bedea8eb7d388f3",
+        "TMPDIR": "/home/doll/Wildforge/target/lag-control-20261009/render-work-verification/tmp-architecture-shadow-final"
+      },
+      "exit_code": 0,
+      "log": "/home/doll/Wildforge/target/lag-control-20261009/render-work-verification/architecture-shadow-final.log",
+      "log_sha256": "697d132629f8a6204d3df8a11e5270a922bbbefef5e4af11ee00787e2909f73d",
+      "result_lines": [],
+      "revision": "9c4d917dc344a47f2f6324352bedea8eb7d388f3",
+      "source_sha256_after": "3346acf8077244ad774b0bc79c47da57d7e51ca97ba87dbb81efa154633e26bc",
+      "source_sha256_before": "3346acf8077244ad774b0bc79c47da57d7e51ca97ba87dbb81efa154633e26bc",
+      "source_unchanged": true,
+      "wall_seconds": 1.7281460090307519
+    },
+    "candidate-shadow-final-release": {
+      "binary": "/home/doll/Wildforge/target/lag-control-20261009/frozen-bin/candidate-shadow-final-render-work",
+      "binary_sha256": "689826b1e46291d0721df34da366e768b3e1561088a8fc6322aecffe6f309967",
+      "command": [
+        "cargo",
+        "build",
+        "--locked",
+        "--release",
+        "--jobs",
+        "1",
+        "--target-dir",
+        "/home/doll/Wildforge/target"
+      ],
+      "compiler_artifact": "/home/doll/Wildforge/target/release/wildforge",
+      "cwd": "/home/doll/Wildforge",
+      "environment": {
+        "CARGO_BUILD_JOBS": "1",
+        "GITHUB_SHA": "9c4d917dc344a47f2f6324352bedea8eb7d388f3",
+        "TMPDIR": "/home/doll/Wildforge/target/lag-control-20261009/render-work-verification/tmp-candidate-shadow-final-release"
+      },
+      "exit_code": 0,
+      "log": "/home/doll/Wildforge/target/lag-control-20261009/render-work-verification/candidate-shadow-final-release.log",
+      "log_sha256": "519c1eed88433308bdd3a7868cd35c46757e65529dc798977b399a561ed57705",
+      "result_lines": [],
+      "revision": "9c4d917dc344a47f2f6324352bedea8eb7d388f3",
+      "source_clean": true,
+      "source_sha256": "3346acf8077244ad774b0bc79c47da57d7e51ca97ba87dbb81efa154633e26bc",
+      "source_unchanged": true,
+      "toolchain": "rustc 1.96.0 (ac68faa20 2026-05-25)",
+      "wall_seconds": 296.41232902999036
+    },
+    "clippy-shadow-final": {
+      "command": [
+        "cargo",
+        "clippy",
+        "--locked",
+        "--all-targets",
+        "--all-features",
+        "--",
+        "-D",
+        "warnings"
+      ],
+      "cwd": "/home/doll/Wildforge",
+      "environment": {
+        "CARGO_BUILD_JOBS": "1",
+        "GITHUB_SHA": "9c4d917dc344a47f2f6324352bedea8eb7d388f3",
+        "TMPDIR": "/home/doll/Wildforge/target/lag-control-20261009/render-work-verification/tmp-clippy-shadow-final"
+      },
+      "exit_code": 0,
+      "log": "/home/doll/Wildforge/target/lag-control-20261009/render-work-verification/clippy-shadow-final.log",
+      "log_sha256": "69a85a28c426e558bfd68142502f4db23be24dd7739da309b324bab482a396cf",
+      "result_lines": [],
+      "revision": "9c4d917dc344a47f2f6324352bedea8eb7d388f3",
+      "source_sha256_after": "3346acf8077244ad774b0bc79c47da57d7e51ca97ba87dbb81efa154633e26bc",
+      "source_sha256_before": "3346acf8077244ad774b0bc79c47da57d7e51ca97ba87dbb81efa154633e26bc",
+      "source_unchanged": true,
+      "wall_seconds": 20.872035570035223
+    },
+    "diff-published-final": {
+      "command": [
+        "git",
+        "diff",
+        "--check"
+      ],
+      "cwd": "/home/doll/Wildforge",
+      "environment": {
+        "CARGO_BUILD_JOBS": "1",
+        "GITHUB_SHA": "9c4d917dc344a47f2f6324352bedea8eb7d388f3",
+        "TMPDIR": "/home/doll/Wildforge/target/lag-control-20261009/render-work-verification/tmp-diff-published-final"
+      },
+      "exit_code": 0,
+      "log": "/home/doll/Wildforge/target/lag-control-20261009/render-work-verification/diff-published-final.log",
+      "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "result_lines": [],
+      "revision": "9c4d917dc344a47f2f6324352bedea8eb7d388f3",
+      "source_sha256_after": "3346acf8077244ad774b0bc79c47da57d7e51ca97ba87dbb81efa154633e26bc",
+      "source_sha256_before": "3346acf8077244ad774b0bc79c47da57d7e51ca97ba87dbb81efa154633e26bc",
+      "source_unchanged": true,
+      "wall_seconds": 0.035148171009495854
+    },
+    "doctests-shadow-final": {
+      "command": [
+        "cargo",
+        "test",
+        "--locked",
+        "--doc"
+      ],
+      "cwd": "/home/doll/Wildforge",
+      "environment": {
+        "CARGO_BUILD_JOBS": "1",
+        "GITHUB_SHA": "9c4d917dc344a47f2f6324352bedea8eb7d388f3",
+        "TMPDIR": "/home/doll/Wildforge/target/lag-control-20261009/render-work-verification/tmp-doctests-shadow-final"
+      },
+      "exit_code": 0,
+      "log": "/home/doll/Wildforge/target/lag-control-20261009/render-work-verification/doctests-shadow-final.log",
+      "log_sha256": "98f7da8563aba74a13fb15a8335193804c14968d15f917d7994efa37e778effd",
+      "result_lines": [
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s"
+      ],
+      "revision": "9c4d917dc344a47f2f6324352bedea8eb7d388f3",
+      "source_sha256_after": "3346acf8077244ad774b0bc79c47da57d7e51ca97ba87dbb81efa154633e26bc",
+      "source_sha256_before": "3346acf8077244ad774b0bc79c47da57d7e51ca97ba87dbb81efa154633e26bc",
+      "source_unchanged": true,
+      "wall_seconds": 2.683493710006587
+    },
+    "folder-guides-published-final": {
+      "command": [
+        "python3",
+        "tools/check_folder_guides.py"
+      ],
+      "cwd": "/home/doll/Wildforge",
+      "environment": {
+        "CARGO_BUILD_JOBS": "1",
+        "GITHUB_SHA": "9c4d917dc344a47f2f6324352bedea8eb7d388f3",
+        "TMPDIR": "/home/doll/Wildforge/target/lag-control-20261009/render-work-verification/tmp-folder-guides-published-final"
+      },
+      "exit_code": 0,
+      "log": "/home/doll/Wildforge/target/lag-control-20261009/render-work-verification/folder-guides-published-final.log",
+      "log_sha256": "eb8f911afa3d487555cf65a7a7531aab248a104d6a85e111f584be18172ad93e",
+      "result_lines": [],
+      "revision": "9c4d917dc344a47f2f6324352bedea8eb7d388f3",
+      "source_sha256_after": "3346acf8077244ad774b0bc79c47da57d7e51ca97ba87dbb81efa154633e26bc",
+      "source_sha256_before": "3346acf8077244ad774b0bc79c47da57d7e51ca97ba87dbb81efa154633e26bc",
+      "source_unchanged": true,
+      "wall_seconds": 0.1284871289972216
+    },
+    "format-shadow-final": {
+      "command": [
+        "cargo",
+        "fmt",
+        "--all",
+        "--",
+        "--check"
+      ],
+      "cwd": "/home/doll/Wildforge",
+      "environment": {
+        "CARGO_BUILD_JOBS": "1",
+        "GITHUB_SHA": "9c4d917dc344a47f2f6324352bedea8eb7d388f3",
+        "TMPDIR": "/home/doll/Wildforge/target/lag-control-20261009/render-work-verification/tmp-format-shadow-final"
+      },
+      "exit_code": 0,
+      "log": "/home/doll/Wildforge/target/lag-control-20261009/render-work-verification/format-shadow-final.log",
+      "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "result_lines": [],
+      "revision": "9c4d917dc344a47f2f6324352bedea8eb7d388f3",
+      "source_sha256_after": "3346acf8077244ad774b0bc79c47da57d7e51ca97ba87dbb81efa154633e26bc",
+      "source_sha256_before": "3346acf8077244ad774b0bc79c47da57d7e51ca97ba87dbb81efa154633e26bc",
+      "source_unchanged": true,
+      "wall_seconds": 1.5368761350400746
+    },
+    "maintainability-published-final": {
+      "command": [
+        "python3",
+        "tools/check_maintainability.py"
+      ],
+      "cwd": "/home/doll/Wildforge",
+      "environment": {
+        "CARGO_BUILD_JOBS": "1",
+        "GITHUB_SHA": "9c4d917dc344a47f2f6324352bedea8eb7d388f3",
+        "TMPDIR": "/home/doll/Wildforge/target/lag-control-20261009/render-work-verification/tmp-maintainability-published-final"
+      },
+      "exit_code": 0,
+      "log": "/home/doll/Wildforge/target/lag-control-20261009/render-work-verification/maintainability-published-final.log",
+      "log_sha256": "6710e222b7f7a0dff7828ac73f32ab25e0c0dfd0e936b99349d7423cee55303f",
+      "result_lines": [],
+      "revision": "9c4d917dc344a47f2f6324352bedea8eb7d388f3",
+      "source_sha256_after": "3346acf8077244ad774b0bc79c47da57d7e51ca97ba87dbb81efa154633e26bc",
+      "source_sha256_before": "3346acf8077244ad774b0bc79c47da57d7e51ca97ba87dbb81efa154633e26bc",
+      "source_unchanged": true,
+      "wall_seconds": 2.2067095520324074
+    },
+    "msrv-shadow-final": {
+      "command": [
+        "cargo",
+        "+1.95.0",
+        "check",
+        "--locked",
+        "--all-targets",
+        "--all-features"
+      ],
+      "cwd": "/home/doll/Wildforge",
+      "environment": {
+        "CARGO_BUILD_JOBS": "1",
+        "GITHUB_SHA": "9c4d917dc344a47f2f6324352bedea8eb7d388f3",
+        "TMPDIR": "/home/doll/Wildforge/target/lag-control-20261009/render-work-verification/tmp-msrv-shadow-final"
+      },
+      "exit_code": 0,
+      "log": "/home/doll/Wildforge/target/lag-control-20261009/render-work-verification/msrv-shadow-final.log",
+      "log_sha256": "a4173659a463b3185c422232f4de38708894bd07d18f9f431d7905c5abab3647",
+      "result_lines": [],
+      "revision": "9c4d917dc344a47f2f6324352bedea8eb7d388f3",
+      "source_sha256_after": "3346acf8077244ad774b0bc79c47da57d7e51ca97ba87dbb81efa154633e26bc",
+      "source_sha256_before": "3346acf8077244ad774b0bc79c47da57d7e51ca97ba87dbb81efa154633e26bc",
+      "source_unchanged": true,
+      "wall_seconds": 9.597327230032533
+    },
+    "python-tests-shadow-final": {
+      "command": [
+        "python3",
+        "-m",
+        "unittest",
+        "discover",
+        "-s",
+        "tools/tests",
+        "-v"
+      ],
+      "cwd": "/home/doll/Wildforge",
+      "environment": {
+        "CARGO_BUILD_JOBS": "1",
+        "GITHUB_SHA": "9c4d917dc344a47f2f6324352bedea8eb7d388f3",
+        "TMPDIR": "/home/doll/Wildforge/target/lag-control-20261009/render-work-verification/tmp-python-tests-shadow-final"
+      },
+      "exit_code": 0,
+      "log": "/home/doll/Wildforge/target/lag-control-20261009/render-work-verification/python-tests-shadow-final.log",
+      "log_sha256": "eef49273b9d35f4d2db5ed3d80a6f8ccc3905eae5f6b15b79c97e422f894c29f",
+      "result_lines": [
+        "Ran 60 tests in 3.782s"
+      ],
+      "revision": "9c4d917dc344a47f2f6324352bedea8eb7d388f3",
+      "source_sha256_after": "3346acf8077244ad774b0bc79c47da57d7e51ca97ba87dbb81efa154633e26bc",
+      "source_sha256_before": "3346acf8077244ad774b0bc79c47da57d7e51ca97ba87dbb81efa154633e26bc",
+      "source_unchanged": true,
+      "wall_seconds": 3.8997194950352423
+    },
+    "rustdoc-shadow-final": {
+      "command": [
+        "cargo",
+        "doc",
+        "--locked",
+        "--no-deps",
+        "--all-features"
+      ],
+      "cwd": "/home/doll/Wildforge",
+      "environment": {
+        "CARGO_BUILD_JOBS": "1",
+        "GITHUB_SHA": "9c4d917dc344a47f2f6324352bedea8eb7d388f3",
+        "RUSTDOCFLAGS": "-D warnings",
+        "TMPDIR": "/home/doll/Wildforge/target/lag-control-20261009/render-work-verification/tmp-rustdoc-shadow-final"
+      },
+      "exit_code": 0,
+      "log": "/home/doll/Wildforge/target/lag-control-20261009/render-work-verification/rustdoc-shadow-final.log",
+      "log_sha256": "85ae53bea8f3df9f8cf78184ff85319b1a1f72a501a56f772fcc774511e5b2ee",
+      "result_lines": [],
+      "revision": "9c4d917dc344a47f2f6324352bedea8eb7d388f3",
+      "source_sha256_after": "3346acf8077244ad774b0bc79c47da57d7e51ca97ba87dbb81efa154633e26bc",
+      "source_sha256_before": "3346acf8077244ad774b0bc79c47da57d7e51ca97ba87dbb81efa154633e26bc",
+      "source_unchanged": true,
+      "wall_seconds": 7.692665420006961
+    },
+    "shader-guard-hardware-cargo": {
+      "command": [
+        "cargo",
+        "test",
+        "--locked",
+        "tests::rendering::qualification::shadow_guard_hardware",
+        "--",
+        "--ignored",
+        "--exact",
+        "--nocapture"
+      ],
+      "cwd": "/home/doll/Wildforge",
+      "environment": {
+        "CARGO_BUILD_JOBS": "1",
+        "GITHUB_SHA": "9c4d917dc344a47f2f6324352bedea8eb7d388f3",
+        "TMPDIR": "/home/doll/Wildforge/target/lag-control-20261009/render-work-verification/tmp-shader-guard-hardware-cargo"
+      },
+      "exit_code": 0,
+      "log": "/home/doll/Wildforge/target/lag-control-20261009/render-work-verification/shader-guard-hardware-cargo.log",
+      "log_sha256": "20c0f87fcc29004b11fb56fab436d82585ae9af1f4be59925bb5a63b79aba2f2",
+      "result_lines": [
+        "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1265 filtered out; finished in 0.95s",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s"
+      ],
+      "revision": "9c4d917dc344a47f2f6324352bedea8eb7d388f3",
+      "source_sha256_after": "3346acf8077244ad774b0bc79c47da57d7e51ca97ba87dbb81efa154633e26bc",
+      "source_sha256_before": "3346acf8077244ad774b0bc79c47da57d7e51ca97ba87dbb81efa154633e26bc",
+      "source_unchanged": true,
+      "wall_seconds": 435.4111786860158
+    },
+    "shader-guard-naga-cargo-binary": {
+      "command": [
+        "target/debug/deps/wildforge-257e7c6ccd5006f8",
+        "tests::rendering::qualification::wgsl_shaders_validate",
+        "--exact",
+        "--nocapture"
+      ],
+      "cwd": "/home/doll/Wildforge",
+      "environment": {
+        "CARGO_BUILD_JOBS": "1",
+        "GITHUB_SHA": "9c4d917dc344a47f2f6324352bedea8eb7d388f3",
+        "TMPDIR": "/home/doll/Wildforge/target/lag-control-20261009/render-work-verification/tmp-shader-guard-naga-cargo-binary"
+      },
+      "exit_code": 0,
+      "log": "/home/doll/Wildforge/target/lag-control-20261009/render-work-verification/shader-guard-naga-cargo-binary.log",
+      "log_sha256": "1d661a3847cefa7b82d4a6cdfed3e65446f20df051f6a97b4e2a7b514d446025",
+      "result_lines": [
+        "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1265 filtered out; finished in 0.01s"
+      ],
+      "revision": "9c4d917dc344a47f2f6324352bedea8eb7d388f3",
+      "source_sha256_after": "3346acf8077244ad774b0bc79c47da57d7e51ca97ba87dbb81efa154633e26bc",
+      "source_sha256_before": "3346acf8077244ad774b0bc79c47da57d7e51ca97ba87dbb81efa154633e26bc",
+      "source_unchanged": true,
+      "wall_seconds": 0.05941265099681914
+    },
+    "shadow-campaign-capture": {
+      "command": [
+        "/usr/bin/python3",
+        "/home/doll/Wildforge/target/lag-control-20261009/run_shadow_campaign.py",
+        "capture"
+      ],
+      "cwd": "/home/doll/Wildforge",
+      "environment": {
+        "CARGO_BUILD_JOBS": "1",
+        "GITHUB_SHA": "9c4d917dc344a47f2f6324352bedea8eb7d388f3",
+        "TMPDIR": "/home/doll/Wildforge/target/lag-control-20261009/render-work-verification/tmp-shadow-campaign-capture"
+      },
+      "exit_code": 0,
+      "log": "/home/doll/Wildforge/target/lag-control-20261009/render-work-verification/shadow-campaign-capture.log",
+      "log_sha256": "15f56196a93cb5063d779db2db3e53cf2990a22542e047f78b0ec82ee400158d",
+      "result_lines": [],
+      "revision": "9c4d917dc344a47f2f6324352bedea8eb7d388f3",
+      "source_sha256_after": "3346acf8077244ad774b0bc79c47da57d7e51ca97ba87dbb81efa154633e26bc",
+      "source_sha256_before": "3346acf8077244ad774b0bc79c47da57d7e51ca97ba87dbb81efa154633e26bc",
+      "source_unchanged": true,
+      "wall_seconds": 3897.7598530480172
+    },
+    "shadow-campaign-motion": {
+      "command": [
+        "/usr/bin/python3",
+        "/home/doll/Wildforge/target/lag-control-20261009/run_shadow_campaign.py",
+        "motion"
+      ],
+      "cwd": "/home/doll/Wildforge",
+      "environment": {
+        "CARGO_BUILD_JOBS": "1",
+        "GITHUB_SHA": "9c4d917dc344a47f2f6324352bedea8eb7d388f3",
+        "TMPDIR": "/home/doll/Wildforge/target/lag-control-20261009/render-work-verification/tmp-shadow-campaign-motion"
+      },
+      "exit_code": 0,
+      "log": "/home/doll/Wildforge/target/lag-control-20261009/render-work-verification/shadow-campaign-motion.log",
+      "log_sha256": "79c8fcb0d755c46ff3b88d3386df49d4012f297b8521764616f79f0a9f7ad1af",
+      "result_lines": [],
+      "revision": "9c4d917dc344a47f2f6324352bedea8eb7d388f3",
+      "source_sha256_after": "3346acf8077244ad774b0bc79c47da57d7e51ca97ba87dbb81efa154633e26bc",
+      "source_sha256_before": "3346acf8077244ad774b0bc79c47da57d7e51ca97ba87dbb81efa154633e26bc",
+      "source_unchanged": true,
+      "wall_seconds": 132.2489417900215
+    },
+    "shadow-campaign-prepare": {
+      "command": [
+        "/usr/bin/python3",
+        "/home/doll/Wildforge/target/lag-control-20261009/run_shadow_campaign.py",
+        "prepare"
+      ],
+      "cwd": "/home/doll/Wildforge",
+      "environment": {
+        "CARGO_BUILD_JOBS": "1",
+        "GITHUB_SHA": "9c4d917dc344a47f2f6324352bedea8eb7d388f3",
+        "TMPDIR": "/home/doll/Wildforge/target/lag-control-20261009/render-work-verification/tmp-shadow-campaign-prepare"
+      },
+      "exit_code": 0,
+      "log": "/home/doll/Wildforge/target/lag-control-20261009/render-work-verification/shadow-campaign-prepare.log",
+      "log_sha256": "de33686a13c3c2b30040680b5e1c73968123024e22b01559d46b98cfc8ffef9d",
+      "result_lines": [],
+      "revision": "9c4d917dc344a47f2f6324352bedea8eb7d388f3",
+      "source_sha256_after": "3346acf8077244ad774b0bc79c47da57d7e51ca97ba87dbb81efa154633e26bc",
+      "source_sha256_before": "3346acf8077244ad774b0bc79c47da57d7e51ca97ba87dbb81efa154633e26bc",
+      "source_unchanged": true,
+      "wall_seconds": 50.8308625780046
+    },
+    "shadow-campaign-publish": {
+      "command": [
+        "python3",
+        "target/lag-control-20261009/run_shadow_campaign.py",
+        "publish"
+      ],
+      "cwd": "/home/doll/Wildforge",
+      "environment": {
+        "CARGO_BUILD_JOBS": "1",
+        "GITHUB_SHA": "9c4d917dc344a47f2f6324352bedea8eb7d388f3",
+        "TMPDIR": "/home/doll/Wildforge/target/lag-control-20261009/render-work-verification/tmp-shadow-campaign-publish"
+      },
+      "exit_code": 0,
+      "log": "/home/doll/Wildforge/target/lag-control-20261009/render-work-verification/shadow-campaign-publish.log",
+      "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "result_lines": [],
+      "revision": "9c4d917dc344a47f2f6324352bedea8eb7d388f3",
+      "source_sha256_after": "3346acf8077244ad774b0bc79c47da57d7e51ca97ba87dbb81efa154633e26bc",
+      "source_sha256_before": "3346acf8077244ad774b0bc79c47da57d7e51ca97ba87dbb81efa154633e26bc",
+      "source_unchanged": true,
+      "wall_seconds": 0.3075562999583781
+    },
+    "shadow-campaign-qualify": {
+      "command": [
+        "python3",
+        "target/lag-control-20261009/run_shadow_campaign.py",
+        "qualify"
+      ],
+      "cwd": "/home/doll/Wildforge",
+      "environment": {
+        "CARGO_BUILD_JOBS": "1",
+        "GITHUB_SHA": "9c4d917dc344a47f2f6324352bedea8eb7d388f3",
+        "TMPDIR": "/home/doll/Wildforge/target/lag-control-20261009/render-work-verification/tmp-shadow-campaign-qualify"
+      },
+      "exit_code": 0,
+      "log": "/home/doll/Wildforge/target/lag-control-20261009/render-work-verification/shadow-campaign-qualify.log",
+      "log_sha256": "2eb535b6d211d8361331b58bd603a3a500dfe169e4aecd6393bd341aabb59abc",
+      "result_lines": [],
+      "revision": "9c4d917dc344a47f2f6324352bedea8eb7d388f3",
+      "source_sha256_after": "3346acf8077244ad774b0bc79c47da57d7e51ca97ba87dbb81efa154633e26bc",
+      "source_sha256_before": "3346acf8077244ad774b0bc79c47da57d7e51ca97ba87dbb81efa154633e26bc",
+      "source_unchanged": true,
+      "wall_seconds": 279.11298988596536
+    },
+    "shadow-guard-native-final": {
+      "command": [
+        "/usr/bin/python3",
+        "/home/doll/Wildforge/target/lag-control-20261009/check_shadow_guard_native.py"
+      ],
+      "cwd": "/home/doll/Wildforge",
+      "environment": {
+        "CARGO_BUILD_JOBS": "1",
+        "GITHUB_SHA": "9c4d917dc344a47f2f6324352bedea8eb7d388f3",
+        "TMPDIR": "/home/doll/Wildforge/target/lag-control-20261009/render-work-verification/tmp-shadow-guard-native-final"
+      },
+      "exit_code": 0,
+      "log": "/home/doll/Wildforge/target/lag-control-20261009/render-work-verification/shadow-guard-native-final.log",
+      "log_sha256": "9b974124ff7ed697ec12350adac9b18c9165d2198f912ed359b782c3cf8e713c",
+      "result_lines": [],
+      "revision": "9c4d917dc344a47f2f6324352bedea8eb7d388f3",
+      "source_sha256_after": "3346acf8077244ad774b0bc79c47da57d7e51ca97ba87dbb81efa154633e26bc",
+      "source_sha256_before": "3346acf8077244ad774b0bc79c47da57d7e51ca97ba87dbb81efa154633e26bc",
+      "source_unchanged": true,
+      "wall_seconds": 156.59065586002544
+    },
+    "subsystem-tests-shadow-final": {
+      "command": [
+        "cargo",
+        "test",
+        "--locked",
+        "--all-targets",
+        "--",
+        "--skip",
+        "tests::agent::"
+      ],
+      "cwd": "/home/doll/Wildforge",
+      "environment": {
+        "CARGO_BUILD_JOBS": "1",
+        "GITHUB_SHA": "9c4d917dc344a47f2f6324352bedea8eb7d388f3",
+        "TMPDIR": "/home/doll/Wildforge/target/lag-control-20261009/render-work-verification/tmp-subsystem-tests-shadow-final"
+      },
+      "exit_code": 0,
+      "log": "/home/doll/Wildforge/target/lag-control-20261009/render-work-verification/subsystem-tests-shadow-final.log",
+      "log_sha256": "86e8139029bd4c4bc0419603bcf7b4af98d830676eb3ddc519a8de879cd004c5",
+      "result_lines": [
+        "test result: ok. 1221 passed; 0 failed; 25 ignored; 0 measured; 20 filtered out; finished in 132.18s",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s"
+      ],
+      "revision": "9c4d917dc344a47f2f6324352bedea8eb7d388f3",
+      "source_sha256_after": "3346acf8077244ad774b0bc79c47da57d7e51ca97ba87dbb81efa154633e26bc",
+      "source_sha256_before": "3346acf8077244ad774b0bc79c47da57d7e51ca97ba87dbb81efa154633e26bc",
+      "source_unchanged": true,
+      "wall_seconds": 132.92507306003245
+    },
+    "windows-msrv-shadow-final": {
+      "command": [
+        "cargo",
+        "+1.95.0",
+        "check",
+        "--locked",
+        "--all-targets",
+        "--all-features",
+        "--target",
+        "x86_64-pc-windows-gnu"
+      ],
+      "cwd": "/home/doll/Wildforge",
+      "environment": {
+        "CARGO_BUILD_JOBS": "1",
+        "GITHUB_SHA": "9c4d917dc344a47f2f6324352bedea8eb7d388f3",
+        "TMPDIR": "/home/doll/Wildforge/target/lag-control-20261009/render-work-verification/tmp-windows-msrv-shadow-final"
+      },
+      "exit_code": 0,
+      "log": "/home/doll/Wildforge/target/lag-control-20261009/render-work-verification/windows-msrv-shadow-final.log",
+      "log_sha256": "0530586791bdfd35b9b58064e28c622d9426030aed35b40dc71a781b7aa5e654",
+      "result_lines": [],
+      "revision": "9c4d917dc344a47f2f6324352bedea8eb7d388f3",
+      "source_sha256_after": "3346acf8077244ad774b0bc79c47da57d7e51ca97ba87dbb81efa154633e26bc",
+      "source_sha256_before": "3346acf8077244ad774b0bc79c47da57d7e51ca97ba87dbb81efa154633e26bc",
+      "source_unchanged": true,
+      "wall_seconds": 9.423699965991545
+    }
+  },
+  "expected_negative_control": {
+    "receipt": {
+      "command": [
+        "target/lag-control-20261009/shadow_guard_legacy_standalone",
+        "lighting_tests::shadow_guard_hardware",
+        "--ignored",
+        "--exact",
+        "--nocapture"
+      ],
+      "cwd": "/home/doll/Wildforge",
+      "environment": {
+        "CARGO_BUILD_JOBS": "1",
+        "GITHUB_SHA": "8ee62ff4415f370a9012a5c62c32428f01c9c20d",
+        "TMPDIR": "/home/doll/Wildforge/target/lag-control-20261009/render-work-verification/tmp-shader-guard-legacy-negative"
+      },
+      "exit_code": 101,
+      "log": "/home/doll/Wildforge/target/lag-control-20261009/render-work-verification/shader-guard-legacy-negative.log",
+      "log_sha256": "e596d6ec5b8c93bcfe430f0afa39e8af9e27cddb5bd8a974d96f5ce35791c879",
+      "revision": "8ee62ff4415f370a9012a5c62c32428f01c9c20d",
+      "source_sha256_after": "b64f96303dec55db24a104bb927b7ca6de3c20f7386a65c0aa787e44600ff9e2",
+      "source_sha256_before": "b64f96303dec55db24a104bb927b7ca6de3c20f7386a65c0aa787e44600ff9e2",
+      "source_unchanged": true,
+      "wall_seconds": 0.5526223559863865
+    },
+    "scope": "Standalone differential harness with literal pre-fix lighting; expected opposing-light shadow invocation assertion failure. Not a current candidate failure."
+  },
+  "native_review": {
+    "adapter": "NVIDIA GeForce RTX 5070 Ti Laptop GPU [Vulkan, DiscreteGpu]",
+    "driver": "615.71.09",
+    "finite_bit_identical_lighting_pairs": 1188,
+    "motion_count": 56,
+    "motion_limit": "Sampled frames about 1.1 seconds apart; no claim about behavior between frames or arbitrary worlds.",
+    "still_count": 52
+  },
+  "not_run": "The remaining ignored operator/world-specific tests are outside the ordinary suite. No live-user OAuth account flow is claimed. No unsafe/FFI change required Miri.",
+  "original_five_failures_now_pass": [
+    "cracked_geode_capture_contains_host_shell_lining_and_heart",
+    "cracked_geode_capture_manifest_is_complete",
+    "strata_capture_metrics_meet_readability_budget",
+    "visual_polish_closeout_is_qualified",
+    "visual_polish_manifest_is_complete"
+  ],
+  "source_revision": "9c4d917dc344a47f2f6324352bedea8eb7d388f3",
+  "source_sha256": "3346acf8077244ad774b0bc79c47da57d7e51ca97ba87dbb81efa154633e26bc"
+}

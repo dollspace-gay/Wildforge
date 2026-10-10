@@ -1,0 +1,420 @@
+report_schema_version = 2
+capture_schema_version = 1
+capture_id = "strata-closeout-quartzite-v12-prefog-rain-gemini"
+scene_id = "closeout-strata-20261010"
+identity_sha256 = "266c3f636fa02921badd7b076fb5f2d136877f5a5f1453ce9dc0cf50e92719f9"
+sidecar = "screenshots/strata-closeout-quartzite-v12-prefog-rain-gemini.capture.toml"
+sidecar_sha256 = "49393edc9b080bdd14f15752d956068d68d995014cbe26fcfd0bba0d29416463"
+width = 1280
+height = 720
+color_ppm_sha256 = "0a225df5f7320174842fc4768f035a500a1743595e090d2223bf4cbf5458485d"
+diagnostic_sha256 = "723fd467af176510995dae2f9d40207044ad3215c1b46463850bc1ec6ade3437"
+color_png = "screenshots/strata-closeout-quartzite-v12-prefog-rain-gemini.capture.png"
+color_png_sha256 = "89c38595a00319621deaff4e615b9b1fcea04bf5c9d3b25085791c2ff4f65e98"
+diagnostic_png = "screenshots/strata-closeout-quartzite-v12-prefog-rain-gemini.capture.diagnostic.png"
+diagnostic_png_sha256 = "bfb6eb7fe631c21a336b361d79240822fbc8c69bac8c114cf7c3f72997097603"
+conversion = "python-stdlib-p6-rgb8-filter0-zlib9-v1"
+conversion_tool = "tools/verify_visual_polish.py"
+conversion_tool_sha256 = "44d7e0ee627988e2c4cd008258b943b6619d1196a9825559419665602fdae980"
+python = "3.14.8"
+zlib = "1.3.1.zlib-ng"
+pixel_count = 921600
+sky_pixels = 327573
+overlay_pixels = 37014
+material_pixels = 557013
+sky_fraction = 0.355439453
+overlay_fraction = 0.040162760
+material_fraction = 0.604397786
+luminance_mean = 0.153808458
+luminance_stddev = 0.099654912
+local_contrast_rms = 0.019518247
+
+[[family]]
+diagnostic_id = 1
+atlas_slot = 0
+names = ["base:air", "base:grass"]
+pixels = 29
+pixel_fraction = 0.000031467
+mean_normalized_depth = 0.802257283
+
+[[family]]
+diagnostic_id = 2
+atlas_slot = 1
+names = ["base:grass", "item:base:grass"]
+pixels = 416
+pixel_fraction = 0.000451389
+mean_normalized_depth = 0.811877351
+
+[[family]]
+diagnostic_id = 3
+atlas_slot = 2
+names = ["base:dirt", "base:farmland", "base:grass", "item:base:dirt", "item:base:farmland"]
+pixels = 125
+pixel_fraction = 0.000135634
+mean_normalized_depth = 0.822880964
+
+[[family]]
+diagnostic_id = 4
+atlas_slot = 3
+names = ["base:belt", "base:belt_curve_ne", "base:belt_curve_nw", "base:belt_curve_se", "base:belt_curve_sw", "base:belt_e", "base:belt_incline_n", "base:belt_merger", "base:belt_s", "base:belt_splitter", "base:belt_switch", "base:belt_w", "base:quern", "base:rail", "base:rail_curve_ne", "base:rail_curve_nw", "base:rail_incline_n", "base:rail_switch", "base:stone", "base:stone_anvil", "item:base:belt", "item:base:belt_curve_ne", "item:base:belt_curve_nw", "item:base:belt_curve_se", "item:base:belt_curve_sw", "item:base:belt_e", "item:base:belt_incline_n", "item:base:belt_merger", "item:base:belt_s", "item:base:belt_splitter", "item:base:belt_switch", "item:base:belt_w", "item:base:quern", "item:base:rail", "item:base:rail_curve_ne", "item:base:rail_curve_nw", "item:base:rail_incline_n", "item:base:rail_switch", "item:base:stone", "item:base:stone_anvil"]
+pixels = 59549
+pixel_fraction = 0.064614800
+mean_normalized_depth = 0.959126128
+
+[[family]]
+diagnostic_id = 13
+atlas_slot = 12
+names = ["base:water", "base:water/flow1", "base:water/flow2", "base:water/flow3", "base:water/flow4", "base:water/flow5", "base:water/flow6", "base:water/flow7", "item:base:water/flow1/place", "item:base:water/flow2/place", "item:base:water/flow3/place", "item:base:water/flow4/place", "item:base:water/flow5/place", "item:base:water/flow6/place", "item:base:water/flow7/place", "item:base:water/place"]
+pixels = 119738
+pixel_fraction = 0.129924045
+mean_normalized_depth = 0.407153670
+
+[[family]]
+diagnostic_id = 244
+atlas_slot = 243
+names = ["base:sandstone", "item:base:sandstone", "texture:base/sandstone"]
+pixels = 234469
+pixel_fraction = 0.254415148
+mean_normalized_depth = 0.148407574
+
+[[family]]
+diagnostic_id = 245
+atlas_slot = 244
+names = ["base:limestone", "item:base:limestone", "texture:base/limestone"]
+pixels = 1696
+pixel_fraction = 0.001840278
+mean_normalized_depth = 0.324022622
+
+[[family]]
+diagnostic_id = 248
+atlas_slot = 247
+names = ["base:marble", "item:base:marble", "texture:base/marble"]
+pixels = 3046
+pixel_fraction = 0.003305122
+mean_normalized_depth = 0.999559147
+
+[[family]]
+diagnostic_id = 250
+atlas_slot = 249
+names = ["base:arcane_conductor", "base:choirstone", "base:quartzite", "item:base:arcane_conductor", "item:base:choirstone", "item:base:quartzite", "texture:base/quartzite"]
+pixels = 127861
+pixel_fraction = 0.138738064
+mean_normalized_depth = 0.894819768
+
+[[family]]
+diagnostic_id = 255
+atlas_slot = 254
+names = ["base:sandstone_bricks", "item:base:sandstone_bricks", "texture:base/sandstone_bricks"]
+pixels = 9370
+pixel_fraction = 0.010167101
+mean_normalized_depth = 0.735677266
+
+[[family]]
+diagnostic_id = 288
+atlas_slot = 287
+names = ["base:clay_block", "item:base:clay_block/place", "texture:base/clay_block"]
+pixels = 92
+pixel_fraction = 0.000099826
+mean_normalized_depth = 0.797971048
+
+[[family]]
+diagnostic_id = 325
+atlas_slot = 324
+names = ["base:kelp_frond", "base:tidekelp", "item:base:kelp_frond/place", "item:base:tidekelp", "texture:base/kelp"]
+pixels = 620
+pixel_fraction = 0.000672743
+mean_normalized_depth = 0.283942439
+
+[[family]]
+diagnostic_id = 327
+atlas_slot = 326
+names = ["base:leaf_litter", "base:pilgrim_root", "base:scar_forest_threads", "item:base:leaf_litter", "item:base:pilgrim_root", "item:base:pilgrim_root_cutting", "item:base:scar_forest_threads/place", "texture:base/leaf_litter"]
+pixels = 2
+pixel_fraction = 0.000002170
+mean_normalized_depth = 0.840100710
+
+[[stratum]]
+rock = "sandstone"
+distance_band = "fog"
+pixels = 7149
+coverage = 0.007757161
+connected_components = 3
+one_pixel_fringe = 6
+one_pixel_fringe_fraction = 0.000839278
+median_luminance = 0.079928534
+p10_luminance = 0.042647228
+p90_luminance = 0.133160167
+luminance_span = 0.090512939
+rms_contrast_1px = 0.013956223
+rms_contrast_4px = 0.020365168
+rms_contrast_16px = 0.034517465
+contrast_pairs_1px = 13818
+contrast_pairs_4px = 12612
+contrast_pairs_16px = 9154
+adjacent_sky_pairs = 0
+silhouette_weber = 0.000000000
+silhouette_weber_magnitude = 0.000000000
+median_chroma = 0.051425356
+greyscale_structure_score = 0.431854095
+expected_fog_blend = 0.088649810
+display_black_fraction = 0.000000000
+
+[[stratum]]
+rock = "sandstone"
+distance_band = "middle"
+pixels = 4058
+coverage = 0.004403212
+connected_components = 3
+one_pixel_fringe = 3
+one_pixel_fringe_fraction = 0.000739280
+median_luminance = 0.067245903
+p10_luminance = 0.043250155
+p90_luminance = 0.108035337
+luminance_span = 0.064785183
+rms_contrast_1px = 0.016798481
+rms_contrast_4px = 0.031632759
+rms_contrast_16px = 0.028433464
+contrast_pairs_1px = 7841
+contrast_pairs_4px = 7079
+contrast_pairs_16px = 4623
+adjacent_sky_pairs = 0
+silhouette_weber = 0.000000000
+silhouette_weber_magnitude = 0.000000000
+median_chroma = 0.100163292
+greyscale_structure_score = 0.422828197
+expected_fog_blend = 0.000000000
+display_black_fraction = 0.000000000
+
+[[stratum]]
+rock = "sandstone"
+distance_band = "near"
+pixels = 205305
+coverage = 0.222770182
+connected_components = 2
+one_pixel_fringe = 1
+one_pixel_fringe_fraction = 0.000004871
+median_luminance = 0.226173466
+p10_luminance = 0.166075258
+p90_luminance = 0.302656104
+luminance_span = 0.136580846
+rms_contrast_1px = 0.015776202
+rms_contrast_4px = 0.034360381
+rms_contrast_16px = 0.066911423
+contrast_pairs_1px = 408161
+contrast_pairs_4px = 401650
+contrast_pairs_16px = 379887
+adjacent_sky_pairs = 0
+silhouette_weber = 0.000000000
+silhouette_weber_magnitude = 0.000000000
+median_chroma = 0.266484236
+greyscale_structure_score = 0.295841171
+expected_fog_blend = 0.000000000
+display_black_fraction = 0.000000000
+
+[[stratum]]
+rock = "sandstone"
+distance_band = "pre-fog"
+pixels = 14054
+coverage = 0.015249566
+connected_components = 3
+one_pixel_fringe = 9
+one_pixel_fringe_fraction = 0.000640387
+median_luminance = 0.048997811
+p10_luminance = 0.026788115
+p90_luminance = 0.079155057
+luminance_span = 0.052366942
+rms_contrast_1px = 0.017364223
+rms_contrast_4px = 0.023165579
+rms_contrast_16px = 0.024854700
+contrast_pairs_1px = 27567
+contrast_pairs_4px = 26075
+contrast_pairs_16px = 21094
+adjacent_sky_pairs = 0
+silhouette_weber = 0.000000000
+silhouette_weber_magnitude = 0.000000000
+median_chroma = 0.074654994
+greyscale_structure_score = 0.507261431
+expected_fog_blend = 0.000000000
+display_black_fraction = 0.000000000
+
+[[stratum]]
+rock = "limestone"
+distance_band = "fog"
+pixels = 4
+coverage = 0.000004340
+connected_components = 2
+one_pixel_fringe = 3
+one_pixel_fringe_fraction = 0.750000000
+median_luminance = 0.075488024
+p10_luminance = 0.065347678
+p90_luminance = 0.081919392
+luminance_span = 0.016571714
+rms_contrast_1px = 0.015182113
+rms_contrast_4px = 0.000000000
+rms_contrast_16px = 0.000000000
+contrast_pairs_1px = 2
+contrast_pairs_4px = 0
+contrast_pairs_16px = 0
+adjacent_sky_pairs = 0
+silhouette_weber = 0.000000000
+silhouette_weber_magnitude = 0.000000000
+median_chroma = 0.052519241
+greyscale_structure_score = 0.000000000
+expected_fog_blend = 0.000530039
+display_black_fraction = 0.000000000
+
+[[stratum]]
+rock = "limestone"
+distance_band = "middle"
+pixels = 246
+coverage = 0.000266927
+connected_components = 9
+one_pixel_fringe = 17
+one_pixel_fringe_fraction = 0.069105691
+median_luminance = 0.077334143
+p10_luminance = 0.050411462
+p90_luminance = 0.093115491
+luminance_span = 0.042704029
+rms_contrast_1px = 0.016431606
+rms_contrast_4px = 0.018064545
+rms_contrast_16px = 0.028406670
+contrast_pairs_1px = 351
+contrast_pairs_4px = 185
+contrast_pairs_16px = 79
+adjacent_sky_pairs = 0
+silhouette_weber = 0.000000000
+silhouette_weber_magnitude = 0.000000000
+median_chroma = 0.038076109
+greyscale_structure_score = 0.367323783
+expected_fog_blend = 0.000000000
+display_black_fraction = 0.000000000
+
+[[stratum]]
+rock = "limestone"
+distance_band = "near"
+pixels = 1166
+coverage = 0.001265191
+connected_components = 3
+one_pixel_fringe = 4
+one_pixel_fringe_fraction = 0.003430532
+median_luminance = 0.283624133
+p10_luminance = 0.250225797
+p90_luminance = 0.316235110
+luminance_span = 0.066009313
+rms_contrast_1px = 0.020352388
+rms_contrast_4px = 0.035530864
+rms_contrast_16px = 0.032996399
+contrast_pairs_1px = 2149
+contrast_pairs_4px = 1674
+contrast_pairs_16px = 878
+adjacent_sky_pairs = 0
+silhouette_weber = 0.000000000
+silhouette_weber_magnitude = 0.000000000
+median_chroma = 0.093608423
+greyscale_structure_score = 0.116338476
+expected_fog_blend = 0.000000000
+display_black_fraction = 0.000000000
+
+[[stratum]]
+rock = "limestone"
+distance_band = "pre-fog"
+pixels = 264
+coverage = 0.000286458
+connected_components = 1
+one_pixel_fringe = 0
+one_pixel_fringe_fraction = 0.000000000
+median_luminance = 0.043529090
+p10_luminance = 0.034028838
+p90_luminance = 0.081746076
+luminance_span = 0.047717238
+rms_contrast_1px = 0.032372803
+rms_contrast_4px = 0.055141387
+rms_contrast_16px = 0.045055796
+contrast_pairs_1px = 467
+contrast_pairs_4px = 285
+contrast_pairs_16px = 136
+adjacent_sky_pairs = 0
+silhouette_weber = 0.000000000
+silhouette_weber_magnitude = 0.000000000
+median_chroma = 0.010846398
+greyscale_structure_score = 1.035073229
+expected_fog_blend = 0.000000000
+display_black_fraction = 0.000000000
+
+[[stratum]]
+rock = "marble"
+distance_band = "fog"
+pixels = 3046
+coverage = 0.003305122
+connected_components = 4
+one_pixel_fringe = 5
+one_pixel_fringe_fraction = 0.001641497
+median_luminance = 0.215285615
+p10_luminance = 0.215285615
+p90_luminance = 0.216295418
+luminance_span = 0.001009802
+rms_contrast_1px = 0.000729294
+rms_contrast_4px = 0.000607740
+rms_contrast_16px = 0.000295449
+contrast_pairs_1px = 5817
+contrast_pairs_4px = 5065
+contrast_pairs_16px = 2990
+adjacent_sky_pairs = 31
+silhouette_weber = 0.000000000
+silhouette_weber_magnitude = 0.000000000
+median_chroma = 0.066331322
+greyscale_structure_score = 0.001372358
+expected_fog_blend = 1.000000000
+display_black_fraction = 0.000000000
+
+[[stratum]]
+rock = "quartzite"
+distance_band = "fog"
+pixels = 60291
+coverage = 0.065419922
+connected_components = 4
+one_pixel_fringe = 6
+one_pixel_fringe_fraction = 0.000099517
+median_luminance = 0.208364384
+p10_luminance = 0.085936691
+p90_luminance = 0.220402974
+luminance_span = 0.134466284
+rms_contrast_1px = 0.006584939
+rms_contrast_4px = 0.010607858
+rms_contrast_16px = 0.020071737
+contrast_pairs_1px = 119059
+contrast_pairs_4px = 114773
+contrast_pairs_16px = 101995
+adjacent_sky_pairs = 188
+silhouette_weber = 0.000070244
+silhouette_weber_magnitude = 0.000070244
+median_chroma = 0.066331322
+greyscale_structure_score = 0.096329979
+expected_fog_blend = 1.000000000
+display_black_fraction = 0.000000000
+
+[[stratum]]
+rock = "quartzite"
+distance_band = "pre-fog"
+pixels = 40538
+coverage = 0.043986545
+connected_components = 1
+one_pixel_fringe = 13
+one_pixel_fringe_fraction = 0.000320687
+median_luminance = 0.044384963
+p10_luminance = 0.029647016
+p90_luminance = 0.081472775
+luminance_span = 0.051825759
+rms_contrast_1px = 0.013860219
+rms_contrast_4px = 0.018522911
+rms_contrast_16px = 0.020618140
+contrast_pairs_1px = 80128
+contrast_pairs_4px = 77512
+contrast_pairs_16px = 67242
+adjacent_sky_pairs = 0
+silhouette_weber = 0.000000000
+silhouette_weber_magnitude = 0.000000000
+median_chroma = 0.013017512
+greyscale_structure_score = 0.464529850
+expected_fog_blend = 0.000000000
+display_black_fraction = 0.000000000

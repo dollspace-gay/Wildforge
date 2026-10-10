@@ -3078,3 +3078,81 @@ production API is broadened: the narrow fixture entry exists only under
 `cfg(test)`. Prior release/format/Clippy/Linux and Windows MSRV/rustdoc/Python/
 maintainability/folder checks pass at the earlier checkpoint; final fixture
 placement, device invocation and native performance checks remain pending.
+
+The final source at 9c4d917dc344a47f2f6324352bedea8eb7d388f3 (fingerprint
+3346acf8077244ad774b0bc79c47da57d7e51ca97ba87dbb81efa154633e26bc) passes the
+complete applicable local gates. The maintained Cargo hardware test actually
+runs on NVIDIA RTX 5070 Ti Laptop Vulkan, driver 615.71.09: 1,188 finite
+production/legacy lighting pairs are bit-identical, with exact cube/DDA shadow
+invocation counts. Naga validates the production shader aggregate. The expected
+pre-fix standalone negative control fails on the opposed-light invocation count;
+its failure remains preserved rather than being presented as a candidate pass.
+
+A separate predetermined four-capture native control compares literal pre-fix
+and final frozen executables. Matching sealed and opened color/material files
+are byte-identical. GPU opened-minus-sealed work decreases from 0.179792 ms to
+0.094128 ms; CPU deltas are 0.0162295 ms and 0.035770 ms. This diagnostic is not
+qualification evidence, and does not uniquely attribute the whole interval to
+one shader branch. The following complete campaign is independently captured.
+
+`visual-shadow-guard/` completes all 92 new native captures (52 stills and 40
+timing cases) and 56 native WASD/F2 motion frames with unchanged source and
+fixture inventories. Every still and motion frame is reviewed, including
+native-resolution geode and start/near/end motion views. The observations retain
+existing water highlights and cosmetic creature variation; no new missing
+geometry, sampled shimmer, unloaded chunk wall or abrupt reveal is visible.
+The approximately 1.1-second motion samples do not prove behavior between frames
+or in arbitrary worlds. All six declared dawn stills settle at their original
+6000-frame minimum. Timing warmups, settlement, repetitions and budgets remain
+unchanged.
+
+Full fresh qualification passes foundation equivalence, both readability and
+composition groups, strata performance and motion. Primary geode CPU/GPU
+medians are sealed 0.4265575/0.675728 ms and opened 0.4148125/0.753952 ms;
+closeout medians are sealed 0.4269895/0.682512 ms and opened
+0.411871/0.740800 ms. Combined nonnegative rendering increases are 0.078224 ms
+and 0.058288 ms against the unchanged 0.20 ms total budget. Python independently
+validates all 120 joined frames in every timing receipt before aggregation.
+The maintained publication command selects the new, accepted
+`screenshots/qualification-20261010/` campaign. Earlier campaigns, failed
+attempts, fixtures and binaries remain intact in ignored laboratory storage.
+
+The baseline remains a clean original-gameplay snapshot at
+7913ac49e15e65cc4dd2dad793c96f70dbf26916, with the shared measurement/warmup
+migration and isolated package name. The published complete replay patch from
+main ancestor 6383f2c67b54732f549914d5421fcb30eed1e274 reconstructs all 2,793
+tracked baseline files byte-for-byte (source fingerprint
+e1cf8f312e99b0b1c843c351c89d78d2de1287045353dc3d5f573f37e9322081).
+The patch hash is 5f79ed454350f5495da048ec8b6ceb214d5bb4c7742bd783ec86401a8671d5ac.
+This reconstructs source bytes, not historical Git metadata; a rebuild must use
+its own actual clean commit and new captures. No candidate gameplay/security/
+lighting correction is included in the baseline.
+
+After selection, the exact CI subsystem command passes 1,221 tests with zero
+failures, 25 ignored operator/hardware tests and 20 filtered serial agent tests.
+All five previously failing visual qualification tests now pass without being
+skipped. The serial agent lane passes all 20 tests; doctests pass with zero
+examples. The named hardware test is separately executed and passes, despite
+its ordinary CPU-suite ignore marker. Format, strict all-target/all-feature
+Clippy, Linux and Windows MSRV 1.95.0, strict rustdoc, advisories, release build,
+all 60 Python tests and strict architecture pass on the final source.
+Post-publication folder guidance passes for 134 maintained directories with
+zero problems. Maintainability reports 1,047 source files, 239,513 physical
+lines, 90 files above 400, 46 above 500 and 61 clone candidate groups; the scan
+covers 1,046 files with zero common fingerprints skipped. Those advisory
+findings are not a claim that all architectural debt is eliminated.
+
+The selected campaign's `verification.json`, GPU logs, native diagnostic,
+review records and baseline provenance retain exact commands, hashes and
+results. The remaining ignored world/operator probes and a live-user OAuth flow
+are not claimed verified. This slice changes no unsafe/FFI contract requiring
+Miri. Diff checks pass. Commit/push is authorized; hosted acceptance must be
+checked against the actual published commit, including all seven CI jobs and
+the high-severity resolver advisory, rather than inferred from these local gates.
+
+The first staged evidence diff flags normal blank patch context and terminal
+blank log lines as whitespace. The replay patch and two raw GPU logs are now
+gzip archives with recorded raw/compressed hashes and byte-exact decompression;
+the original laboratory artifacts remain unchanged. This packaging correction
+does not change qualification source or any receipt, and the staged diff is
+rechecked before committing.

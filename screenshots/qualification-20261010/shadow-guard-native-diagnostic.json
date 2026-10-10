@@ -1,0 +1,52 @@
+{
+  "cases": [
+    {
+      "adapter": "NVIDIA GeForce RTX 5070 Ti Laptop GPU [Vulkan, DiscreteGpu]",
+      "color_sha256": "4f037bd9c35cdcc9f0d4619a7ff7f39eb4c6950440d2f5b16087b1fa359415f3",
+      "cpu_ms": 0.42484950000000143,
+      "diagnostic_sha256": "48eac5d74d704d9e367ad5e9dca1d09332b523d5cf04d76cc9ba2ec551dd018f",
+      "eligible_frame": 1200,
+      "gpu_ms": 0.705248,
+      "id": "diagnostic-geode-performance-original-sealed"
+    },
+    {
+      "adapter": "NVIDIA GeForce RTX 5070 Ti Laptop GPU [Vulkan, DiscreteGpu]",
+      "color_sha256": "4f037bd9c35cdcc9f0d4619a7ff7f39eb4c6950440d2f5b16087b1fa359415f3",
+      "cpu_ms": 0.41561499999999896,
+      "diagnostic_sha256": "48eac5d74d704d9e367ad5e9dca1d09332b523d5cf04d76cc9ba2ec551dd018f",
+      "eligible_frame": 1200,
+      "gpu_ms": 0.669104,
+      "id": "diagnostic-geode-performance-guard-sealed"
+    },
+    {
+      "adapter": "NVIDIA GeForce RTX 5070 Ti Laptop GPU [Vulkan, DiscreteGpu]",
+      "color_sha256": "f8ae6cfdd0bfe7a7b00156d587d818135e142e36ace0b43a9259dddb54369d0e",
+      "cpu_ms": 0.44107899999999933,
+      "diagnostic_sha256": "1bed498f591b00aace4c638eaa6646c6e2e4730001f4cbee195b5f7040e263bb",
+      "eligible_frame": 1200,
+      "gpu_ms": 0.88504,
+      "id": "diagnostic-geode-performance-original-opened"
+    },
+    {
+      "adapter": "NVIDIA GeForce RTX 5070 Ti Laptop GPU [Vulkan, DiscreteGpu]",
+      "color_sha256": "f8ae6cfdd0bfe7a7b00156d587d818135e142e36ace0b43a9259dddb54369d0e",
+      "cpu_ms": 0.45138500000000104,
+      "diagnostic_sha256": "1bed498f591b00aace4c638eaa6646c6e2e4730001f4cbee195b5f7040e263bb",
+      "eligible_frame": 1200,
+      "gpu_ms": 0.763232,
+      "id": "diagnostic-geode-performance-guard-opened"
+    }
+  ],
+  "comparison": {
+    "guard": {
+      "cpu_delta_ms": 0.03577000000000208,
+      "gpu_delta_ms": 0.09412799999999999
+    },
+    "original": {
+      "cpu_delta_ms": 0.0162294999999979,
+      "gpu_delta_ms": 0.17979200000000006
+    }
+  },
+  "qualification": false,
+  "source_sha256": "3346acf8077244ad774b0bc79c47da57d7e51ca97ba87dbb81efa154633e26bc"
+}

@@ -1,0 +1,73 @@
+{
+  "reviewer": "Codex",
+  "source_sha256": "3346acf8077244ad774b0bc79c47da57d7e51ca97ba87dbb81efa154633e26bc",
+  "method": "Inspect all ordered fresh still contact sheets and selected native-resolution frames. Numeric qualification is separate.",
+  "groups": [
+    {
+      "start": 0,
+      "stop": 7,
+      "sheet": "stills-00-07.png",
+      "observations": "Foundation repeats visually agree. Baseline near sandstone/limestone/marble preserve stepped bands; wide scenes retain distant silhouettes and fog. Existing wide limestone water glare is strong. Candidate comparison remains pending."
+    },
+    {
+      "start": 7,
+      "stop": 13,
+      "sheet": "stills-07-13.png",
+      "observations": "Baseline marble noon, quartzite near/rain and basalt near/dusk preserve layered terrain, distinct bright/dark materials and fog rolloff. Hewn sandstone retains masonry joints and a bright sunlit face. Candidate comparison pending."
+    },
+    {
+      "start": 13,
+      "stop": 19,
+      "sheet": "stills-13-19.png",
+      "observations": "Baseline hewn limestone and both settled dawn scenes retain their layers, aperture-free hillside and fog. Candidate sandstone near/wide and limestone near match baseline geometry, material boundaries and lighting; no new missing terrain visible."
+    },
+    {
+      "start": 19,
+      "stop": 25,
+      "sheet": "stills-19-25.png",
+      "observations": "Candidate limestone dusk, marble rain/noon, quartzite near/rain and basalt near preserve matching baseline layers, silhouettes, material contrast and fog. Strong limestone water highlight also occurs in baseline. Cosmetic creatures vary; static geometry remains intact."
+    },
+    {
+      "start": 25,
+      "stop": 31,
+      "sheet": "stills-25-31.png",
+      "observations": "Candidate basalt dusk, hewn sandstone/limestone and both dawn scenes preserve matching baseline bands, material seams, lake boundary and fog. Cosmetic creatures differ in dawn scenes. Sealed geode context retains an intact host wall."
+    },
+    {
+      "start": 31,
+      "stop": 37,
+      "sheet": "stills-31-37.png",
+      "observations": "Primary geode aperture/hero retain a continuous shell passage, purple lining and dark core; reload keeps the opening. Closeout sandstone near/wide and limestone near reproduce the primary bands and material boundaries."
+    },
+    {
+      "start": 37,
+      "stop": 43,
+      "sheet": "stills-37-43.png",
+      "observations": "Closeout limestone dusk, marble rain/noon, quartzite near/rain and basalt near retain matching primary bands, steps and fog. Water glint remains consistently bright in the limestone scene; no new missing geometry visible."
+    },
+    {
+      "start": 43,
+      "stop": 46,
+      "sheet": "stills-43-46.png",
+      "observations": "Closeout basalt dusk and hewn sandstone/limestone preserve primary silhouettes, masonry seams and natural rock transitions. Existing sunlit-face and water highlights agree across phases."
+    },
+    {
+      "start": 46,
+      "stop": 52,
+      "sheet": "stills-46-52.png",
+      "observations": "Both closeout dawn scenes preserve layered relief and fog. The four closeout geode views retain the intact sealed wall, continuous opened shell/lining/core and reload aperture, matching the primary views. No new missing wall visible."
+    }
+  ],
+  "reviewed_count": 52,
+  "native_resolution": [
+    {
+      "file": "geode-aperture-proof-native.png",
+      "observations": "Continuous shell walls, purple flecked lining and a distinct dark central material remain visible at native resolution; no missing-chunk boundary."
+    },
+    {
+      "file": "geode-cracked-hero-native.png",
+      "observations": "Torch-lit walls retain their shadow shape and continuous shell, lining and core. Positive lighting appears preserved; independent material metrics remain required."
+    }
+  ],
+  "all_declared_stills_reviewed": true
+}

@@ -1,0 +1,15 @@
+{
+  "binaries": {
+    "baseline": {
+      "revision": "7913ac49e15e65cc4dd2dad793c96f70dbf26916",
+      "sha256": "c38372ff6cc10a2b80336768f1a129fc1532678d09e69a9ae94ac0e9076fcc78"
+    },
+    "candidate": {
+      "revision": "9c4d917dc344a47f2f6324352bedea8eb7d388f3",
+      "sha256": "689826b1e46291d0721df34da366e768b3e1561088a8fc6322aecffe6f309967"
+    }
+  },
+  "capture_count": 92,
+  "date": "2026-10-10",
+  "source_sha256": "3346acf8077244ad774b0bc79c47da57d7e51ca97ba87dbb81efa154633e26bc"
+}
