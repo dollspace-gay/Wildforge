@@ -30,6 +30,12 @@ reads, deterministic scalar serialization, and report replacement. Geode and
 closeout verifiers retain their own error types and qualification rules while
 using those same helpers. Their different report table layouts remain explicit.
 
+`render_work.py` independently validates native CPU/GPU joins, coverage, frame
+flags, and raw-sample medians for geode performance schema 2. The geode verifier
+applies one combined 0.20 ms rendering-work budget and preserves the legacy wall
+timer as a pacing diagnostic. The complete campaign protocol is documented in
+[visual-qualification-campaign.md](../docs/visual-qualification-campaign.md).
+
 `check_architecture.py` reports configured written dependency boundaries, and
 `report_rust_functions.py` collects Clippy's function-size and cognitive-complexity
 warnings. Both keep policy debt advisory and fail on incomplete analysis. Their

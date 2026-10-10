@@ -27,7 +27,11 @@ const CONVERSION_ID: &str = "python-stdlib-p6-rgb8-filter0-zlib9-v1";
 #[cfg(test)]
 mod campaign;
 #[cfg(test)]
+mod geode_performance;
+#[cfg(test)]
 mod native;
+#[cfg(test)]
+mod render_work;
 
 pub fn evidence_enabled() -> bool {
     std::env::var("WILDFORGE_VISUAL_EVIDENCE").as_deref() == Ok("1")
@@ -120,6 +124,50 @@ pub struct CaptureTelemetry {
     pub water_chunks: usize,
     pub empty_chunks: usize,
     pub dirty_chunks: usize,
+    /// Completed hardware and host work, when the versioned work protocol is enabled.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub render_work: Option<RenderWorkEvidence>,
+}
+
+/// One exact host/device join. Capture and unsettled frames cannot enter a window.
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+pub struct RenderWorkSample {
+    pub renderer_frame_id: u64,
+    pub settled: bool,
+    pub capture_frame: bool,
+    pub cpu_submission_ms: f64,
+    pub gpu_ms: f64,
+    pub acquisition_ms: f64,
+    pub present_ms: f64,
+    pub wall_ms: f64,
+}
+
+/// Version one retains the latest 120 consecutive completed ordinary frames.
+///
+/// Host work includes uploads, encoding and queue submission, with measured
+/// surface acquisition and presentation calls removed. Device time is the
+/// completed timestamp interval; it is never inferred from host wall time.
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+pub struct RenderWorkEvidence {
+    pub schema_version: u32,
+    pub sample_count: usize,
+    pub first_renderer_frame_id: u64,
+    pub last_renderer_frame_id: u64,
+    pub latest_renderer_frame_id: u64,
+    pub samples: Vec<RenderWorkSample>,
+    pub median_cpu_submission_ms: f64,
+    pub median_gpu_ms: f64,
+    pub median_acquisition_ms: f64,
+    pub median_present_ms: f64,
+    pub median_wall_ms: f64,
+    pub timestamp_period_ns: f64,
+    pub timestamp_query: bool,
+    pub timestamp_query_inside_encoders: bool,
+    pub gpu_submitted: u64,
+    pub gpu_completed: u64,
+    pub gpu_skipped_ring_full: u64,
+    pub gpu_pending_readbacks: usize,
+    pub skipped_ring_full_in_window: u64,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]

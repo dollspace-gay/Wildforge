@@ -6,7 +6,11 @@ use crate::renderer::FrameInput;
 use std::time::Instant;
 
 impl Game {
-    pub(in crate::game) fn build_and_render_frame(&mut self, dt: f32, now: Instant) {
+    pub(in crate::game) fn build_and_render_frame(
+        &mut self,
+        dt: f32,
+        now: Instant,
+    ) -> serde_json::Value {
         let LightingFrame {
             daylight,
             sun_dir,
@@ -102,7 +106,9 @@ impl Game {
         }
         self.frame_profile.mark("renderer_submission_and_present");
 
+        let gpu = self.collect_render_work();
         self.finish_rendered_frame(fog, now);
         self.frame_profile.mark("capture_and_frame_bookkeeping");
+        gpu
     }
 }

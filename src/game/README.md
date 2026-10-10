@@ -109,6 +109,14 @@ steady-state comparisons. Rows retain delayed GPU frame IDs, readback sampling
 coverage, queue sizes, player position, settings, adapter and room-light values.
 The historical sim/draw averages retain their existing narrower meaning.
 
+`render_work.rs` owns the opt-in fixed window for native performance receipts.
+`WILDFORGE_RENDER_WORK=1` independently enables hardware timestamps and joins
+host work with completed GPU intervals by renderer frame ID; a JSONL writer is
+optional. The latest 120 consecutive settled noncapture frames are retained.
+Unsettled frames, capture, errors, missing results, and ring-full skips reset the
+window. Automatic capture requires the complete window within the existing
+capture bound. See [the versioned performance protocol](../../docs/visual-qualification-campaign.md).
+
 `ui.rs` owns the screen batch and ordered composition; `ui/` groups menu,
 station/storage, journal/loadout, HUD, and world-label painters. Shared inventory
 rendering remains in inventory_ui and inventory_panel. The batch is published

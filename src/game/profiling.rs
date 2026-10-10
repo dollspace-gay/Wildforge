@@ -112,13 +112,14 @@ impl FrameProfiler {
             self.writer = None;
         }
     }
+    pub(super) fn flush(&mut self) -> std::io::Result<()> {
+        self.writer.as_mut().map_or(Ok(()), Write::flush)
+    }
 }
 
 impl Drop for FrameProfiler {
     fn drop(&mut self) {
-        if let Some(writer) = &mut self.writer
-            && let Err(error) = writer.flush()
-        {
+        if let Err(error) = self.flush() {
             eprintln!("frame profiling: final flush failed: {error}");
         }
     }

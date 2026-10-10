@@ -43,7 +43,20 @@ impl Game {
             // A minimum frame keeps the ordinary settled-world requirement.
             // It is useful when the visual under test needs simulation warmup;
             // unlike SHOT_FRAME, it never captures half-meshed terrain.
-            let ready = !awaiting_direct_entry
+            let work_ready = self
+                .render_work
+                .as_ref()
+                .is_none_or(|window| window.ready());
+            // Readback never stalls ordinary rendering. An enabled work protocol
+            // waits for its fixed window and fails closed at the existing bound.
+            let capture_limit = SHOT_MAX_FRAMES.max(minimum).max(forced.unwrap_or(0));
+            if self.shot_at.is_none() && !work_ready && self.capture_frames >= capture_limit {
+                panic!(
+                    "render-work capture timed out without 120 consecutive completed settled frames"
+                );
+            }
+            let ready = work_ready
+                && !awaiting_direct_entry
                 && self.capture_frames >= minimum
                 && match forced {
                     Some(frame) => self.capture_frames >= frame,
@@ -53,7 +66,13 @@ impl Game {
                     }
                 };
             match self.shot_at {
-                Some(at) if self.total_frames > at + 1 => std::process::exit(0),
+                Some(at) if self.total_frames > at + 1 => {
+                    // process::exit does not run the BufWriter's Drop implementation.
+                    self.frame_profile.flush().unwrap_or_else(|error| {
+                        panic!("frame profiling final flush failed: {error}")
+                    });
+                    std::process::exit(0);
+                }
                 None if ready => {
                     let player = self.player.pos;
                     let surface = crate::planet::SurfacePos::new(

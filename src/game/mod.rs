@@ -32,6 +32,7 @@ mod navigation;
 mod presentation;
 mod profiling;
 mod remote;
+mod render_work;
 mod roster_ui;
 mod runtime;
 mod session;
@@ -411,6 +412,7 @@ struct Game {
     /// Smoothed frame-section times in ms: (authority, render).
     frame_ms: (f32, f32),
     frame_profile: profiling::FrameProfiler,
+    render_work: Option<render_work::RenderWorkWindow>,
     ui: UiBatch,
 }
 

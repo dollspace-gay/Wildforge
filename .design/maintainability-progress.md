@@ -2893,3 +2893,116 @@ explicit. See target/lag-control-20261009/uniform-light-final-summary.json and
 REPLAY.md for exact receipts and reproduction. Work remains local, with no
 main-repository commit, push, new selected campaign or cleanup of shared /tmp
 or personal runtime data.
+
+### Published test-runner and dependency failures: follow-up, 2026-10-09
+
+The user authorized correcting the failures and committing/pushing the result.
+Live CI at d8fafc69ab2bdbcbd503b30d0d422a9d29cf6c32 confirms five failed
+visual-campaign freshness checks, with 1,191 subsystem passes, 24 ignored cases
+and 20 serial-agent cases filtered from that lane. The six other CI jobs pass.
+Unlike the preceding local attempt, this runner has no temporary-quota failures.
+The full failed CI and Dependabot logs are retained under
+`target/lag-control-20261009/published-*-failed.log`.
+
+The dependency failure is a blocked security update: Jacquard 0.12.1 selects
+Hickory 0.24, below the patched resolver line. Jacquard common/identity/lexicon/
+oauth are upgraded to 0.12.2, with Hickory net/proto/resolver 0.26.3. The DNS
+feature remains enabled. Jacquard's newer default DNS constructor has an empty
+nameserver pool, so a private identity owner explicitly constructs Hickory from
+native OS configuration on a blocking worker. This changes the old default
+Google resolver selection to the OS nameservers. TXT selection, valid-DID
+mismatch rejection, bounded public HTTPS fallback, and the outer two-second
+deadline are preserved. Fifteen real UDP/native-configuration and lazy-fallback
+tests cover those contracts. Existing segmented/conflicting TXT standards debt
+is documented rather than mixed into this dependency migration. The obsolete
+RUSTSEC-2026-0119 exception is removed; the upgraded graph passes cargo-deny.
+
+The visual measurement correction is Category A: give rendering work and
+presentation waits explicit owners rather than treating an entire-renderer
+wall timer as device cost. Four prescribed native diagnostic captures, without
+competing builds or games, use the original and candidate binaries on the
+matched opened/sealed fixtures. Each last 300 noncapture source-frame window has
+complete exact-ID GPU coverage, no readback skips/errors and no pending tail.
+Original GPU medians are 0.878864/0.687712 ms, delta 0.191152 ms; candidate
+medians are 0.851216/0.674896 ms, delta 0.176320 ms. Renderer wall deltas are
+0.640256 and 1.7896135 ms. These are diagnostics, not accepted qualification.
+One partial final JSONL row per old run is retained and excluded; the new native
+exit explicitly flushes the optional writer. See
+`geode-gpu-diagnostic/diagnosis.json` and its declared protocol/raw receipts.
+
+The replacement geode protocol is fixed before its campaign in
+`docs/visual-qualification-campaign.md`. The legacy draw EWMA is unchanged and
+retained as pacing telemetry. Native schema 1 render-work receipts serialize the
+latest 120 consecutive completed settled noncapture CPU/GPU frame pairs, all
+raw timings, exact renderer IDs, medians, timestamp capabilities/period and
+coverage counters. CPU submission cost includes uploads/encoding/submission
+and subtracts independently measured acquisition/present spans. Actual GPU
+timestamps cover rendering commands, excluding pre-encoding uploads and
+query/readback work. Missing/invalid/gapped/capture/error/skip coverage resets
+the bounded window; capture requires valid hardware evidence and retains the
+fixed native timeout. Standalone optional GPU profiling drains its owner even
+without a JSONL writer, while ordinary play allocates no profiling results.
+
+Python and Rust independently recompute the new schema 2 aggregate. The budget
+remains 0.20 ms total, `max(0, CPU delta) + max(0, GPU delta)`; neither component
+can conceal growth in the other. Simulation retains its 0.10 ms budget. The
+five repetitions, normal presentation mode and 1200-frame performance minimum
+are unchanged. The three documented marble view14 dawn stills receive the same
+predeclared 6000-frame warmup, preserving the native settlement criteria.
+Historical failed campaigns and selected evidence are not rewritten.
+
+Source coverage includes native renderer upload/encode/acquire/submit/present,
+GPU slot allocation/completion/error lifetime, game update/render/capture/exit
+ordering, build identity, all capture-model construction, both geode-group
+validators, Python capture/report/publication provenance, the complete matrix,
+identity verification/cancellation/fallback, resolved dependency features,
+advisory policy, and CI/platform commands. Six collector tests and independent
+receipt/budget rejection tests cover malformed/incomplete evidence. The
+measurement-only patch applies to a new clean original-baseline clone at
+f20dba5d55e1d139c553bfb8699c00486e9275c7; original gameplay/dependencies and the
+earlier baseline source/binary remain intact.
+
+Verification is in progress. Python's 58 tooling tests, strict architecture
+(494 files, zero findings), folder guides (131 directories, zero problems),
+maintainability scan and diff checks pass. An intermediate Cargo build failed
+before tests ran because concurrent visual interfaces were incomplete; its log
+is preserved. The combined compiler, focused runtime tests, platform/MSRV/
+Clippy/rustdoc/release gates, fresh 92-capture plus 56-motion campaign, final full
+test lanes and new published CI remain pending. No replacement campaign is
+selected or claimed accepted at this checkpoint. Exact command/source receipts
+are under `target/lag-control-20261009/render-work-verification/`.
+
+The combined all-target test build passes, and its binary passes all 15 DNS,
+28 ATProto (including four OAuth conformance), five identity, and eight
+render-work collector/receipt tests. The first format gate failed on three new
+validator files; formatting is corrected. The first strict Clippy gate failed
+on a nonminimal boolean in the receipt validator; an equivalent checked
+subtraction predicate corrects it without suppressing the lint. Linux MSRV
+passes on the intermediate state. Final format, Clippy and Linux MSRV are
+queued with Windows MSRV/rustdoc; final source checks remain pending. The clean
+measurement-only baseline now includes the same formatting/predicate correction
+at 5762bc5016c5c7cce15dc003c88a2838102624f6. Earlier failed
+logs and the original baseline clone/commit remain intact.
+
+Independent review additionally found that a internally valid timing window
+could be substituted from an earlier frame and that paired scene settings were
+not fully enforced by both verifiers. Capture-level validation now requires
+latest renderer ID plus one to equal the enclosing capture frame, and
+1200 <= eligible frame < capture frame. Both verifiers anchor timing camera,
+render settings (apart from 1280x720 dimensions), and controlled environment
+inputs to the sealed-context primary, and require all ten timing environments
+to match exactly. Evolving weather scalars are not anchored to the differently
+warmed primary still. Preserved native sidecars confirm those distinctions.
+Negative stale/early-window and mismatched camera/settings/environment tests
+pass; the Python suite now has 60 passing tests. The clean measurement-only
+baseline includes the same corrections at
+f1489296de173f3d0c153375125a27f1e682ccc8. Some checks completed before these
+review corrections and are retained as intermediate results; final source
+checks and native qualification remain pending.
+
+Receipt validation also rejects impossible reservation totals and settlement
+counters: submitted plus ring-full skips cannot exceed the latest renderer
+frame, and the 120-frame window requires at least 129 settled frames plus its
+asynchronous tail. Positive fixtures and negative counter tests cover these
+producer invariants. All production source is now being frozen for the native
+release/campaign; acceptance and publication remain pending.

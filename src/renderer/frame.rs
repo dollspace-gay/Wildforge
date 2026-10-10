@@ -47,6 +47,9 @@ impl Renderer {
 
     pub fn render(&mut self, f: FrameInput<'_>) -> Result<(), wgpu::SurfaceError> {
         self.render_frame_id = self.render_frame_id.saturating_add(1);
+        self.last_render_work = None;
+        // Start before uniforms and uploads, preserving ordinary render order.
+        let work_start = self.render_work_enabled.then(std::time::Instant::now);
         let (uniforms, light_vp) = self.frame_uniforms(&f);
         self.upload_frame(&f, &uniforms, &light_vp);
         self.upload_outline(f.outline, f.outline_color);
@@ -66,6 +69,7 @@ impl Renderer {
         self.post
             .bloom(&self.queue, &mut encoder, f.bloom, f.daylight);
         // Acquire only after scene encoding, preserving late swapchain admission.
+        let acquisition_start = work_start.map(|_| std::time::Instant::now());
         let frame = match self.surface.get_current_texture() {
             Ok(frame) => frame,
             Err(error) => {
@@ -75,6 +79,7 @@ impl Renderer {
                 return Err(error);
             }
         };
+        let acquisition_ms = acquisition_start.map(|start| start.elapsed().as_secs_f64() * 1000.0);
         let view = frame
             .texture
             .create_view(&wgpu::TextureViewDescriptor::default());
@@ -94,7 +99,23 @@ impl Renderer {
         if let (Some(profiling), Some(ticket)) = (&mut self.profiling, timing) {
             profiling.submitted(ticket, capture_frame);
         }
+        let present_start = work_start.map(|_| std::time::Instant::now());
         frame.present();
+        if let (Some(start), Some(acquisition_ms), Some(present_start)) =
+            (work_start, acquisition_ms, present_start)
+        {
+            let present_ms = present_start.elapsed().as_secs_f64() * 1000.0;
+            let wall_ms = start.elapsed().as_secs_f64() * 1000.0;
+            self.last_render_work = Some(super::RenderWorkTiming {
+                renderer_frame_id: self.render_frame_id,
+                capture_frame,
+                gpu_recorded: timing.is_some(),
+                cpu_submission_ms: wall_ms - acquisition_ms - present_ms,
+                acquisition_ms,
+                present_ms,
+                wall_ms,
+            });
+        }
         if let Some(shot) = shot {
             self.write_capture(shot);
         }

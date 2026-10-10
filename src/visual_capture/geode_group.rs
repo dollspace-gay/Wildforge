@@ -125,6 +125,9 @@ pub(super) fn validate_geode_capture_group(
     let mut reference_camera: Option<CameraIdentity> = None;
     let mut reference_environment: Option<EnvironmentIdentity> = None;
     let mut reference_render: Option<RenderIdentity> = None;
+    let mut performance_render = sealed.render.clone();
+    performance_render.width = 1280;
+    performance_render.height = 720;
     for declaration in performance_declarations {
         if !performance_ids.insert(declaration.id.as_str())
             || !matches!(declaration.phase.as_str(), "sealed" | "opened")
@@ -148,9 +151,13 @@ pub(super) fn validate_geode_capture_group(
             },
         )?;
         if metadata.world.name != format!("visual-polish-geode-{}", declaration.phase)
-            || metadata.render.pack != "gemini"
-            || metadata.render.view_distance_chunks != 12
-            || metadata.environment.weather != "clear"
+            || metadata.camera != sealed.camera
+            || metadata.render != performance_render
+            || metadata.environment.day != sealed.environment.day
+            || metadata.environment.time_of_day != sealed.environment.time_of_day
+            || metadata.environment.season != sealed.environment.season
+            || metadata.environment.weather != sealed.environment.weather
+            || metadata.environment.precipitation != sealed.environment.precipitation
             || report.conversion_tool_sha256 != manifest.conversion_tool_sha256
         {
             return Err(format!(
@@ -189,6 +196,14 @@ pub(super) fn validate_geode_capture_group(
             })
             .or_default()
             .push(f64::from(metadata.telemetry.simulation_ms));
+        let (cpu, gpu) = super::render_work::validate_capture(&metadata.telemetry)?;
+        let (cpu_key, gpu_key) = if declaration.phase == "sealed" {
+            ("sealed_cpu_submission", "sealed_gpu")
+        } else {
+            ("opened_cpu_submission", "opened_gpu")
+        };
+        samples.entry(cpu_key).or_default().push(cpu);
+        samples.entry(gpu_key).or_default().push(gpu);
     }
     if phase_counts.get("sealed") != Some(&5) || phase_counts.get("opened") != Some(&5) {
         return Err("cracked-geode performance phase coverage is incomplete".into());
@@ -257,70 +272,10 @@ pub(super) fn validate_geode_capture_group(
     let performance_path = root.join(safe_relative(expected.performance_report, "toml")?);
     let (_performance_bytes, performance): (Vec<u8>, GeodePerformanceReport) =
         read_toml(&performance_path, "cracked-geode performance")?;
-    let median = |values: &[f64]| {
-        let mut sorted = values.to_vec();
-        sorted.sort_by(f64::total_cmp);
-        sorted[sorted.len() / 2]
-    };
-    let sealed_draw = &samples["sealed_draw"];
-    let opened_draw = &samples["opened_draw"];
-    let sealed_simulation = &samples["sealed_simulation"];
-    let opened_simulation = &samples["opened_simulation"];
-    let close = |left: f64, right: f64| (left - right).abs() <= 0.000_002;
-    if performance.qualification_schema_version != 1
-        || performance.kind != expected.performance_kind
-        || performance.evidence_commit != expected.commit
-        || performance.sample_count_per_phase != 5
-        || performance.sealed_draw_ms.len() != 5
-        || performance.opened_draw_ms.len() != 5
-        || performance.sealed_simulation_ms.len() != 5
-        || performance.opened_simulation_ms.len() != 5
-        || !performance
-            .sealed_draw_ms
-            .iter()
-            .zip(sealed_draw)
-            .all(|(a, b)| close(*a, *b))
-        || !performance
-            .opened_draw_ms
-            .iter()
-            .zip(opened_draw)
-            .all(|(a, b)| close(*a, *b))
-        || !performance
-            .sealed_simulation_ms
-            .iter()
-            .zip(sealed_simulation)
-            .all(|(a, b)| close(*a, *b))
-        || !performance
-            .opened_simulation_ms
-            .iter()
-            .zip(opened_simulation)
-            .all(|(a, b)| close(*a, *b))
-        || !close(performance.sealed_median_draw_ms, median(sealed_draw))
-        || !close(performance.opened_median_draw_ms, median(opened_draw))
-        || !close(
-            performance.median_draw_regression_ms,
-            median(opened_draw) - median(sealed_draw),
-        )
-        || performance.maximum_median_draw_regression_ms != 0.20
-        || performance.median_draw_regression_ms > performance.maximum_median_draw_regression_ms
-        || !close(
-            performance.sealed_median_simulation_ms,
-            median(sealed_simulation),
-        )
-        || !close(
-            performance.opened_median_simulation_ms,
-            median(opened_simulation),
-        )
-        || !close(
-            performance.median_simulation_regression_ms,
-            median(opened_simulation) - median(sealed_simulation),
-        )
-        || performance.maximum_median_simulation_regression_ms != 0.10
-        || performance.median_simulation_regression_ms
-            > performance.maximum_median_simulation_regression_ms
-        || !performance.passed
-    {
-        return Err("cracked-geode performance qualification is incomplete or failed".into());
-    }
-    Ok(())
+    super::geode_performance::validate_report(
+        &performance,
+        expected.performance_kind,
+        expected.commit,
+        &samples,
+    )
 }

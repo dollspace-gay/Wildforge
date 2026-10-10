@@ -52,6 +52,16 @@ impl Game {
             ));
         }
 
+        let render_work = self
+            .render_work
+            .as_ref()
+            .map(|window| {
+                window
+                    .evidence()
+                    .ok_or("render-work capture requires 120 consecutive completed settled frames")
+            })
+            .transpose()?;
+
         let atlas = self
             .runtime
             .view()
@@ -130,6 +140,7 @@ impl Game {
                 water_chunks,
                 empty_chunks,
                 dirty_chunks: self.runtime.view().dirty_chunks().len(),
+                render_work,
             },
             family: self
                 .content

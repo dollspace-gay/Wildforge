@@ -47,6 +47,20 @@ class CampaignTests(unittest.TestCase):
         self.assertEqual(env["WILDFORGE_SHOT_ALTITUDE"], "0")
         self.assertEqual(env["WILDFORGE_CAPTURE_SCENE"], row["scene"])
 
+    def test_declared_warmup_preserves_performance_minimum_and_paired_stills(self):
+        _, rows = plan(self.root, "2026-10-09")
+        longer = [row for row in rows if "marble-v14-prefog-dawn-overcast-gemini" in row["id"]]
+        self.assertEqual(len(longer), 3)
+        for row in longer:
+            self.assertEqual(environment(row, "capture.ppm")["WILDFORGE_SHOT_MIN_FRAME"], "6000")
+        for row in rows:
+            if "performance" in row["id"]:
+                env = environment(row, "capture.ppm")
+                self.assertEqual(env["WILDFORGE_SHOT_MIN_FRAME"], "1200")
+                if "geode-performance" in row["id"]:
+                    self.assertEqual(env["WILDFORGE_RENDER_WORK"], "1")
+                    self.assertEqual(env["WILDFORGE_GPU_PROFILE"], "1")
+
     def test_geode_verifier_reads_the_manifest_report_locations(self):
         _, rows = plan(self.root, "2026-09-05")
         with working_directory(self.root):

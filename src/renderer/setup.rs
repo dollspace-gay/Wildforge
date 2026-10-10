@@ -21,6 +21,7 @@ impl Renderer {
             adapter_backend,
             adapter_hardware,
             gpu_profiling,
+            render_work,
         } = super::device::DeviceState::new(window).await;
         let profiling = gpu_profiling.then(|| {
             super::profiling::GpuProfiler::new(&device, &queue)
@@ -140,6 +141,8 @@ impl Renderer {
             adapter_hardware,
             profiling,
             render_frame_id: 0,
+            render_work_enabled: render_work,
+            last_render_work: None,
             surface,
             device,
             queue,

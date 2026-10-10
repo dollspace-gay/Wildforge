@@ -15,11 +15,14 @@ mod frame;
 mod point_shadows;
 mod post;
 mod profiling;
+mod render_work;
 mod resources;
 mod setup;
 
 use post::{PostProcess, create_depth};
+pub(crate) use profiling::READBACK_SLOTS as GPU_PROFILE_READBACK_SLOTS;
 pub(crate) use profiling::{GpuFrameTiming, GpuProfileError, GpuProfileStats};
+pub(crate) use render_work::{RenderWorkCapabilities, RenderWorkTiming};
 
 #[repr(C)]
 #[derive(Clone, Copy, Pod, Zeroable)]
@@ -381,6 +384,8 @@ pub struct Renderer {
     pub adapter_hardware: bool,
     profiling: Option<profiling::GpuProfiler>,
     render_frame_id: u64,
+    render_work_enabled: bool,
+    last_render_work: Option<RenderWorkTiming>,
     /// First atlas slot of the interior-layer run, from the active atlas.
     pub atlas_interior_base: u16,
     /// Per-layer settings, two vec4 each: (depth, op_min, op_max, dim) then

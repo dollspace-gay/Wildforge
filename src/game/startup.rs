@@ -86,6 +86,9 @@ impl Game {
         let aspect = size.width as f32 / size.height.max(1) as f32;
         let audio = Audio::new(config.volume);
 
+        let render_work = renderer
+            .render_work_enabled()
+            .then(super::render_work::RenderWorkWindow::default);
         let mut g = Game {
             window,
             renderer,
@@ -159,6 +162,7 @@ impl Game {
             fps: 0,
             frame_ms: (0.0, 0.0),
             frame_profile: super::profiling::FrameProfiler::from_env(),
+            render_work,
             ui: UiBatch::new(),
         };
         g.content.mods_stamp = content_tree_stamp();

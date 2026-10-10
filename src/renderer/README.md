@@ -49,3 +49,12 @@ collects delayed intervals by renderer frame ID, and coverage statistics expose
 ring-full skips. Readback/poll failures remain errors; CPU times never replace
 GPU times. Screenshot intervals are marked separately and excluded from ordinary
 performance comparisons.
+
+`WILDFORGE_RENDER_WORK=1` also requests timestamps, without requiring a JSONL
+writer. `render_work.rs` exposes successful host intervals beginning before
+frame uploads and ending after presentation, before screenshot readback.
+Measured acquisition and presentation calls are separate from CPU encoding,
+uploads, and queue submission; legacy draw observations retain their meaning.
+The game owns the fixed completion window and capture scheduling described by
+[the versioned performance protocol](../../docs/visual-qualification-campaign.md).
+Standalone GPU profiling drains completed results even without a writer.

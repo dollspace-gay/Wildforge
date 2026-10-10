@@ -8,6 +8,8 @@ import subprocess
 import time
 import tomllib
 
+from render_work import validate_capture_render_work
+
 from .provenance import sha256, write_json
 
 FACES = {f"{sign}{axis}": f"{sign.lower()}_{axis.lower()}" for sign in ("Pos", "Neg") for axis in "XYZ"}
@@ -54,6 +56,12 @@ def environment(row: dict, output: str | None) -> dict[str, str]:
     if output is not None:
         result.update({"WILDFORGE_SHOT": output, "WILDFORGE_VISUAL_EVIDENCE": "1",
                        "WILDFORGE_CAPTURE_ID": row["id"], "WILDFORGE_CAPTURE_SCENE": row["scene"]})
+    if "geode-performance" in row["id"]:
+        result.update(WILDFORGE_RENDER_WORK="1", WILDFORGE_GPU_PROFILE="1")
+    if "marble-v14-prefog-dawn-overcast-gemini" in row["id"]:
+        # These documented scenes need longer startup than the ordinary bound.
+        # Declare the same still-only warmup for all three builds/phases.
+        result["WILDFORGE_SHOT_MIN_FRAME"] = "6000"
     return result
 
 
@@ -69,6 +77,8 @@ def validate_sidecar(path: Path, row: dict, revision: str) -> dict:
     # visible chunks can be dirtied again by live water, weather, and ecology.
     if not telemetry["settled"] or telemetry["settled_frames"] <= 0:
         raise ValueError(f"{row['id']}: unsettled capture")
+    if "geode-performance" in row["id"]:
+        validate_capture_render_work(telemetry)
     if metadata["capture_id"] != row["id"] or metadata["scene_id"] != row["scene"]:
         raise ValueError(f"{row['id']}: wrong capture identity")
     template = row["template"]

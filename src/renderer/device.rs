@@ -12,6 +12,7 @@ pub(super) struct DeviceState {
     pub(super) adapter_backend: String,
     pub(super) adapter_hardware: bool,
     pub(super) gpu_profiling: bool,
+    pub(super) render_work: bool,
 }
 
 fn adapter_priority(info: &wgpu::AdapterInfo) -> u8 {
@@ -67,7 +68,7 @@ impl DeviceState {
         let adapter_backend = format!("{:?}", info.backend);
         let adapter_hardware = info.device_type != wgpu::DeviceType::Cpu;
         eprintln!("renderer: using {adapter_name}");
-        let gpu_profiling = super::profiling::requested()
+        let (gpu_profiling, render_work) = super::profiling::requested()
             .unwrap_or_else(|error| panic!("GPU profiling initialization failed: {error}"));
         let required_features = if gpu_profiling {
             super::profiling::required_features(adapter.features(), &adapter_name)
@@ -118,6 +119,7 @@ impl DeviceState {
             adapter_backend,
             adapter_hardware,
             gpu_profiling,
+            render_work,
         }
     }
 }

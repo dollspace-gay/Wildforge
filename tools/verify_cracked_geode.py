@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Qualify the cracked-geode GPU evidence by material identity and depth.
 
-Raw PPM/WFD files remain untracked beside the native Windows executable.  This
+Raw PPM/WFD files remain untracked beside the native hardware executable. This
 tool consumes them with the shared visual-evidence parser and emits only two
 small deterministic TOML acceptance reports for review and Rust-side CI gates.
 """
@@ -15,6 +15,8 @@ import sys
 from pathlib import Path
 from typing import Any
 
+from render_work import rendering_regression, validate_capture_render_work
+
 
 QUALIFICATION_SCHEMA_VERSION = 1
 COMPOSITION_KIND = "cracked-geode-composition"
@@ -25,7 +27,7 @@ MIN_HOST_FRACTION = 0.15
 MIN_LINING_PIXELS = 16 * 16
 MIN_HEART_PIXELS = 16 * 16
 MAX_OVERLAY_FRACTION = 0.04
-MAX_DRAW_REGRESSION_MS = 0.20
+MAX_RENDERING_REGRESSION_MS = 0.20
 MAX_SIMULATION_REGRESSION_MS = 0.10
 
 
@@ -275,8 +277,16 @@ def performance_report(
         "opened_draw": [],
         "sealed_simulation": [],
         "opened_simulation": [],
+        "sealed_cpu_submission": [],
+        "opened_cpu_submission": [],
+        "sealed_gpu": [],
+        "opened_gpu": [],
     }
     commits: set[str] = set()
+    reference_stem = stem_prefix.removesuffix("-performance") + "-sealed-context"
+    reference = require_capture(reference_stem)[2]
+    expected_render = {**reference["render"], "width": 1280, "height": 720}
+    reference_environment = None
     for phase in ("sealed", "opened"):
         for run in "abcde":
             stem = f"{stem_prefix}-{phase}-{run}"
@@ -287,9 +297,30 @@ def performance_report(
                 raise GeodeEvidenceError(f"{stem} came from a dirty build")
             if not sidecar.get("telemetry", {}).get("settled"):
                 raise GeodeEvidenceError(f"{stem} was captured before the world settled")
+            render_identity = sidecar.get("render", {})
+            if (render_identity.get("hardware") is not True
+                    or render_identity.get("backend") not in ("Vulkan", "Dx12")
+                    or "DiscreteGpu" not in render_identity.get("adapter", "")):
+                raise GeodeEvidenceError(f"{stem} has no hardware GPU identity")
+            try:
+                cpu, gpu = validate_capture_render_work(sidecar["telemetry"])
+            except ValueError as error:
+                raise GeodeEvidenceError(f"{stem}: {error}") from error
+            if (sidecar.get("camera") != reference["camera"]
+                    or render_identity != expected_render
+                    or sidecar.get("world", {}).get("name") != f"visual-polish-geode-{phase}"
+                    or any(sidecar["environment"].get(key) != reference["environment"].get(key)
+                           for key in ("day", "time_of_day", "season", "weather", "precipitation"))):
+                raise GeodeEvidenceError(f"{stem} does not match the declared camera/settings")
+            if reference_environment is None:
+                reference_environment = sidecar["environment"]
+            elif sidecar["environment"] != reference_environment:
+                raise GeodeEvidenceError(f"{stem} does not use the exact matched environment")
             commits.add(str(sidecar["build"]["commit"]))
             samples[f"{phase}_draw"].append(float(sidecar["telemetry"]["draw_ms"]))
             samples[f"{phase}_simulation"].append(float(sidecar["telemetry"]["simulation_ms"]))
+            samples[f"{phase}_cpu_submission"].append(cpu)
+            samples[f"{phase}_gpu"].append(gpu)
     if len(commits) != 1:
         raise GeodeEvidenceError("performance captures do not share one clean build")
     sealed_draw = statistics.median(samples["sealed_draw"])
@@ -298,9 +329,18 @@ def performance_report(
     opened_simulation = statistics.median(samples["opened_simulation"])
     draw_delta = opened_draw - sealed_draw
     simulation_delta = opened_simulation - sealed_simulation
-    passed = draw_delta <= MAX_DRAW_REGRESSION_MS and simulation_delta <= MAX_SIMULATION_REGRESSION_MS
+    sealed_cpu = statistics.median(samples["sealed_cpu_submission"])
+    opened_cpu = statistics.median(samples["opened_cpu_submission"])
+    sealed_gpu = statistics.median(samples["sealed_gpu"])
+    opened_gpu = statistics.median(samples["opened_gpu"])
+    cpu_delta = opened_cpu - sealed_cpu
+    gpu_delta = opened_gpu - sealed_gpu
+    work_delta = rendering_regression(cpu_delta, gpu_delta)
+    passed = work_delta <= MAX_RENDERING_REGRESSION_MS and simulation_delta <= MAX_SIMULATION_REGRESSION_MS
     return {
-        "qualification_schema_version": QUALIFICATION_SCHEMA_VERSION,
+        "qualification_schema_version": 2,
+        "performance_measurement": "render-work-v1",
+        "legacy_draw_is_pacing_diagnostic": True,
         "kind": kind,
         "evidence_commit": next(iter(commits)),
         "sample_count_per_phase": 5,
@@ -311,7 +351,18 @@ def performance_report(
         "sealed_median_draw_ms": sealed_draw,
         "opened_median_draw_ms": opened_draw,
         "median_draw_regression_ms": draw_delta,
-        "maximum_median_draw_regression_ms": MAX_DRAW_REGRESSION_MS,
+        "sealed_cpu_submission_ms": samples["sealed_cpu_submission"],
+        "opened_cpu_submission_ms": samples["opened_cpu_submission"],
+        "sealed_gpu_ms": samples["sealed_gpu"],
+        "opened_gpu_ms": samples["opened_gpu"],
+        "sealed_median_cpu_submission_ms": sealed_cpu,
+        "opened_median_cpu_submission_ms": opened_cpu,
+        "median_cpu_submission_regression_ms": cpu_delta,
+        "sealed_median_gpu_ms": sealed_gpu,
+        "opened_median_gpu_ms": opened_gpu,
+        "median_gpu_regression_ms": gpu_delta,
+        "rendering_regression_ms": work_delta,
+        "maximum_rendering_regression_ms": MAX_RENDERING_REGRESSION_MS,
         "sealed_median_simulation_ms": sealed_simulation,
         "opened_median_simulation_ms": opened_simulation,
         "median_simulation_regression_ms": simulation_delta,

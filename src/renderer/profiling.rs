@@ -1,6 +1,6 @@
 //! Optional completed-GPU frame timings with bounded asynchronous readback.
 //!
-//! `WILDFORGE_GPU_PROFILE=1` enables timestamps; unset or `0` disables them.
+//! `WILDFORGE_GPU_PROFILE=1` or `WILDFORGE_RENDER_WORK=1` enables timestamps.
 //! The interval covers the frame's actual rendering commands, including capture
 //! replay when `capture_frame` is true. Uploads before encoding, query resolve,
 //! readback, host frame work, and presentation wait are outside the interval.
@@ -9,13 +9,13 @@ use std::collections::VecDeque;
 use std::sync::Arc;
 use std::sync::mpsc::{Receiver, TryRecvError, channel};
 
-const READBACK_SLOTS: usize = 4;
+pub(crate) const READBACK_SLOTS: usize = 4;
 const TIMESTAMPS_PER_FRAME: u32 = 2;
 const READBACK_BYTES: u64 = TIMESTAMPS_PER_FRAME as u64 * wgpu::QUERY_SIZE as u64;
 const MAX_COMPLETED: usize = 256;
 
 /// A completed timestamp interval from the selected hardware GPU.
-#[derive(Debug, serde::Serialize)]
+#[derive(Clone, Debug, serde::Serialize)]
 pub(crate) struct GpuFrameTiming {
     /// Actual `Renderer::render` call number, beginning at one.
     pub(crate) frame_id: u64,
@@ -26,7 +26,7 @@ pub(crate) struct GpuFrameTiming {
 }
 
 /// Sampling coverage, including backpressure without a render-thread wait.
-#[derive(Debug, serde::Serialize)]
+#[derive(Clone, Copy, Debug, serde::Serialize)]
 pub(crate) struct GpuProfileStats {
     pub(crate) submitted: u64,
     pub(crate) completed: u64,
@@ -36,10 +36,14 @@ pub(crate) struct GpuProfileStats {
 
 #[derive(Debug, thiserror::Error)]
 pub(crate) enum GpuProfileError {
-    #[error("WILDFORGE_GPU_PROFILE must be 0 or 1, received {0:?}")]
-    InvalidSetting(String),
-    #[error("could not read WILDFORGE_GPU_PROFILE: {0}")]
-    Setting(#[source] std::env::VarError),
+    #[error("{name} must be 0 or 1, received {value:?}")]
+    InvalidSetting { name: &'static str, value: String },
+    #[error("could not read {name}: {source}")]
+    Setting {
+        name: &'static str,
+        #[source]
+        source: std::env::VarError,
+    },
     #[error("GPU profiling requires {missing:?} on selected adapter {adapter}")]
     MissingFeatures {
         adapter: String,
@@ -67,19 +71,29 @@ pub(crate) enum GpuProfileError {
     ResultsNotConsumed,
 }
 
-pub(super) fn requested() -> Result<bool, GpuProfileError> {
-    match std::env::var("WILDFORGE_GPU_PROFILE") {
-        Ok(value) => parse_setting(Some(&value)),
+/// Work receipts require actual timestamps, independently of the JSONL writer.
+pub(super) fn requested() -> Result<(bool, bool), GpuProfileError> {
+    let gpu = environment_setting("WILDFORGE_GPU_PROFILE")?;
+    let work = environment_setting("WILDFORGE_RENDER_WORK")?;
+    Ok((gpu || work, work))
+}
+
+fn environment_setting(name: &'static str) -> Result<bool, GpuProfileError> {
+    match std::env::var(name) {
+        Ok(value) => parse_setting(name, Some(&value)),
         Err(std::env::VarError::NotPresent) => Ok(false),
-        Err(error) => Err(GpuProfileError::Setting(error)),
+        Err(source) => Err(GpuProfileError::Setting { name, source }),
     }
 }
 
-fn parse_setting(value: Option<&str>) -> Result<bool, GpuProfileError> {
+fn parse_setting(name: &'static str, value: Option<&str>) -> Result<bool, GpuProfileError> {
     match value {
         None | Some("0") => Ok(false),
         Some("1") => Ok(true),
-        Some(value) => Err(GpuProfileError::InvalidSetting(value.to_owned())),
+        Some(value) => Err(GpuProfileError::InvalidSetting {
+            name,
+            value: value.to_owned(),
+        }),
     }
 }
 
@@ -339,6 +353,10 @@ impl GpuProfiler {
                 .count(),
         }
     }
+
+    pub(super) fn timestamp_period_ns(&self) -> f64 {
+        f64::from(self.timestamp_period)
+    }
 }
 
 fn elapsed_ms(frame_id: u64, bytes: &[u8], timestamp_period: f32) -> Result<f64, GpuProfileError> {
@@ -366,11 +384,13 @@ mod tests {
 
     #[test]
     fn profiling_requires_an_explicit_one_and_rejects_unsupported_device_features() {
-        assert!(!parse_setting(None).unwrap());
-        assert!(!parse_setting(Some("0")).unwrap());
-        assert!(parse_setting(Some("1")).unwrap());
-        for value in ["", "true", "false", "2", " 1"] {
-            assert!(parse_setting(Some(value)).is_err());
+        for name in ["WILDFORGE_GPU_PROFILE", "WILDFORGE_RENDER_WORK"] {
+            assert!(!parse_setting(name, None).unwrap());
+            assert!(!parse_setting(name, Some("0")).unwrap());
+            assert!(parse_setting(name, Some("1")).unwrap());
+            for value in ["", "true", "false", "2", " 1"] {
+                assert!(parse_setting(name, Some(value)).is_err());
+            }
         }
         assert!(matches!(
             required_features(wgpu::Features::TIMESTAMP_QUERY, "test adapter"),

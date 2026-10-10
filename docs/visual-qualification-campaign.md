@@ -41,8 +41,73 @@ python3 tools/run_visual_campaign.py --work-dir "$campaign_work" capture
 The matrix requires 92 native captures: 52 visual scenes and 40 performance
 samples. Baseline and candidate scenes use matched cameras and render settings.
 Performance samples run last, in paired repetitions. Keep builds and other
-heavy work out of their measurement interval. Timings are the game's recorded
-draw and simulation observations, not GPU timestamp measurements.
+heavy work out of their measurement interval. Strata timing reports retain the
+game's recorded draw and simulation observations. Geode performance uses the
+versioned rendering-work protocol below; legacy draw observations remain in
+those reports as presentation-pacing diagnostics.
+
+The three marble view-distance-14 dawn stills use a declared 6000-frame warmup.
+The preceding campaign's 180-frame attempts failed the native startup-settlement
+bound; its preserved 6000-frame attempts settled successfully. Apply this same
+still-only warmup before the replacement run, without changing settlement
+criteria or any performance sample's 1200-frame minimum.
+
+## Geode rendering-work protocol v1
+
+Geode performance qualification schema 2 measures rendering work separately
+from presentation pacing. `telemetry.draw_ms` keeps its original meaning: an
+exponential moving average of host time around the entire renderer, including
+swapchain acquisition and presentation. It is neither a GPU timestamp nor an
+isolated measure of CPU rendering work. Do not reinterpret older reports.
+
+This migration follows the preserved 2026-10-09 failed qualification and
+original-build controls. On the same hardware, the original build also exceeded
+the 0.20 ms wall-time budget. Four prescribed original/candidate diagnostic
+captures measured opened-minus-sealed GPU command medians of 0.191152 ms and
+0.176320 ms, respectively; their renderer wall deltas were 0.640256 ms and
+1.7896135 ms. These diagnostics established that wall time does not substitute
+for GPU command cost. They did not qualify either build or separate CPU work
+from presentation waits. Their raw receipts and the failed campaigns remain in
+`target/lag-control-20261009/`.
+
+The new protocol is fixed before the replacement campaign:
+
+- Enable `WILDFORGE_RENDER_WORK=1` and hardware GPU timestamps for every geode
+  timing case. Keep cameras, settings, five repetitions per phase, the 1200-frame
+  minimum, normal presentation mode, and native settlement checks unchanged.
+- Retain the latest 120 consecutive, fully CPU/GPU-completed, settled frames.
+  Join each host sample to its exact renderer frame ID; reject screenshot frames,
+  gaps, invalid timings, errors, and readback-slot skips within that window. A
+  reset discards the interrupted window. The asynchronous tail is bounded by
+  the four readback slots. Anchor the latest renderer ID to the enclosing next
+  capture frame and verify at least 1200 eligible frames. Do not select an older,
+  more favorable window.
+- Measure host render wall time from before frame uploads through presentation.
+  Independently time swapchain acquisition and presentation. CPU submission
+  time is wall time minus those two spans; it includes uploads, command encoding,
+  queue submission, and profiling bookkeeping. GPU command timestamps cover
+  shadow, world, postprocessing, composite, and UI commands. They exclude
+  pre-encoding uploads, query resolve/readback, and presentation waits; host
+  upload cost remains covered by the CPU measurement.
+- Serialize all 120 joined sample tuples, their medians, actual timestamp period
+  and capabilities, frame boundaries, and coverage counters in the native
+  sidecar. Python and Rust independently check coverage and recompute medians.
+  Missing hardware timestamps or an incomplete window cannot qualify.
+  Timing cameras and render settings match the group's sealed-context capture,
+  except for the declared 1280x720 timing dimensions. Controlled day/time/season/
+  weather/precipitation match that capture; full environment identity matches
+  across all ten timing cases, without anchoring evolving weather scalars to
+  the differently warmed primary still.
+- Across the five captures per phase, compute CPU and GPU median deltas. The
+  rendering budget remains **0.20 ms total**:
+  `max(0, CPU delta) + max(0, GPU delta) <= 0.20 ms`. An improvement in one
+  component cannot hide increased work in the other. The simulation budget
+  remains **0.10 ms**. Legacy draw deltas are diagnostic fields in schema 2.
+
+The replacement must be a complete fresh 92-capture and 56-motion-frame campaign
+from frozen clean builds. A measurement-only baseline migration must preserve
+the original gameplay implementation. Changing this protocol or relevant source
+after freezing invalidates the campaign; do not alter an existing receipt.
 
 Each motion walk records 28 F2 frames through native WASD input. Inspect every
 frame in order, verify the recorded hashes, and fill `motion-review.json` with

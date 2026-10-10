@@ -173,15 +173,8 @@ impl Game {
         self.advance_player(dt, paused);
         self.frame_profile.mark("player_and_actions");
 
-        self.build_and_render_frame(dt, now);
+        let gpu = self.build_and_render_frame(dt, now);
         if self.frame_profile.enabled() {
-            let gpu = match self.renderer.take_gpu_timings() {
-                Ok(samples) => serde_json::json!({"samples": samples}),
-                Err(error) => {
-                    eprintln!("frame profiling: GPU measurement failed: {error}");
-                    serde_json::json!({"error": error.to_string()})
-                }
-            };
             self.frame_profile.finish(
                 serde_json::json!({
                     "frame": self.total_frames,
