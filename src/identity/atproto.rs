@@ -18,8 +18,6 @@ use jacquard_common::types::recordkey::RecordKey;
 use jacquard_common::types::value::to_data;
 use jacquard_common::xrpc::XrpcClient;
 use jacquard_common::xrpc::atproto::{DeleteRecord, PutRecord};
-use jacquard_identity::JacquardResolver;
-use jacquard_identity::resolver::{HandleStep, IdentityResolver, ResolverOptions};
 use jacquard_oauth::atproto::AtprotoClientMetadata;
 use jacquard_oauth::authstore::MemoryAuthStore;
 use jacquard_oauth::client::OAuthClient;
@@ -33,6 +31,9 @@ use smol_str::SmolStr;
 
 use super::{AtprotoDid, DeviceKeyId, atomic_write, encode_hex};
 use crate::net::AtprotoClaim;
+
+#[path = "handle_dns.rs"]
+mod handle_dns;
 
 /// Owned by dollspace.gay. The corresponding Lexicon document is checked in
 /// under `lexicons/`; PDS validation is disabled until it is published.
@@ -603,22 +604,16 @@ async fn handle_matches_did(handle: &str, did: &AtprotoDid) -> bool {
     let Ok(handle) = Handle::<SmolStr>::new_owned(handle) else {
         return false;
     };
-    let options = ResolverOptions {
-        handle_order: vec![HandleStep::DnsTxt],
-        public_fallback_for_handle: false,
-        ..ResolverOptions::default()
-    };
-    let resolver = JacquardResolver::new_dns(reqwest::Client::new(), options);
-    if let Ok(resolved) = resolver.resolve_handle(&handle).await {
-        return resolved.as_str() == did.as_str();
-    }
-
-    let Ok(url) = reqwest::Url::parse(&format!("https://{handle}/.well-known/atproto-did")) else {
-        return false;
-    };
-    get_public_limited_text(url)
-        .await
-        .is_ok_and(|resolved| resolved.trim() == did.as_str())
+    handle_dns::matches_did_with_fallback(did, handle_dns::resolve_did(&handle), async {
+        let Ok(url) = reqwest::Url::parse(&format!("https://{handle}/.well-known/atproto-did"))
+        else {
+            return false;
+        };
+        get_public_limited_text(url)
+            .await
+            .is_ok_and(|resolved| resolved.trim() == did.as_str())
+    })
+    .await
 }
 
 fn did_document_url(did: &AtprotoDid) -> Result<reqwest::Url, String> {
